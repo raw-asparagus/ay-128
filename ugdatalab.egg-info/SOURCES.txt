@@ -1,0 +1,11 @@
+README.md
+pyproject.toml
+ugdatalab/__init__.py
+ugdatalab/mcmc.py
+ugdatalab.egg-info/PKG-INFO
+ugdatalab.egg-info/SOURCES.txt
+ugdatalab.egg-info/dependency_links.txt
+ugdatalab.egg-info/top_level.txt
+ugdatalab/models/__init__.py
+ugdatalab/models/deoutlier.py
+ugdatalab/models/gaia_data.py
