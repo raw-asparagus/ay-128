@@ -1,7 +1,9 @@
 README.md
 pyproject.toml
+tests/test_relations.py
 ugdatalab/__init__.py
 ugdatalab/mcmc.py
+ugdatalab/relations.py
 ugdatalab.egg-info/PKG-INFO
 ugdatalab.egg-info/SOURCES.txt
 ugdatalab.egg-info/dependency_links.txt
