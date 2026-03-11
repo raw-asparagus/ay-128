@@ -1,8 +1,8 @@
 import emcee
-import matplotlib.pyplot as plt
+
 import numpy as np
 
-from ugdatalab.models.gaia_data import GaiaData
+from ugdatalab.models.gaia import GaiaQuality
 
 
 class MixtureContaminationModel:
@@ -83,7 +83,7 @@ class MixtureContaminationModel:
         sampler.run_mcmc(p0, n_steps, progress=False)
         return sampler, mu_bg, sig_bg
 
-    def __init__(self, source: GaiaData, prob_threshold: float = 0.95,
+    def __init__(self, source: GaiaQuality, prob_threshold: float = 0.95,
                  n_walkers: int = 32, n_steps: int = 2000,
                  n_burn: int = 1000, seed: int = 42):
         self.query          = source.query
@@ -131,44 +131,7 @@ class MixtureContaminationModel:
         full_data["inlier_prob"] = inlier_probs
         self._all_data  = full_data
         self.data       = full_data[inlier_probs >= prob_threshold]
-        self._gaia_view = GaiaData.from_table(source.query, self.data)
 
-    # --- delegated GaiaData plot methods ---
-
-    def plot_mollweide(self, ax=None, title=None, **kw):
-        return self._gaia_view.plot_mollweide(ax=ax, title=title, **kw)
-
-    def plot_mollweide_diff(self, subset, ax=None, title=None, **kw):
-        return self._gaia_view.plot_mollweide_diff(subset, ax=ax, title=title, **kw)
-
-    def plot_period_abs_mag(self, ax=None, title=None, **kw):
-        return self._gaia_view.plot_period_abs_mag(ax=ax, title=title, **kw)
-
-    def plot_period_luminosity_diff(self, subset, ax=None, title=None, **kw):
-        return self._gaia_view.plot_period_luminosity_diff(subset, ax=ax, title=title, **kw)
-
-    def plot_hr(self, ax=None, title=None, **kw):
-        return self._gaia_view.plot_hr(ax=ax, title=title, **kw)
-
-    # --- own method ---
-
-    def plot_inlier_prob_map(self, ax=None, title=None):
-        """PL diagram of all pre-rejection stars, coloured by inlier probability."""
-        if ax is None:
-            fig, ax = plt.subplots(figsize=(8, 5), dpi=300)
-        sc = ax.scatter(
-            self._all_data["period"],
-            np.asarray(self._all_data["M_G"]),
-            c=np.asarray(self._all_data["inlier_prob"]),
-            cmap="RdYlGn", vmin=0, vmax=1, s=5, alpha=0.7, rasterized=True,
-        )
-        plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
-        ax.axhline(y=np.nan)  # invisible; threshold is on p not M_G
-        ax.set_xscale("log")
-        ax.invert_yaxis()
-        ax.set_xlabel(r"$P$ [days]")
-        ax.set_ylabel(r"$M_G$ [mag]")
-        if title is not None:
-            ax.set_title(title)
-        ax.grid(True, alpha=0.3)
-        return ax
+    @property
+    def all_data(self):
+        return self._all_data

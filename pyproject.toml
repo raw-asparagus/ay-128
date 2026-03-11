@@ -5,6 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ugdatalab"
 version = "0.1.0"
+dependencies = [
+    "astropy",
+    "astroquery",
+    "corner",
+    "emcee",
+    "joblib",
+    "matplotlib",
+    "numpy",
+    "pymc",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+dust = ["dustmaps"]
 
 [tool.setuptools.packages.find]
 include = ["ugdatalab*"]
