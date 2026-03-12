@@ -33,6 +33,7 @@ class FourierHelperTests(unittest.TestCase):
                 "g_transit_time": self.times,
                 "g_transit_mag": self.mags,
                 "g_transit_mag_err": self.mag_err,
+                "period_ls": np.full(len(self.times), self.period),
             }
         )
 
@@ -54,10 +55,7 @@ class FourierHelperTests(unittest.TestCase):
         self.assertLess(np.sqrt(np.mean((pred - self.true_model) ** 2)), 0.03)
 
     def test_cross_validate_harmonics_finds_low_order_model(self):
-        result = cross_validate_harmonics(
-            self.target,
-            period=self.period,
-        )
+        result = cross_validate_harmonics(self.target)
         _, chi2r_train, chi2r_cv, best_k, _, _ = result
         expected_k_values = tuple(range(1, 26))
 

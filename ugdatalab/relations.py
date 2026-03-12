@@ -6,6 +6,7 @@ from typing import Any
 import numpy as np
 
 from ugdatalab.mcmc import MetropolisHastings, NoUTurnHamiltonian
+from ugdatalab.models.gaia import rrlyrae_class_mask
 
 
 @dataclass
@@ -55,37 +56,28 @@ def _class_mask(data, rr_class: str) -> np.ndarray:
     if rr_class not in {"RRab", "RRc"}:
         raise ValueError(f"Unsupported RR Lyrae class: {rr_class}")
 
-    if rr_class == "RRab":
-        if "is_rrab" in data.colnames:
-            return np.asarray(data["is_rrab"], dtype=bool)
-        if "pf" in data.colnames and "p1_o" in data.colnames:
-            pf = _as_float_array(data["pf"])
-            p1_o = _as_float_array(data["p1_o"])
-            return np.isfinite(pf) & ~np.isfinite(p1_o)
-    else:
-        if "is_rrc" in data.colnames:
-            return np.asarray(data["is_rrc"], dtype=bool)
-        if "pf" in data.colnames and "p1_o" in data.colnames:
-            pf = _as_float_array(data["pf"])
-            p1_o = _as_float_array(data["p1_o"])
-            return ~np.isfinite(pf) & np.isfinite(p1_o)
+    if "best_classification" in data.colnames:
+        return rrlyrae_class_mask(data, rr_class)
+    if rr_class == "RRab" and "is_rrab" in data.colnames:
+        return np.asarray(data["is_rrab"], dtype=bool)
+    if rr_class == "RRc" and "is_rrc" in data.colnames:
+        return np.asarray(data["is_rrc"], dtype=bool)
 
     raise ValueError(
-        "Could not determine RR Lyrae class mask; expected class flags or pf/p1_o columns."
+        "Could not determine RR Lyrae class mask; expected `best_classification` or class flags."
     )
 
 
 def _period_column(data, rr_class: str) -> np.ndarray:
-    if "period" in data.colnames:
-        return _as_float_array(data["period"])
-
     if rr_class == "RRab" and "pf" in data.colnames:
         return _as_float_array(data["pf"])
     if rr_class == "RRc" and "p1_o" in data.colnames:
         return _as_float_array(data["p1_o"])
+    if "period" in data.colnames:
+        return _as_float_array(data["period"])
 
     raise ValueError(
-        "Could not determine period column; expected `period` or class-specific Gaia period columns."
+        "Could not determine period column; expected class-specific Gaia period columns or `period`."
     )
 
 

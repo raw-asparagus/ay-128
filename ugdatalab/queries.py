@@ -50,7 +50,7 @@ def build_local_rrlyrae_query(
     min_abs_b_deg: float = 30.0,
     max_distance_kpc: float = 4.0,
 ) -> str:
-    """ADQL for the nearby, low-dust RR Lyrae calibration sample in part 12."""
+    """ADQL for the full low-dust calibration sample used in Lab 1 parts 12-18."""
     if max_fractional_parallax_error <= 0:
         raise ValueError("max_fractional_parallax_error must be positive.")
     if min_abs_b_deg < 0:

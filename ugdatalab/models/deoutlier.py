@@ -2,7 +2,7 @@ import emcee
 
 import numpy as np
 
-from ugdatalab.models.gaia import GaiaQuality
+from ugdatalab.models.gaia import GaiaQuality, rrlyrae_class_mask
 
 
 class MixtureContaminationModel:
@@ -91,14 +91,13 @@ class MixtureContaminationModel:
         self.mcmc_results   = {}
 
         inlier_probs = np.ones(len(source.data))  # default: keep
-        rrab = np.asarray(source.data["is_rrab"], dtype=bool)
-        rrc  = np.asarray(source.data["is_rrc"],  dtype=bool)
-
-        for label, mask in [("RRab", rrab), ("RRc", rrc)]:
+        for label, mask in [("RRab", rrlyrae_class_mask(source.data, "RRab")),
+                            ("RRc", rrlyrae_class_mask(source.data, "RRc"))]:
             if mask.sum() < 10:
                 continue
             sub   = source.data[mask]
-            x     = np.log10(np.asarray(sub["period"]))
+            period_column = "pf" if label == "RRab" else "p1_o"
+            x     = np.log10(np.asarray(sub[period_column], dtype=float))
             y     = np.asarray(sub["M_G"])
             sig   = np.asarray(sub["sigma_M"])
             valid = np.isfinite(x) & np.isfinite(y) & np.isfinite(sig) & (sig > 0)

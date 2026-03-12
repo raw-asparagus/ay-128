@@ -35,13 +35,19 @@ class DustHelperTests(unittest.TestCase):
         self.assertIn("ORDER BY gs.parallax_over_error DESC", query)
 
     def test_prepare_rrlyrae_class_columns_assigns_period_and_class_masks(self):
-        data = Table({"pf": [0.6, np.nan], "p1_o": [np.nan, 0.32]})
+        data = Table(
+            {
+                "best_classification": ["RRab", "RRc", "RRd"],
+                "pf": [0.6, np.nan, 0.74],
+                "p1_o": [np.nan, 0.32, 0.41],
+            }
+        )
 
         result = prepare_rrlyrae_class_columns(data)
 
-        np.testing.assert_allclose(result["period"], [0.6, 0.32])
-        self.assertEqual(list(result["is_rrab"]), [True, False])
-        self.assertEqual(list(result["is_rrc"]), [False, True])
+        np.testing.assert_allclose(result["period"], [0.6, 0.32, 0.41])
+        self.assertEqual(list(result["is_rrab"]), [True, False, False])
+        self.assertEqual(list(result["is_rrc"]), [False, True, False])
 
     def test_summarize_relation_samples_and_load_relation_posteriors(self):
         samples = np.array(
@@ -72,6 +78,7 @@ class DustHelperTests(unittest.TestCase):
     def test_compute_empirical_extinction_adds_expected_columns(self):
         data = Table(
             {
+                "best_classification": ["RRab", "RRc"],
                 "pf": [0.62, np.nan],
                 "p1_o": [np.nan, 0.33],
                 "bp_rp": [0.70, 0.41],
@@ -103,9 +110,7 @@ class DustHelperTests(unittest.TestCase):
         result = compute_empirical_extinction(data, models)
 
         for name in (
-            "period",
-            "is_rrab",
-            "is_rrc",
+            "log10_period",
             "color_int",
             "sigma_coeff",
             "sigma_intrinsic",

@@ -11,14 +11,14 @@ class RelationHelperTests(unittest.TestCase):
     def test_prepare_relation_data_rrab_pl_filters_by_class_and_valid_rows(self):
         table = Table(
             {
-                "period": [0.60, 0.32, 0.70],
+                "best_classification": ["RRab", "RRc", "RRab"],
+                "pf": [0.60, np.nan, 0.70],
+                "p1_o": [np.nan, 0.32, np.nan],
                 "M_G": [0.55, 0.20, np.nan],
                 "sigma_M": [0.08, 0.03, 0.09],
                 "bp_rp": [0.72, 0.31, 0.80],
                 "phot_bp_mean_flux_over_error": [30.0, 40.0, 50.0],
                 "phot_rp_mean_flux_over_error": [25.0, 35.0, 45.0],
-                "is_rrab": [True, False, True],
-                "is_rrc": [False, True, False],
             }
         )
         source = SimpleNamespace(data=table)
@@ -34,6 +34,7 @@ class RelationHelperTests(unittest.TestCase):
     def test_prepare_relation_data_rrc_pc_uses_first_overtone_period_and_color_sigma(self):
         table = Table(
             {
+                "best_classification": ["RRab", "RRc", "RRc"],
                 "pf": [0.61, np.nan, np.nan],
                 "p1_o": [np.nan, 0.33, 0.28],
                 "bp_rp": [0.70, 0.42, 0.39],
@@ -57,11 +58,11 @@ class RelationHelperTests(unittest.TestCase):
     def test_estimate_initial_theta0_maps_mixture_results_to_sampler_order(self):
         table = Table(
             {
-                "period": [0.62, 0.71],
+                "best_classification": ["RRab", "RRab"],
+                "pf": [0.62, 0.71],
+                "p1_o": [np.nan, np.nan],
                 "M_G": [0.49, 0.41],
                 "sigma_M": [0.07, 0.08],
-                "is_rrab": [True, True],
-                "is_rrc": [False, False],
             }
         )
         source = SimpleNamespace(

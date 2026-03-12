@@ -38,6 +38,7 @@ class PackageSmokeTests(unittest.TestCase):
         self.assertTrue(hasattr(module, "_cache_stable"))
         self.assertTrue(hasattr(module, "get_gaia"))
         self.assertTrue(hasattr(module, "get_gaia_quality"))
+        self.assertTrue(hasattr(module, "sanitize_vari_rrlyrae_table"))
         self.assertTrue(hasattr(module, "SDSSData"))
         self.assertTrue(hasattr(module, "SDSSQuality"))
         self.assertTrue(hasattr(module, "get_sdss"))

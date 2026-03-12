@@ -17,6 +17,7 @@ from ugdatalab.plotting import (
     plot_corner,
     plot_fourier_cross_validation,
     plot_fourier_harmonic_fits,
+    plot_rrlyrae_shape_comparison,
     plot_fourier_extrapolation,
     plot_fourier_normalized_residual_histograms,
     plot_fourier_train_cv_phase_comparison,
@@ -139,6 +140,45 @@ def _cross_validation_series():
     return Ks, chi2r_train, chi2r_cv
 
 
+def _shape_comparison_panels():
+    phase_grid = np.linspace(0.0, 1.0, 100, endpoint=False)
+
+    def make_panel(source_id, rr_class, period, best_K, phase_shift):
+        phase_data = np.linspace(0.02, 0.98, 24)
+        if rr_class == "RRc":
+            mag_centered = 0.18 * np.cos(2.0 * np.pi * (phase_data - phase_shift))
+            model_centered = 0.18 * np.cos(2.0 * np.pi * (phase_grid - phase_shift))
+        else:
+            mag_centered = (
+                0.24 * np.cos(2.0 * np.pi * (phase_data - phase_shift))
+                - 0.10 * np.sin(4.0 * np.pi * (phase_data - phase_shift))
+            )
+            model_centered = (
+                0.24 * np.cos(2.0 * np.pi * (phase_grid - phase_shift))
+                - 0.10 * np.sin(4.0 * np.pi * (phase_grid - phase_shift))
+            )
+        return {
+            "source_id": source_id,
+            "rr_class": rr_class,
+            "phase_data": phase_data,
+            "mag_centered": mag_centered,
+            "phase_grid": phase_grid,
+            "model_centered": model_centered,
+            "best_K": best_K,
+            "period": period,
+            "n_epochs": len(phase_data),
+        }
+
+    return [
+        make_panel(101, "RRc", 0.3124, 3, 0.00),
+        make_panel(102, "RRc", 0.3281, 4, 0.03),
+        make_panel(103, "RRc", 0.3417, 3, 0.05),
+        make_panel(201, "RRab", 0.5571, 6, 0.00),
+        make_panel(202, "RRab", 0.5884, 7, 0.04),
+        make_panel(203, "RRab", 0.6128, 6, 0.06),
+    ]
+
+
 def _sampler_view():
     return SimpleNamespace(
         samples=np.array([[0.0, 1.0], [0.1, 1.1], [0.2, 1.2], [0.3, 1.3]], dtype=float),
@@ -211,8 +251,20 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(len(axes[1].containers), 1)
         plt.close(axes[0].figure)
 
+    def test_plot_raw_phase_folded_lightcurve_accepts_source_id_and_table(self):
+        lightcurve = _lightcurve_table()
+
+        axes = plot_raw_phase_folded_lightcurve(lightcurve["source_id"][0], lightcurve)
+
+        self.assertEqual(len(axes), 2)
+        for ax in axes:
+            self.assertIsNotNone(ax)
+        self.assertEqual(axes[0].get_legend().texts[0].get_text(), "Raw light curve")
+        self.assertEqual(axes[1].get_legend().texts[0].get_text(), "Phase-folded light curve")
+        plt.close(axes[0].figure)
+
     def test_plot_lomb_scargle_periodogram_marks_selected_period(self):
-        ax = plot_lomb_scargle_periodogram(_fourier_lightcurve_table(), "RRab")
+        ax = plot_lomb_scargle_periodogram(_fourier_lightcurve_table())
 
         self.assertIsNotNone(ax)
         self.assertEqual(ax.get_xlabel(), r"$P$ [days]")
@@ -225,7 +277,8 @@ class PlottingHelperTests(unittest.TestCase):
         plt.close(ax.figure)
 
     def test_plot_fourier_harmonic_fits_returns_grid_of_axes(self):
-        axes = plot_fourier_harmonic_fits(_fourier_lightcurve_table(), "RRab", 0.5, [1, 3])
+        data = _fourier_lightcurve_table()
+        axes = plot_fourier_harmonic_fits(data, int(data["source_id"][0]), [1, 3])
         within_gap = axes[0, 0].get_position().y0 - axes[0, 1].get_position().y1
         between_gap = axes[0, 1].get_position().y0 - axes[1, 0].get_position().y1
 
@@ -256,6 +309,26 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertTrue(any(len(line.get_xdata()) == 2 and np.allclose(line.get_xdata(), [3, 3]) for line in ax.lines))
         self.assertTrue(any(len(line.get_ydata()) == 2 and np.allclose(line.get_ydata(), [0.88, 0.88]) for line in ax.lines))
         plt.close(ax.figure)
+
+    def test_plot_rrlyrae_shape_comparison_returns_three_by_two_axes(self):
+        axes = plot_rrlyrae_shape_comparison(_shape_comparison_panels())
+
+        self.assertEqual(np.asarray(axes).shape, (3, 2))
+        self.assertEqual(axes[0, 0].get_xlim(), (0.0, 1.0))
+        self.assertEqual(axes[0, 1].get_xlim(), (0.0, 1.0))
+        self.assertEqual(axes[0, 0].get_ylabel(), r"$G - \langle G \rangle_{\rm Fourier}$")
+        self.assertEqual(axes[0, 1].get_ylabel(), r"$G - \langle G \rangle_{\rm Fourier}$")
+        for row in range(3):
+            self.assertEqual(axes[row, 0].get_ylim(), axes[row, 1].get_ylim())
+        left_points = axes[0, 0].collections[0]
+        right_points = axes[0, 1].collections[0]
+        left_line = axes[0, 0].lines[0]
+        right_line = axes[0, 1].lines[0]
+        np.testing.assert_allclose(left_points.get_facecolors()[0], mpl.colors.to_rgba("C1", alpha=0.55))
+        np.testing.assert_allclose(right_points.get_facecolors()[0], mpl.colors.to_rgba("C0", alpha=0.55))
+        np.testing.assert_allclose(mpl.colors.to_rgba(left_line.get_color()), mpl.colors.to_rgba("C7"))
+        np.testing.assert_allclose(mpl.colors.to_rgba(right_line.get_color()), mpl.colors.to_rgba("C7"))
+        plt.close(axes[0, 0].figure)
 
     def test_plot_fourier_normalized_residual_histograms_returns_two_axes(self):
         axes = plot_fourier_normalized_residual_histograms(
@@ -295,8 +368,16 @@ class PlottingHelperTests(unittest.TestCase):
 
         self.assertEqual(len(axes), 2)
         self.assertEqual(axes[0].get_ylabel(), r"$G$ [mag]")
+        self.assertEqual(axes[1].get_ylabel(), r"$G$ [mag]")
+        self.assertFalse(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
         self.assertEqual(axes[0].get_xlabel(), "Phase")
         self.assertEqual(axes[1].get_xlabel(), "Phase")
+        self.assertAlmostEqual(axes[0].collections[0].get_alpha(), 0.5)
+        self.assertAlmostEqual(axes[0].collections[1].get_alpha(), 0.6)
+        cv_color = mpl.colors.to_rgba("C1", alpha=0.6)
+        model_color = mpl.colors.to_rgba("C7")
+        np.testing.assert_allclose(axes[0].collections[1].get_facecolors()[0], cv_color)
+        np.testing.assert_allclose(mpl.colors.to_rgba(axes[0].lines[0].get_color()), model_color)
         plt.close(axes[0].figure)
 
     def test_plot_fourier_extrapolation_returns_axis(self):
@@ -336,8 +417,10 @@ class PlottingHelperTests(unittest.TestCase):
         )
 
         self.assertEqual(np.asarray(axes).shape, (2, 2))
-        self.assertEqual(axes[0, 0].get_ylabel(), r"Part (3) $\langle G \rangle$ [mag]")
-        self.assertEqual(axes[0, 1].get_ylabel(), r"Fourier $\langle G \rangle$ [mag]")
+        self.assertEqual(axes[0, 0].get_ylabel(), r"$\langle G \rangle_{\rm epoch}$ [mag]")
+        self.assertEqual(axes[0, 1].get_ylabel(), r"$\langle G \rangle_{\rm Fourier}$ [mag]")
+        self.assertEqual(axes[1, 0].get_xlabel(), r"Gaia $\mathtt{int\_average\_g}$ [mag]")
+        self.assertEqual(axes[1, 1].get_xlabel(), r"Gaia $\mathtt{int\_average\_g}$ [mag]")
         self.assertEqual(axes[1, 0].get_ylabel(), "Res.")
         self.assertEqual(axes[1, 1].get_ylabel(), "Res.")
         plt.close(axes[0, 0].figure)
@@ -356,7 +439,7 @@ class PlottingHelperTests(unittest.TestCase):
 
     def test_plot_period_mean_g_returns_axes(self):
         data = _period_mean_g_table()
-        ax = plot_period_mean_g(data, np.asarray(data["best_classification"]).astype(str))
+        ax = plot_period_mean_g(data)
 
         self.assertIsNotNone(ax)
         self.assertEqual(ax.get_xscale(), "log")
@@ -379,7 +462,7 @@ class PlottingHelperTests(unittest.TestCase):
 
     def test_plot_vari_rrlyrae_period_comparison_returns_two_axes(self):
         data = _vari_rrlyrae_period_table()
-        axes = plot_vari_rrlyrae_period_comparison(data, np.asarray(data["best_classification"]).astype(str))
+        axes = plot_vari_rrlyrae_period_comparison(data)
         finite = np.isfinite(np.asarray(data["pf"], dtype=float)) & np.isfinite(np.asarray(data["best_period"], dtype=float))
         data_min = float(
             np.nanmin(

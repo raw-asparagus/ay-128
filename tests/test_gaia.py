@@ -1,7 +1,9 @@
 import unittest
 from unittest.mock import patch
 
+import numpy as np
 from astropy.table import MaskedColumn, Table
+from requests import exceptions as requests_exceptions
 
 import ugdatalab.models.gaia as gaia
 
@@ -12,6 +14,7 @@ def _raw_gaia_table():
             "source_id": [1, 2, 3],
             "l": [120.0, 130.0, 140.0],
             "b": [40.0, 50.0, 20.0],
+            "best_classification": ["RRab", "RRc", "RRd"],
             "parallax": [0.50, 0.40, 0.30],
             "parallax_error": [0.05, 0.06, 0.04],
             "parallax_over_error": [6.0, 4.0, 7.0],
@@ -24,8 +27,8 @@ def _raw_gaia_table():
             "phot_rp_mean_flux_over_error": [18.0, 17.0, 15.0],
             "phot_bp_rp_excess_factor": [1.05, 1.08, 1.12],
             "ruwe": [1.0, 1.1, 1.0],
-            "pf": MaskedColumn([0.57, 0.48, 0.62], mask=[False, False, False]),
-            "p1_o": MaskedColumn([0.0, 0.0, 0.0], mask=[True, True, True]),
+            "pf": MaskedColumn([0.57, 0.0, 0.62], mask=[False, True, False]),
+            "p1_o": MaskedColumn([0.0, 0.31, 0.46], mask=[True, False, False]),
         }
     )
 
@@ -66,10 +69,54 @@ class GaiaCatalogTests(unittest.TestCase):
         self.assertEqual(list(result1["source_id"]), [1])
         self.assertIn("M_G", result1.colnames)
         self.assertIn("sigma_M", result1.colnames)
-        self.assertEqual(float(result1["period"][0]), 0.57)
-        self.assertTrue(bool(result1["is_rrab"][0]))
-        self.assertFalse(bool(result1["is_rrc"][0]))
+        self.assertNotIn("period", result1.colnames)
+        self.assertNotIn("is_rrab", result1.colnames)
+        self.assertNotIn("is_rrc", result1.colnames)
         self.assertEqual(list(result2["source_id"]), [1])
+
+    def test_rrlyrae_class_mask_uses_best_classification(self):
+        data = _raw_gaia_table()
+
+        rrab = gaia.rrlyrae_class_mask(data, "RRab")
+        rrc = gaia.rrlyrae_class_mask(data, "RRc")
+        rrd = gaia.rrlyrae_class_mask(data, "RRd")
+
+        self.assertEqual(rrab.tolist(), [True, False, False])
+        self.assertEqual(rrc.tolist(), [False, True, False])
+        self.assertEqual(rrd.tolist(), [False, False, True])
+
+    def test_rrlyrae_representative_period_uses_rrd_first_overtone(self):
+        data = _raw_gaia_table()
+
+        period = gaia.rrlyrae_representative_period(data)
+
+        np.testing.assert_allclose(period[:2], [0.57, 0.31])
+        self.assertAlmostEqual(float(period[2]), 0.46)
+
+    def test_sanitize_vari_rrlyrae_table_normalizes_masked_columns(self):
+        raw = Table(
+            {
+                "source_id": [1, 2],
+                "num_clean_epochs_g": [90, 80],
+                "best_classification": ["RRab", "RRd"],
+                "pf": MaskedColumn([0.57, 0.74], mask=[False, False]),
+                "pf_error": MaskedColumn([0.01, 0.02], mask=[False, False]),
+                "p1_o": MaskedColumn([0.0, 0.55], mask=[True, False]),
+                "p1_o_error": MaskedColumn([0.0, 0.01], mask=[True, False]),
+                "int_average_g": MaskedColumn([15.1, 15.4], mask=[False, False]),
+            }
+        )
+
+        result = gaia.sanitize_vari_rrlyrae_table(raw)
+
+        self.assertEqual(result["source_id"].dtype.kind, "i")
+        self.assertEqual(result["num_clean_epochs_g"].dtype.kind, "i")
+        self.assertEqual(result["best_classification"].dtype.kind, "U")
+        self.assertEqual(result["pf"].dtype.kind, "f")
+        self.assertEqual(result["pf_error"].dtype.kind, "f")
+        self.assertEqual(result["p1_o"].dtype.kind, "f")
+        self.assertTrue(np.isnan(float(result["p1_o"][0])))
+        self.assertAlmostEqual(float(result["p1_o"][1]), 0.55)
 
     def test_add_gaia_photometry_columns_skips_parallax_outputs_when_missing(self):
         data = Table(
@@ -77,6 +124,24 @@ class GaiaCatalogTests(unittest.TestCase):
                 "phot_g_mean_flux": [1000.0],
                 "phot_g_mean_flux_error": [10.0],
                 "phot_g_mean_mag": [15.0],
+            }
+        )
+
+        result = gaia._add_gaia_photometry_columns(data)
+
+        self.assertIn("sigma_G", result.colnames)
+        self.assertNotIn("mu", result.colnames)
+        self.assertNotIn("sigma_mu", result.colnames)
+        self.assertNotIn("M_G", result.colnames)
+        self.assertNotIn("sigma_M", result.colnames)
+
+    def test_add_gaia_photometry_columns_skips_parallax_outputs_when_parallax_error_missing(self):
+        data = Table(
+            {
+                "phot_g_mean_flux": [1000.0],
+                "phot_g_mean_flux_error": [10.0],
+                "phot_g_mean_mag": [15.0],
+                "parallax": [0.5],
             }
         )
 
@@ -108,6 +173,21 @@ class GaiaCatalogTests(unittest.TestCase):
 
         mock_fetch.assert_called_once_with(raw)
         self.assertEqual(list(data.lightcurve_data["source_id"]), [2, 1, 1])
+
+    def test_get_gaia_falls_back_to_sync_query_after_async_http_error(self):
+        raw = _raw_gaia_table()
+
+        class _FakeJob:
+            def get_results(self):
+                return raw
+
+        with patch.object(gaia.Gaia, "launch_job_async", side_effect=requests_exceptions.HTTPError("Error 500")) as mock_async:
+            with patch.object(gaia.Gaia, "launch_job", return_value=_FakeJob()) as mock_sync:
+                result = gaia.get_gaia("SELECT raw")
+
+        mock_async.assert_called_once_with("SELECT raw")
+        mock_sync.assert_called_once_with("SELECT raw")
+        self.assertEqual(list(result["source_id"]), [1, 2, 3])
 
     def test_gaia_quality_instantiation_uses_quality_getter(self):
         quality = _raw_gaia_table()[:1]

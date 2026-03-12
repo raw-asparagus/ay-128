@@ -10,7 +10,11 @@ import numpy as np
 from astropy import table
 from astropy.coordinates import SkyCoord
 
-from ugdatalab.models.gaia import get_gaia
+from ugdatalab.models.gaia import (
+    get_gaia,
+    rrlyrae_class_mask,
+    rrlyrae_representative_period,
+)
 
 
 FULL_RRLYRAE_GAIA_SOURCE_QUERY = """
@@ -77,12 +81,9 @@ def build_rrlyrae_gaia_source_query(
 def prepare_rrlyrae_class_columns(data: table.Table, *, copy: bool = True) -> table.Table:
     """Attach the period, RRab, and RRc columns expected by later analysis steps."""
     out = data.copy(copy_data=True) if copy else data
-    pf = _as_float_array(out["pf"])
-    p1_o = _as_float_array(out["p1_o"])
-
-    out["period"] = np.where(np.isfinite(pf), pf, p1_o)
-    out["is_rrab"] = np.isfinite(pf) & ~np.isfinite(p1_o)
-    out["is_rrc"] = ~np.isfinite(pf) & np.isfinite(p1_o)
+    out["period"] = rrlyrae_representative_period(out)
+    out["is_rrab"] = rrlyrae_class_mask(out, "RRab")
+    out["is_rrc"] = rrlyrae_class_mask(out, "RRc")
     return out
 
 
@@ -93,10 +94,9 @@ def prepare_full_rrlyrae_table(data: table.Table, copy: bool = True) -> table.Ta
 
 def rrlyrae_class_masks(data: table.Table) -> dict[str, np.ndarray]:
     """Return boolean masks for the RRab and RRc subclasses."""
-    prepared = prepare_rrlyrae_class_columns(data, copy=False)
     return {
-        "RRab": np.asarray(prepared["is_rrab"], dtype=bool),
-        "RRc": np.asarray(prepared["is_rrc"], dtype=bool),
+        "RRab": rrlyrae_class_mask(data, "RRab"),
+        "RRc": rrlyrae_class_mask(data, "RRc"),
     }
 
 
@@ -160,9 +160,9 @@ def compute_empirical_extinction(
     copy: bool = True,
 ) -> table.Table:
     """Compute class-specific intrinsic color, color excess, and empirical extinction."""
-    out = prepare_rrlyrae_class_columns(data, copy=copy)
+    out = data.copy(copy_data=True) if copy else data
 
-    period = _as_float_array(out["period"])
+    period = rrlyrae_representative_period(out)
     log10_period = np.full(len(out), np.nan, dtype=float)
     positive_period = np.isfinite(period) & (period > 0)
     log10_period[positive_period] = np.log10(period[positive_period])
@@ -177,7 +177,7 @@ def compute_empirical_extinction(
 
     for rr_class, summary_like in period_color_models.items():
         summary = _coerce_summary(summary_like)
-        mask = np.asarray(out["is_rrab"] if rr_class == "RRab" else out["is_rrc"], dtype=bool)
+        mask = rrlyrae_class_mask(out, rr_class)
         mask &= np.isfinite(log10_period)
 
         color_int[mask] = summary.slope_median * log10_period[mask] + summary.intercept_median

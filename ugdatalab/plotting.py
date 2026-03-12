@@ -11,6 +11,7 @@ import numpy as np
 from astropy.table import Table
 from matplotlib.figure import Figure
 
+from .models.gaia import rrlyrae_representative_period
 from .paths import FIGURES_DIR, ensure_output_dirs
 
 TEXTWIDTH_IN = 7.59
@@ -120,6 +121,45 @@ def _as_table(source, attr: str = "data") -> Table:
     raise TypeError(f"Expected an astropy Table or an object with `{attr}`.")
 
 
+def _plot_period_values(data: Table) -> np.ndarray:
+    if {"best_classification", "pf", "p1_o"} <= set(data.colnames):
+        return rrlyrae_representative_period(data)
+    if "period" in data.colnames:
+        return np.asarray(data["period"], dtype=float)
+    raise ValueError(
+        "Could not determine RR Lyrae periods for plotting; expected "
+        "`best_classification` with `pf`/`p1_o`, or a `period` column."
+    )
+
+
+def _plot_class_masks(data: Table) -> list[tuple[str, np.ndarray]]:
+    if "best_classification" in data.colnames:
+        classifications = np.asarray(data["best_classification"], dtype=str)
+        ordered = ["RRab", "RRc", "RRd"]
+        labels = [label for label in ordered if np.any(classifications == label)]
+        labels.extend(
+            label
+            for label in np.unique(classifications)
+            if label not in ordered
+        )
+        return [(label, classifications == label) for label in labels]
+
+    if "is_rrc" in data.colnames:
+        rrc = np.asarray(data["is_rrc"], dtype=bool)
+        rrab = ~rrc
+        return [("RRab", rrab), ("RRc", rrc)]
+
+    if {"pf", "p1_o"} <= set(data.colnames):
+        pf = np.asarray(data["pf"], dtype=float)
+        p1_o = np.asarray(data["p1_o"], dtype=float)
+        return [
+            ("RRab", np.isfinite(pf) & ~np.isfinite(p1_o)),
+            ("RRc", ~np.isfinite(pf) & np.isfinite(p1_o)),
+        ]
+
+    return []
+
+
 def _labels(source, override=None):
     if override is not None:
         return override
@@ -181,7 +221,7 @@ def _grid_nx1(
     nrows: int,
     *,
     figsize: tuple[float, float],
-    hspace: float = 0.32,
+    hspace: float,
 ):
     fig = plt.figure(figsize=figsize)
     grid = fig.add_gridspec(nrows, 1, hspace=hspace)
@@ -330,7 +370,7 @@ def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
     return ax
 
 
-def plot_lomb_scargle_periodogram(data: Table, classification: str):
+def plot_lomb_scargle_periodogram(data: Table):
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
 
@@ -352,6 +392,12 @@ def plot_lomb_scargle_periodogram(data: Table, classification: str):
         if len(finite_periods):
             period = float(finite_periods[0])
 
+    classification = "RR Lyrae"
+    if "best_classification" in data.colnames:
+        classifications = np.asarray(data["best_classification"], dtype=str)
+        if len(classifications):
+            classification = str(classifications[0])
+
     _, ax = _single_panel(_columnwidth_figsize(35 / 16))
 
     ax.plot(periods, power, color=PRIMARY_COLOR, lw=LW_MEDIUM)
@@ -365,7 +411,7 @@ def plot_lomb_scargle_periodogram(data: Table, classification: str):
     )
     ax.set_xlabel(r"$P$ [days]")
     ax.set_ylabel("Lomb-Scargle power")
-    source_id = int(np.asarray(data["source_id"], dtype=np.int64)[0])
+    source_id = int(data["source_id"][0])
     ax.set_title(
         _escape_latex_text(f"Lomb-Scargle periodogram for\nGaia DR3 {source_id} ({classification})"),
         fontsize=EMPHASIS_SIZE,
@@ -387,19 +433,8 @@ def plot_period_abs_mag(
     **scatter_kwargs,
 ):
     data = _as_table(source)
-    if "is_rrc" in data.colnames:
-        rrc = np.asarray(data["is_rrc"], dtype=bool)
-    elif "best_classification" in data.colnames:
-        rrc = np.asarray(data["best_classification"]) == "RRc"
-    elif "pf" in data.colnames and "p1_o" in data.colnames:
-        pf = np.asarray(data["pf"], dtype=float)
-        p1_o = np.asarray(data["p1_o"], dtype=float)
-        rrc = ~np.isfinite(pf) & np.isfinite(p1_o)
-    else:
-        raise ValueError("Could not determine RR Lyrae class labels for plotting.")
-    rrab = ~rrc
     if period_column is None:
-        period_column = "period_ls" if use_periodogram else "period"
+        period_column = "period_ls" if use_periodogram else None
     if abs_mag_column is None:
         abs_mag_column = "M_G_ls" if use_periodogram else "M_G"
     if abs_mag_err_column is None:
@@ -410,7 +445,11 @@ def plot_period_abs_mag(
 
     scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
 
-    periods = np.asarray(data[period_column], dtype=float)
+    periods = (
+        np.asarray(data[period_column], dtype=float)
+        if period_column is not None
+        else _plot_period_values(data)
+    )
     m_g = np.asarray(data[abs_mag_column], dtype=float)
     sigma_m = np.asarray(data[abs_mag_err_column], dtype=float)
     ax.errorbar(
@@ -422,8 +461,19 @@ def plot_period_abs_mag(
         alpha=ALPHA_LIGHT,
         zorder=1,
     )
-    ax.scatter(periods[rrab], m_g[rrab], color=PRIMARY_COLOR, label="RRab", zorder=2, **scatter_kwargs)
-    ax.scatter(periods[rrc], m_g[rrc], color=SECONDARY_COLOR, label="RRc", zorder=2, **scatter_kwargs)
+    class_masks = _plot_class_masks(data)
+    if class_masks:
+        for i, (label, mask) in enumerate(class_masks):
+            ax.scatter(
+                periods[mask],
+                m_g[mask],
+                color=_rrlyrae_class_color(label, i),
+                label=label,
+                zorder=2,
+                **scatter_kwargs,
+            )
+    else:
+        ax.scatter(periods, m_g, color=PRIMARY_COLOR, label="RR Lyrae", zorder=2, **scatter_kwargs)
 
     ax.set_xscale("log")
     ax.invert_yaxis()
@@ -446,8 +496,10 @@ def plot_period_luminosity_diff(source, subset, ax=None, title=None, **scatter_k
     scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
 
     diff_data = data[diff_mask]
+    diff_period = _plot_period_values(diff_data)
+    subset_period = _plot_period_values(subset_data)
     ax.scatter(
-        diff_data["period"],
+        diff_period,
         np.asarray(diff_data["M_G"], dtype=float),
         color=SECONDARY_COLOR,
         label=f"Removed ($N$={len(diff_data)})",
@@ -455,7 +507,7 @@ def plot_period_luminosity_diff(source, subset, ax=None, title=None, **scatter_k
         **scatter_kwargs,
     )
     ax.scatter(
-        subset_data["period"],
+        subset_period,
         np.asarray(subset_data["M_G"], dtype=float),
         color=PRIMARY_COLOR,
         label=f"Kept ($N$={len(subset_data)})",
@@ -473,13 +525,13 @@ def plot_period_luminosity_diff(source, subset, ax=None, title=None, **scatter_k
     return ax
 
 
-def plot_period_mean_g(data: Table, classifications: np.ndarray):
-    if len(classifications) != len(data):
-        raise ValueError("classifications must have the same length as data.")
+def plot_period_mean_g(data: Table):
+    if "best_classification" not in data.colnames:
+        raise ValueError("Expected `best_classification` in the summary table.")
 
     _, ax = _single_panel(_columnwidth_figsize(10 / 4))
 
-    classifications = np.asarray(classifications).astype(str)
+    classifications = np.asarray(data["best_classification"]).astype(str)
     periods = np.asarray(data["best_period"], dtype=float)
     mean_g = np.asarray(data["mean_apparent_g"], dtype=float)
     mean_g_err = np.asarray(data["mean_apparent_g_err"], dtype=float)
@@ -519,26 +571,16 @@ def plot_period_mean_g(data: Table, classifications: np.ndarray):
     return ax
 
 
-def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray):
-    if len(classifications) != len(data):
-        raise ValueError("classifications must have the same length as data.")
+def plot_vari_rrlyrae_period_comparison(data: Table):
+    if "best_classification" not in data.colnames:
+        raise ValueError("Expected `best_classification` in the summary table.")
 
-    classifications = np.asarray(classifications).astype(str)
+    classifications = np.asarray(data["best_classification"]).astype(str)
     fundamental_period = np.asarray(data["pf"], dtype=float)
     best_period = np.asarray(data["best_period"], dtype=float)
     first_overtone_period = np.asarray(data["p1_o"], dtype=float)
-    fundamental_period_err = None
-    if "pf_error" in data.colnames:
-        fundamental_period_err = np.asarray(
-            np.ma.filled(np.ma.asarray(data["pf_error"], dtype=float), np.nan),
-            dtype=float,
-        )
-    first_overtone_period_err = None
-    if "p1_o_error" in data.colnames:
-        first_overtone_period_err = np.asarray(
-            np.ma.filled(np.ma.asarray(data["p1_o_error"], dtype=float), np.nan),
-            dtype=float,
-        )
+    fundamental_period_err = np.asarray(data["pf_error"], dtype=float)
+    first_overtone_period_err = np.asarray(data["p1_o_error"], dtype=float)
     p1_o_over_pf = np.full(len(data), np.nan, dtype=float)
     np.divide(
         first_overtone_period,
@@ -559,18 +601,17 @@ def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray
     for i, label in enumerate(unique_classes):
         color = _rrlyrae_class_color(label, i)
         mask = finite_fundamental & (classifications == label)
-        if fundamental_period_err is not None:
-            finite_err = mask & np.isfinite(fundamental_period_err)
-            ax_fundamental.errorbar(
-                fundamental_period[finite_err],
-                best_period[finite_err],
-                xerr=fundamental_period_err[finite_err],
-                fmt="none",
-                ecolor=color,
-                elinewidth=LW_FINE,
-                alpha=ALPHA_FAINT,
-                zorder=1,
-            )
+        finite_err = mask & np.isfinite(fundamental_period_err)
+        ax_fundamental.errorbar(
+            fundamental_period[finite_err],
+            best_period[finite_err],
+            xerr=fundamental_period_err[finite_err],
+            fmt="none",
+            ecolor=color,
+            elinewidth=LW_FINE,
+            alpha=ALPHA_FAINT,
+            zorder=1,
+        )
         ax_fundamental.scatter(
             fundamental_period[mask],
             best_period[mask],
@@ -629,18 +670,17 @@ def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray
         hi_rrd = float(
             np.nanmax(np.concatenate([first_overtone_period[finite_rrd], best_period[finite_rrd]]))
         )
-        if first_overtone_period_err is not None:
-            finite_rrd_err = finite_rrd & np.isfinite(first_overtone_period_err)
-            ax_first_overtone.errorbar(
-                first_overtone_period[finite_rrd_err],
-                best_period[finite_rrd_err],
-                xerr=first_overtone_period_err[finite_rrd_err],
-                fmt="none",
-                ecolor=rr_d_color,
-                elinewidth=LW_FINE,
-                alpha=ALPHA_FAINT,
-                zorder=1,
-            )
+        finite_rrd_err = finite_rrd & np.isfinite(first_overtone_period_err)
+        ax_first_overtone.errorbar(
+            first_overtone_period[finite_rrd_err],
+            best_period[finite_rrd_err],
+            xerr=first_overtone_period_err[finite_rrd_err],
+            fmt="none",
+            ecolor=rr_d_color,
+            elinewidth=LW_FINE,
+            alpha=ALPHA_FAINT,
+            zorder=1,
+        )
         ax_first_overtone.scatter(
             first_overtone_period[finite_rrd],
             best_period[finite_rrd],
@@ -680,27 +720,28 @@ def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray
 
 def plot_hr(source, ax=None, title=None, **scatter_kwargs):
     data = _as_table(source)
-    rrc = np.asarray(data["is_rrc"], dtype=bool)
-    rrab = ~rrc
-
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(7 / 2))
 
     scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
-    ax.scatter(
-        data["bp_rp"][rrab],
-        np.asarray(data["M_G"], dtype=float)[rrab],
-        color=PRIMARY_COLOR,
-        label="RRab",
-        **scatter_kwargs,
-    )
-    ax.scatter(
-        data["bp_rp"][rrc],
-        np.asarray(data["M_G"], dtype=float)[rrc],
-        color=SECONDARY_COLOR,
-        label="RRc",
-        **scatter_kwargs,
-    )
+    class_masks = _plot_class_masks(data)
+    if class_masks:
+        for i, (label, mask) in enumerate(class_masks):
+            ax.scatter(
+                data["bp_rp"][mask],
+                np.asarray(data["M_G"], dtype=float)[mask],
+                color=_rrlyrae_class_color(label, i),
+                label=label,
+                **scatter_kwargs,
+            )
+    else:
+        ax.scatter(
+            data["bp_rp"],
+            np.asarray(data["M_G"], dtype=float),
+            color=PRIMARY_COLOR,
+            label="RR Lyrae",
+            **scatter_kwargs,
+        )
 
     ax.invert_yaxis()
     ax.set_xlabel(r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]")
@@ -711,45 +752,85 @@ def plot_hr(source, ax=None, title=None, **scatter_kwargs):
     return ax
 
 
-def plot_raw_phase_folded_lightcurve(data: Table, classification: str, period: float):
+def plot_raw_phase_folded_lightcurve(
+    data_or_source_id,
+    classification_or_data,
+    period: float | None = None,
+    *,
+    classification: str | None = None,
+):
+    if isinstance(data_or_source_id, Table):
+        data = data_or_source_id
+        if classification is None:
+            classification = str(classification_or_data)
+        if period is None:
+            raise TypeError(
+                "period is required when passing a per-source light-curve table directly."
+            )
+    else:
+        source_id = int(data_or_source_id)
+        data = _as_table(classification_or_data)
+        if "source_id" not in data.colnames:
+            raise ValueError("Expected `source_id` in the light-curve table.")
+        data = data[np.asarray(data["source_id"], dtype=np.int64) == source_id]
+        if classification is None:
+            if "best_classification" in data.colnames and len(data):
+                classification = str(np.asarray(data["best_classification"], dtype=str)[0])
+            else:
+                classification = "RR Lyrae"
+        if period is None:
+            if {"best_classification", "pf", "p1_o"} <= set(data.colnames) and len(data):
+                period_values = rrlyrae_representative_period(data)
+            elif "period" in data.colnames:
+                period_values = np.asarray(data["period"], dtype=float)
+            elif "pf" in data.colnames:
+                period_values = np.asarray(data["pf"], dtype=float)
+            elif "p1_o" in data.colnames:
+                period_values = np.asarray(data["p1_o"], dtype=float)
+            else:
+                period_values = np.array([], dtype=float)
+            finite_periods = np.asarray(period_values, dtype=float)
+            finite_periods = finite_periods[np.isfinite(finite_periods)]
+            if len(finite_periods):
+                period = float(finite_periods[0])
+
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
+    if "g_transit_mag_err" not in data.colnames:
+        raise ValueError("Expected `g_transit_mag_err` in the light-curve table.")
+    if period is None:
+        raise ValueError("Could not determine a finite period for phase folding.")
     period = float(period)
 
     epoch = np.asarray(data["g_transit_time"], dtype=float)
     mag = np.asarray(data["g_transit_mag"], dtype=float)
+    mag_err = np.asarray(data["g_transit_mag_err"], dtype=float)
     phase = (epoch % period) / period
 
     fig, axes = _grid_1x2(figsize=_textwidth_figsize(84 / 25))
-
-    mag_err = None
-    if "g_transit_mag_err" in data.colnames:
-        mag_err = np.asarray(np.ma.filled(np.ma.asarray(data["g_transit_mag_err"], dtype=float), np.nan), dtype=float)
 
     time_unit = getattr(data["g_transit_time"], "unit", None)
     mag_unit = getattr(data["g_transit_mag"], "unit", None)
     time_label = f"Time [{time_unit}]" if time_unit is not None else "Time"
     mag_label = f"G [{mag_unit}]" if mag_unit is not None else "G"
 
-    if mag_err is not None:
-        finite_err = np.isfinite(epoch) & np.isfinite(mag) & np.isfinite(mag_err)
-        errorbar_alpha = RRLYRAE_POINT_ALPHA * (ALPHA_LIGHT / ALPHA_STANDARD)
-        raw_errorbar_kwargs = {
-            "fmt": "none",
-            "ecolor": PRIMARY_COLOR,
-            "elinewidth": LW_FINE,
-            "alpha": errorbar_alpha,
-            "zorder": 1,
-        }
-        phase_errorbar_kwargs = {
-            "fmt": "none",
-            "ecolor": SECONDARY_COLOR,
-            "elinewidth": LW_FINE,
-            "alpha": errorbar_alpha,
-            "zorder": 1,
-        }
-        axes[0].errorbar(epoch[finite_err], mag[finite_err], yerr=mag_err[finite_err], **raw_errorbar_kwargs)
-        axes[1].errorbar(phase[finite_err], mag[finite_err], yerr=mag_err[finite_err], **phase_errorbar_kwargs)
+    errorbar_alpha = RRLYRAE_POINT_ALPHA * (ALPHA_LIGHT / ALPHA_STANDARD)
+    raw_errorbar_kwargs = {
+        "fmt": "none",
+        "ecolor": PRIMARY_COLOR,
+        "elinewidth": LW_FINE,
+        "alpha": errorbar_alpha,
+        "zorder": 1,
+    }
+    phase_errorbar_kwargs = {
+        "fmt": "none",
+        "ecolor": SECONDARY_COLOR,
+        "elinewidth": LW_FINE,
+        "alpha": errorbar_alpha,
+        "zorder": 1,
+    }
+    axes[0].errorbar(epoch, mag, yerr=mag_err, **raw_errorbar_kwargs)
+    axes[1].errorbar(phase, mag, yerr=mag_err, **phase_errorbar_kwargs)
 
     axes[0].scatter(
         epoch,
@@ -786,7 +867,7 @@ def plot_raw_phase_folded_lightcurve(data: Table, classification: str, period: f
     axes[0].autoscale_view()
     axes[1].autoscale_view()
 
-    source_id = int(np.asarray(data["source_id"], dtype=np.int64)[0])
+    source_id = int(data["source_id"][0])
     fig.suptitle(
         _escape_latex_text(f"Lightcurves for Gaia DR3 {source_id} ({classification})"),
         fontsize=EMPHASIS_SIZE,
@@ -796,29 +877,33 @@ def plot_raw_phase_folded_lightcurve(data: Table, classification: str, period: f
 
 def plot_fourier_harmonic_fits(
     data: Table,
-    classification: str,
-    period: float,
+    target_id: int,
     K_values: list[int] | tuple[int, ...],
 ):
+    data = _as_table(data)
+    if "source_id" not in data.colnames:
+        raise ValueError("Expected `source_id` in the light-curve table.")
+
+    data = data[np.asarray(data["source_id"], dtype=np.int64) == int(target_id)]
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
     if "g_transit_mag_err" not in data.colnames:
         raise ValueError("Expected `g_transit_mag_err` in the light-curve table.")
+    if "period_ls" not in data.colnames:
+        raise ValueError("Expected `period_ls` in the light-curve table.")
 
     from ugdatalab.lightcurves import fourier_fit, phase_fold
 
-    period = float(period)
+    period_values = np.asarray(data["period_ls"], dtype=float)
+    finite_periods = np.asarray(period_values, dtype=float)
+    finite_periods = finite_periods[np.isfinite(finite_periods)]
+    if len(finite_periods) == 0:
+        raise ValueError("Could not determine a finite period for Fourier fitting.")
+    period = float(finite_periods[0])
+
     epoch = np.asarray(data["g_transit_time"], dtype=float)
     mag = np.asarray(data["g_transit_mag"], dtype=float)
-    mag_err = np.asarray(np.ma.filled(np.ma.asarray(data["g_transit_mag_err"], dtype=float), np.nan), dtype=float)
-
-    finite = np.isfinite(epoch) & np.isfinite(mag) & np.isfinite(mag_err) & (mag_err > 0)
-    if not np.any(finite):
-        raise ValueError("No finite light-curve rows are available for plotting.")
-
-    epoch = epoch[finite]
-    mag = mag[finite]
-    mag_err = mag_err[finite]
+    mag_err = np.asarray(data["g_transit_mag_err"], dtype=float)
     phase = phase_fold(epoch, period)
     order = np.argsort(phase)
     epoch = epoch[order]
@@ -840,7 +925,7 @@ def plot_fourier_harmonic_fits(
     axes = np.empty((len(K_values), 2), dtype=object)
     first_curve_ax = None
     for i in range(len(K_values)):
-        inner_grid = outer_grid[i, 0].subgridspec(2, 1, height_ratios=[4, 1], hspace=0.0)
+        inner_grid = outer_grid[i, 0].subgridspec(2, 1, height_ratios=[3, 1], hspace=0.0)
         if first_curve_ax is None:
             ax_curve = fig.add_subplot(inner_grid[0, 0])
             first_curve_ax = ax_curve
@@ -880,7 +965,7 @@ def plot_fourier_harmonic_fits(
         ax_curve.set_title(
             rf"$K={K}$, $\chi_\nu^2 = {fit.chi2_r:.2f}$",
             loc="left",
-            y=1.02,
+            y=1.05,
             pad=2.0,
         )
         ax_curve.tick_params(axis="x", labelbottom=False)
@@ -924,6 +1009,95 @@ def plot_fourier_harmonic_fits(
     return axes
 
 
+def plot_rrlyrae_shape_comparison(panels: list[dict[str, Any]]):
+    if len(panels) == 0:
+        raise ValueError("panels must contain at least one prepared RR Lyrae panel.")
+
+    rrc_panels = [panel for panel in panels if panel["rr_class"] == "RRc"]
+    rrab_panels = [panel for panel in panels if panel["rr_class"] == "RRab"]
+    if len(rrc_panels) == 0 or len(rrab_panels) == 0:
+        raise ValueError("panels must include both RRc and RRab entries.")
+
+    nrows = max(len(rrc_panels), len(rrab_panels))
+    fig, axes = plt.subplots(
+        nrows,
+        2,
+        figsize=(TEXTWIDTH_IN, 2.35 * nrows),
+        sharex=True,
+        squeeze=False,
+    )
+    # fig.subplots_adjust(hspace=0.28, wspace=0.18)
+
+    all_values = []
+    for panel in panels:
+        for key in ("mag_centered", "model_centered"):
+            values = np.asarray(panel[key], dtype=float)
+            finite = values[np.isfinite(values)]
+            if len(finite):
+                all_values.append(finite)
+    if len(all_values) == 0:
+        raise ValueError("No finite centered magnitudes are available for plotting.")
+
+    values = np.concatenate(all_values)
+    value_min = float(np.min(values))
+    value_max = float(np.max(values))
+    pad = max(0.05 * (value_max - value_min), 0.05)
+    y_limits = (value_min - pad, value_max + pad)
+
+    panel_columns = (
+        (rrc_panels, SECONDARY_COLOR, "RRc"),
+        (rrab_panels, PRIMARY_COLOR, "RRab"),
+    )
+    ylabel = r"$G - \langle G \rangle_{\rm Fourier}$"
+
+    for col, (panel_list, point_color, rr_class) in enumerate(panel_columns):
+        for row in range(nrows):
+            ax = axes[row, col]
+            if row >= len(panel_list):
+                ax.axis("off")
+                continue
+
+            panel = panel_list[row]
+            phase_data = np.asarray(panel["phase_data"], dtype=float)
+            mag_centered = np.asarray(panel["mag_centered"], dtype=float)
+            phase_grid = np.asarray(panel["phase_grid"], dtype=float)
+            model_centered = np.asarray(panel["model_centered"], dtype=float)
+            source_id = int(panel["source_id"])
+            best_K = int(panel["best_K"])
+            period = float(panel["period"])
+
+            ax.scatter(
+                phase_data,
+                mag_centered,
+                s=RRLYRAE_SCATTER_S,
+                alpha=RRLYRAE_POINT_ALPHA,
+                color=point_color,
+                rasterized=True,
+                label=rr_class if row == 0 else "_nolegend_",
+            )
+            ax.plot(
+                phase_grid,
+                model_centered,
+                color=NEUTRAL_COLOR,
+                lw=LW_STANDARD,
+                label="Fourier model" if row == 0 else "_nolegend_",
+            )
+            ax.set_xlim(0.0, 1.0)
+            ax.set_ylim(y_limits)
+            ax.invert_yaxis()
+            ax.set_ylabel(ylabel)
+            ax.set_title(
+                rf"Gaia DR3 {source_id}" + "\n" + rf"$K={best_K}$, $P={period:.4f}\,\mathrm{{d}}$"
+            )
+            if row == nrows - 1:
+                ax.set_xlabel("Phase")
+            _apply_grid(ax)
+
+        axes[0, col].legend(loc="best")
+
+    return axes
+
+
 def plot_fourier_cross_validation(
     Ks: np.ndarray,
     chi2r_train: np.ndarray,
@@ -945,7 +1119,7 @@ def plot_fourier_cross_validation(
         raise ValueError("best_K must be present in Ks.")
     cv_best = float(chi2r_cv[best_mask][0])
 
-    _, ax = _single_panel((6.0, 4.0))
+    _, ax = _single_panel(_textwidth_figsize(16 / 3))
     ax.plot(Ks[valid], chi2r_train[valid], marker="o", ms=MARKER_MS_FINE, lw=LW_STANDARD, alpha=ALPHA_GUIDE, label=r"Training $\chi_r^2$")
     ax.plot(Ks[valid], chi2r_cv[valid], marker="o", ms=MARKER_MS_FINE, lw=LW_STANDARD, alpha=ALPHA_GUIDE, label=r"Cross-validation $\chi_r^2$")
     ax.axhline(1.0, color=NEUTRAL_COLOR, ls="--", lw=LW_GUIDE, alpha=ALPHA_STANDARD, label=r"$\chi_r^2 = 1$")
@@ -973,7 +1147,7 @@ def plot_fourier_normalized_residual_histograms(
     low_K: int,
     best_K: int,
 ):
-    fig, axes = _grid_1x2(figsize=(TEXTWIDTH_IN, 0.30 * TEXTWIDTH_IN))
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(12 / 5))
     bins = np.linspace(-5.0, 5.0, 31)
     x_gauss = np.linspace(-5.0, 5.0, 400)
     gaussian = np.exp(-0.5 * x_gauss**2) / np.sqrt(2.0 * np.pi)
@@ -1019,7 +1193,7 @@ def plot_fourier_train_cv_phase_comparison(
     model_mag_best = np.asarray(model_mag_best, dtype=float)
     model_mag_high = np.asarray(model_mag_high, dtype=float)
 
-    fig, axes = _grid_1x2(figsize=(TEXTWIDTH_IN, 0.34 * TEXTWIDTH_IN))
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(68 / 25))
     all_mags = np.concatenate([train_mags[np.isfinite(train_mags)], cv_mags[np.isfinite(cv_mags)]])
     pad = 0.05 * (np.max(all_mags) - np.min(all_mags))
     y_limits = (np.max(all_mags) + pad, np.min(all_mags) - pad)
@@ -1030,9 +1204,25 @@ def plot_fourier_train_cv_phase_comparison(
     )
 
     for ax, model_mag, K in panels:
-        ax.scatter(train_phase, train_mags, s=RRLYRAE_SCATTER_S, alpha=0.25, color=PRIMARY_COLOR, rasterized=True, label="Training")
-        ax.scatter(cv_phase, cv_mags, s=RRLYRAE_SCATTER_S, alpha=0.35, color=QUATERNARY_COLOR, rasterized=True, label="CV")
-        ax.plot(phase_grid, model_mag, color=SECONDARY_COLOR, lw=LW_STANDARD, label=rf"Model ($K={K}$)")
+        ax.scatter(
+            train_phase,
+            train_mags,
+            s=RRLYRAE_SCATTER_S,
+            alpha=ALPHA_FAINT,
+            color=PRIMARY_COLOR,
+            rasterized=True,
+            label="Training",
+        )
+        ax.scatter(
+            cv_phase,
+            cv_mags,
+            s=RRLYRAE_SCATTER_S,
+            alpha=ALPHA_LIGHT,
+            color=SECONDARY_COLOR,
+            rasterized=True,
+            label="CV",
+        )
+        ax.plot(phase_grid, model_mag, color=NEUTRAL_COLOR, lw=LW_STANDARD, label="Model")
         ax.set_ylim(y_limits)
         ax.invert_yaxis()
         ax.set_xlabel("Phase")
@@ -1063,7 +1253,7 @@ def plot_fourier_extrapolation(
     observed_mask = epochs >= float(np.min(epoch_grid))
     model_observed = epoch_grid <= float(epoch_last)
 
-    _, ax = _single_panel((TEXTWIDTH_IN, 0.5 * TEXTWIDTH_IN))
+    _, ax = _single_panel(_textwidth_figsize(3))
     ax.errorbar(
         epochs[observed_mask],
         mags[observed_mask],
@@ -1144,7 +1334,7 @@ def plot_mean_g_catalog_comparison(
     fig, axes = plt.subplots(
         2,
         2,
-        figsize=(TEXTWIDTH_IN, 0.68 * TEXTWIDTH_IN),
+        figsize=_textwidth_figsize(111 / 25),
         sharex="col",
         gridspec_kw={"height_ratios": [4, 1], "hspace": 0.0},
     )
@@ -1161,8 +1351,8 @@ def plot_mean_g_catalog_comparison(
     ax_simple.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
     ax_simple.set_xlim(lims)
     ax_simple.set_ylim(lims)
-    ax_simple.set_ylabel(r"Part (3) $\langle G \rangle$ [mag]")
-    ax_simple.set_title("Direct flux-space mean vs Gaia catalog")
+    ax_simple.set_ylabel(r"$\langle G \rangle_{\rm epoch}$ [mag]")
+    ax_simple.set_title(r"$\langle G \rangle_{\rm epoch}$ vs Gaia $\mathtt{int\_average\_g}$")
     _apply_grid(ax_simple)
 
     ax_simple_resid.scatter(
@@ -1190,8 +1380,8 @@ def plot_mean_g_catalog_comparison(
     ax_fourier.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
     ax_fourier.set_xlim(lims)
     ax_fourier.set_ylim(lims)
-    ax_fourier.set_ylabel(r"Fourier $\langle G \rangle$ [mag]")
-    ax_fourier.set_title(rf"Fourier mean ($K={best_K}$) vs Gaia catalog")
+    ax_fourier.set_ylabel(r"$\langle G \rangle_{\rm Fourier}$ [mag]")
+    ax_fourier.set_title(rf"$\langle G \rangle_{{\rm Fourier}}$ ($K={best_K}$) vs Gaia $\mathtt{{int\_average\_g}}$")
     _apply_grid(ax_fourier)
 
     ax_fourier_resid.scatter(
@@ -1216,8 +1406,9 @@ def plot_inlier_prob_map(source, ax=None, title=None):
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(5 / 2))
 
+    periods = _plot_period_values(data)
     sc = ax.scatter(
-        data["period"],
+        periods,
         np.asarray(data["M_G"], dtype=float),
         c=np.asarray(data["inlier_prob"], dtype=float),
         cmap="RdYlGn",

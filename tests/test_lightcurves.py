@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import numpy as np
-from astropy.table import Table
+from astropy.table import MaskedColumn, Table
 
 from ugdatalab import (
     attach_flux_mean_magnitudes,
@@ -124,6 +124,29 @@ class LightcurveHelperTests(unittest.TestCase):
             with self.assertRaises(KeyError):
                 fetch_epoch_photometry([1, 2, 3])
 
+    def test_clean_epoch_photometry_returns_plain_numeric_columns(self):
+        raw = Table(
+            {
+                "source_id": MaskedColumn([1, 1, 1], mask=[False, False, False]),
+                "g_transit_time": MaskedColumn([0.2, 0.8, 1.1], mask=[False, False, True]),
+                "g_transit_mag": MaskedColumn([15.0, 15.1, 15.2], mask=[False, False, False]),
+                "g_transit_flux": MaskedColumn([1010.0, 1000.0, 995.0], mask=[False, False, False]),
+                "g_transit_flux_error": MaskedColumn([10.0, 10.0, 10.0], mask=[False, False, False]),
+            }
+        )
+
+        cleaned = join_catalog_with_epoch_photometry(
+            Table({"source_id": [1], "pf": [0.55]}),
+            raw,
+        )
+
+        self.assertEqual(len(cleaned), 2)
+        self.assertEqual(cleaned["source_id"].dtype.kind, "i")
+        self.assertEqual(cleaned["g_transit_time"].dtype.kind, "f")
+        self.assertEqual(cleaned["g_transit_mag"].dtype.kind, "f")
+        self.assertEqual(cleaned["g_transit_flux"].dtype.kind, "f")
+        self.assertEqual(cleaned["g_transit_flux_error"].dtype.kind, "f")
+
     def test_join_catalog_with_epoch_photometry_repeats_catalog_columns(self):
         catalog = Table(
             {
@@ -146,6 +169,33 @@ class LightcurveHelperTests(unittest.TestCase):
         self.assertEqual(len(joined), 3)
         np.testing.assert_allclose(joined["period"][joined["source_id"] == 1], [0.55, 0.55])
         np.testing.assert_allclose(joined["period"][joined["source_id"] == 2], [0.62])
+
+    def test_join_catalog_with_epoch_photometry_sanitizes_catalog_columns(self):
+        catalog = Table(
+            {
+                "source_id": [1, 2],
+                "pf": MaskedColumn([0.55, 0.0], mask=[False, True]),
+                "p1_o": MaskedColumn([0.0, 0.31], mask=[True, False]),
+            }
+        )
+        epochs = Table(
+            {
+                "source_id": [2, 1],
+                "g_transit_time": [0.5, 0.2],
+                "g_transit_mag": [16.0, 15.0],
+                "g_transit_flux": [900.0, 1010.0],
+                "g_transit_flux_error": [9.0, 10.0],
+            }
+        )
+
+        joined = join_catalog_with_epoch_photometry(catalog, epochs)
+
+        self.assertEqual(joined["pf"].dtype.kind, "f")
+        self.assertEqual(joined["p1_o"].dtype.kind, "f")
+        self.assertAlmostEqual(float(joined["pf"][joined["source_id"] == 1][0]), 0.55)
+        self.assertTrue(np.isnan(float(joined["pf"][joined["source_id"] == 2][0])))
+        self.assertTrue(np.isnan(float(joined["p1_o"][joined["source_id"] == 1][0])))
+        self.assertAlmostEqual(float(joined["p1_o"][joined["source_id"] == 2][0]), 0.31)
 
     def test_lomb_scargle_periodogram_recovers_known_period(self):
         true_period = 0.61
@@ -202,10 +252,11 @@ class LightcurveHelperTests(unittest.TestCase):
                 "g_transit_time": epochs,
                 "g_transit_mag": mags,
                 "g_transit_mag_err": np.full(len(epochs), 0.02),
+                "period_ls": np.full(len(epochs), period),
             }
         )
 
-        result = cross_validate_harmonics(target, period)
+        result = cross_validate_harmonics(target)
         k_values, chi2r_train, chi2r_cv, best_k, _, _ = result
         expected_k_values = tuple(range(1, 26))
 
