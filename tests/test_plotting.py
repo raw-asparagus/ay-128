@@ -15,10 +15,15 @@ from ugdatalab.plotting import (
     figure,
     figure_names,
     plot_corner,
+    plot_fourier_cross_validation,
     plot_fourier_harmonic_fits,
+    plot_fourier_extrapolation,
+    plot_fourier_normalized_residual_histograms,
+    plot_fourier_train_cv_phase_comparison,
     plot_hr,
     plot_inlier_prob_map,
     plot_lomb_scargle_periodogram,
+    plot_mean_g_catalog_comparison,
     plot_mollweide,
     plot_mollweide_diff,
     plot_period_abs_mag,
@@ -29,6 +34,7 @@ from ugdatalab.plotting import (
     plot_raw_phase_folded_lightcurve,
     plot_trace,
 )
+from ugdatalab.lightcurves import fourier_fit
 
 
 def _gaia_quality_table():
@@ -105,10 +111,10 @@ def _period_abs_mag_table():
 def _period_mean_g_table():
     return Table(
         {
-            "best_classification": ["RRab", "RRc"],
-            "best_period": [0.81, 0.93],
-            "mean_apparent_g": [15.2, 15.6],
-            "mean_apparent_g_err": [0.03, 0.04],
+            "best_classification": ["RRab", "RRc", "RRd"],
+            "best_period": [0.81, 0.93, 0.74],
+            "mean_apparent_g": [15.2, 15.6, 15.35],
+            "mean_apparent_g_err": [0.03, 0.04, 0.05],
         }
     )
 
@@ -124,6 +130,13 @@ def _vari_rrlyrae_period_table():
             "p1_o_error": [np.nan, np.nan, 0.01],
         }
     )
+
+
+def _cross_validation_series():
+    Ks = np.arange(1, 6, dtype=int)
+    chi2r_train = np.array([2.4, 1.4, 0.95, 0.82, 0.76], dtype=float)
+    chi2r_cv = np.array([2.6, 1.2, 0.88, 0.97, 1.15], dtype=float)
+    return Ks, chi2r_train, chi2r_cv
 
 
 def _sampler_view():
@@ -185,9 +198,9 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(len(axes), 2)
         for ax in axes:
             self.assertIsNotNone(ax)
-        self.assertTrue(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
-        self.assertEqual(axes[1].get_ylabel(), "")
-        self.assertFalse(any(label.get_visible() for label in axes[1].get_yticklabels()))
+        self.assertFalse(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
+        self.assertEqual(axes[1].get_ylabel(), "G")
+        self.assertTrue(any(label.get_visible() for label in axes[1].get_yticklabels()))
         self.assertEqual(axes[0].get_title(), "")
         self.assertEqual(axes[1].get_title(), "")
         self.assertEqual(axes[0].get_legend().texts[0].get_text(), "Raw light curve")
@@ -232,6 +245,103 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(axes[1, 1].get_xlabel(), "Phase")
         plt.close(axes[0, 0].figure)
 
+    def test_plot_fourier_cross_validation_returns_axis(self):
+        Ks, chi2r_train, chi2r_cv = _cross_validation_series()
+
+        ax = plot_fourier_cross_validation(Ks, chi2r_train, chi2r_cv, best_K=3, target_id=1, n_train=32, n_cv=8)
+
+        self.assertEqual(ax.get_yscale(), "log")
+        self.assertEqual(ax.get_xlabel(), r"$K$ (number of Fourier harmonics)")
+        self.assertEqual(ax.get_ylabel(), r"$\chi_r^2$")
+        self.assertTrue(any(len(line.get_xdata()) == 2 and np.allclose(line.get_xdata(), [3, 3]) for line in ax.lines))
+        self.assertTrue(any(len(line.get_ydata()) == 2 and np.allclose(line.get_ydata(), [0.88, 0.88]) for line in ax.lines))
+        plt.close(ax.figure)
+
+    def test_plot_fourier_normalized_residual_histograms_returns_two_axes(self):
+        axes = plot_fourier_normalized_residual_histograms(
+            train_norm_low=np.array([-1.6, -0.8, 0.2, 1.1]),
+            cv_norm_low=np.array([-1.9, -0.6, 0.5, 1.7]),
+            train_norm_best=np.array([-1.0, -0.2, 0.1, 0.9]),
+            cv_norm_best=np.array([-1.1, -0.4, 0.2, 1.0]),
+            low_K=1,
+            best_K=3,
+        )
+
+        self.assertEqual(len(axes), 2)
+        self.assertFalse(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
+        self.assertEqual(axes[0].get_ylabel(), "Density")
+        self.assertEqual(axes[1].get_ylabel(), "Density")
+        self.assertEqual(axes[0].get_xlabel(), r"$(G - G_{\rm model})/\sigma$")
+        self.assertEqual(axes[1].get_xlabel(), r"$(G - G_{\rm model})/\sigma$")
+        self.assertEqual(len(axes[0].get_legend().texts), 3)
+        plt.close(axes[0].figure)
+
+    def test_plot_fourier_train_cv_phase_comparison_returns_two_axes(self):
+        phase_grid = np.linspace(0.0, 1.0, 100, endpoint=False)
+        model_best = 15.0 + 0.2 * np.cos(2.0 * np.pi * phase_grid)
+        model_high = model_best + 0.04 * np.sin(10.0 * np.pi * phase_grid)
+
+        axes = plot_fourier_train_cv_phase_comparison(
+            train_phase=np.array([0.1, 0.3, 0.6, 0.8]),
+            train_mags=np.array([15.1, 14.9, 15.2, 15.0]),
+            cv_phase=np.array([0.2, 0.5, 0.7]),
+            cv_mags=np.array([15.0, 15.15, 15.05]),
+            phase_grid=phase_grid,
+            model_mag_best=model_best,
+            model_mag_high=model_high,
+            best_K=3,
+            high_K=5,
+        )
+
+        self.assertEqual(len(axes), 2)
+        self.assertEqual(axes[0].get_ylabel(), r"$G$ [mag]")
+        self.assertEqual(axes[0].get_xlabel(), "Phase")
+        self.assertEqual(axes[1].get_xlabel(), "Phase")
+        plt.close(axes[0].figure)
+
+    def test_plot_fourier_extrapolation_returns_axis(self):
+        target = _fourier_lightcurve_table()
+        fit = fourier_fit(target, period=0.5, k=2)
+        epoch_grid = np.linspace(9.8, 22.6, 100)
+        mag_grid = 15.05 + 0.1 * np.cos(2.0 * np.pi * (epoch_grid - 10.0) / 0.5)
+
+        ax = plot_fourier_extrapolation(
+            fit=fit,
+            epoch_grid=epoch_grid,
+            mag_grid=mag_grid,
+            epoch_pred=20.6,
+            mag_pred=15.02,
+            time_label="Time [d]",
+        )
+
+        self.assertEqual(ax.get_xlabel(), "Time [d]")
+        self.assertEqual(ax.get_ylabel(), r"$G$ [mag]")
+        self.assertEqual(len(ax.containers), 1)
+        plt.close(ax.figure)
+
+    def test_plot_mean_g_catalog_comparison_returns_grid_of_axes(self):
+        gaia_int_average_g = np.array([15.0, 15.2, 15.4], dtype=float)
+        simple_mean_g = np.array([15.02, 15.19, 15.46], dtype=float)
+        fourier_mean_g = np.array([15.01, 15.20, 15.41], dtype=float)
+        resid_simple = simple_mean_g - gaia_int_average_g
+        resid_fourier = fourier_mean_g - gaia_int_average_g
+
+        axes = plot_mean_g_catalog_comparison(
+            gaia_int_average_g=gaia_int_average_g,
+            simple_mean_g=simple_mean_g,
+            fourier_mean_g=fourier_mean_g,
+            resid_simple=resid_simple,
+            resid_fourier=resid_fourier,
+            best_K=3,
+        )
+
+        self.assertEqual(np.asarray(axes).shape, (2, 2))
+        self.assertEqual(axes[0, 0].get_ylabel(), r"Part (3) $\langle G \rangle$ [mag]")
+        self.assertEqual(axes[0, 1].get_ylabel(), r"Fourier $\langle G \rangle$ [mag]")
+        self.assertEqual(axes[1, 0].get_ylabel(), "Res.")
+        self.assertEqual(axes[1, 1].get_ylabel(), "Res.")
+        plt.close(axes[0, 0].figure)
+
     def test_plot_period_abs_mag_can_use_periodogram_columns(self):
         ax = plot_period_abs_mag(_period_abs_mag_table(), use_periodogram=True)
 
@@ -252,8 +362,19 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(ax.get_xscale(), "log")
         self.assertEqual(ax.get_xlabel(), r"$P$ [days]")
         self.assertEqual(ax.get_ylabel(), r"$\langle G \rangle$ [mag]")
-        self.assertEqual(len(ax.get_legend().texts), 2)
+        self.assertEqual(len(ax.get_legend().texts), 3)
         self.assertEqual(len(ax.containers), 1)
+        rrab_color = mpl.colors.to_rgba("C0", alpha=0.55)
+        rrd_color = mpl.colors.to_rgba("C1", alpha=0.55)
+        scatter_collections = [
+            c
+            for c in ax.collections
+            if hasattr(c, "get_offsets")
+            and len(c.get_offsets()) == 1
+            and len(c.get_facecolors()) == 1
+        ]
+        np.testing.assert_allclose(scatter_collections[0].get_facecolors()[0], rrab_color)
+        np.testing.assert_allclose(scatter_collections[2].get_facecolors()[0], rrd_color)
         plt.close(ax.figure)
 
     def test_plot_vari_rrlyrae_period_comparison_returns_two_axes(self):
@@ -284,11 +405,11 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(len(axes), 2)
         self.assertEqual(
             axes[0].get_xlabel(),
-            r"Catalog fundamental period $P_{\rm F}$ [days]",
+            r"\texttt{vari\_rrlyrae} fundamental period $P_{\rm F}$ [days]",
         )
         self.assertEqual(
             axes[1].get_xlabel(),
-            r"Catalog first-overtone period $P_{1\rm O}$ [days]",
+            r"\texttt{vari\_rrlyrae} first-overtone period $P_{1\rm O}$ [days]",
         )
         self.assertEqual(axes[0].get_ylabel(), r"L-S period $P_{\rm LS}$ [days]")
         self.assertEqual(axes[1].get_ylabel(), r"L-S period $P_{\rm LS}$ [days]")
@@ -301,6 +422,25 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(len(axes[1].containers), 1)
         self.assertEqual(len(axes[0].get_legend().texts), 4)
         self.assertEqual(len(axes[1].get_legend().texts), 1)
+        rrab_color = mpl.colors.to_rgba("C0", alpha=0.55)
+        rrd_color = mpl.colors.to_rgba("C1", alpha=0.55)
+        left_scatters = [
+            c
+            for c in axes[0].collections
+            if hasattr(c, "get_offsets")
+            and len(c.get_offsets()) == 1
+            and len(c.get_facecolors()) == 1
+        ]
+        right_scatters = [
+            c
+            for c in axes[1].collections
+            if hasattr(c, "get_offsets")
+            and len(c.get_offsets()) == 1
+            and len(c.get_facecolors()) == 1
+        ]
+        np.testing.assert_allclose(left_scatters[0].get_facecolors()[0], rrab_color)
+        np.testing.assert_allclose(left_scatters[1].get_facecolors()[0], rrd_color)
+        np.testing.assert_allclose(right_scatters[0].get_facecolors()[0], rrd_color)
         plt.close(axes[0].figure)
 
     def test_mcmc_plot_helpers_return_axes(self):

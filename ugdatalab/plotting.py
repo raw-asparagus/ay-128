@@ -221,6 +221,17 @@ def _default_scatter_kwargs(**kwargs):
     return kwargs
 
 
+def _rrlyrae_class_color(label: str, fallback_index: int = 0) -> str:
+    class_colors = {
+        "RRab": PRIMARY_COLOR,
+        "RRd": SECONDARY_COLOR,
+        "RRc": TERTIARY_COLOR,
+    }
+    if label in class_colors:
+        return class_colors[label]
+    return COMPONENT_COLORS[fallback_index % len(COMPONENT_COLORS)]
+
+
 def figure(result, name: str):
     return result.figures[name]
 
@@ -356,7 +367,7 @@ def plot_lomb_scargle_periodogram(data: Table, classification: str):
     ax.set_ylabel("Lomb-Scargle power")
     source_id = int(np.asarray(data["source_id"], dtype=np.int64)[0])
     ax.set_title(
-        _escape_latex_text(f"Lomb-Scargle periodogram for source {source_id} ({classification})"),
+        _escape_latex_text(f"Lomb-Scargle periodogram for\nGaia DR3 {source_id} ({classification})"),
         fontsize=EMPHASIS_SIZE,
     )
     ax.legend()
@@ -484,25 +495,12 @@ def plot_period_mean_g(data: Table, classifications: np.ndarray):
         zorder=1,
     )
 
-    primary_colors = (
-        PRIMARY_COLOR,
-        SECONDARY_COLOR,
-        TERTIARY_COLOR,
-        QUATERNARY_COLOR,
-        QUINARY_COLOR,
-        SENARY_COLOR,
-        SEPTENARY_COLOR,
-        NEUTRAL_COLOR,
-        LIGHT_NEUTRAL_COLOR,
-        NONARY_COLOR,
-    )
-
     for i, label in enumerate(np.unique(classifications[finite])):
         mask = finite & (classifications == label)
         ax.scatter(
             periods[mask],
             mean_g[mask],
-            color=primary_colors[i % len(primary_colors)],
+            color=_rrlyrae_class_color(label, i),
             label=label,
             zorder=2,
             s=RRLYRAE_SCATTER_S,
@@ -514,10 +512,6 @@ def plot_period_mean_g(data: Table, classifications: np.ndarray):
     ax.invert_yaxis()
     ax.set_xlabel(r"$P$ [days]")
     ax.set_ylabel(r"$\langle G \rangle$ [mag]")
-    ax.set_title(
-        rf"L-S periods and $\langle G \rangle$ ({len(data)} RR Lyrae)",
-        fontsize=EMPHASIS_SIZE,
-    )
     ax.autoscale_view()
     ax.legend()
     _apply_grid(ax)
@@ -563,7 +557,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray
     unique_classes = np.unique(classifications[finite_fundamental])
     rr_d_color = PRIMARY_COLOR
     for i, label in enumerate(unique_classes):
-        color = COMPONENT_COLORS[i % len(COMPONENT_COLORS)]
+        color = _rrlyrae_class_color(label, i)
         mask = finite_fundamental & (classifications == label)
         if fundamental_period_err is not None:
             finite_err = mask & np.isfinite(fundamental_period_err)
@@ -618,7 +612,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray
             zorder=1,
         )
 
-    ax_fundamental.set_xlabel(r"Catalog fundamental period $P_{\rm F}$ [days]")
+    ax_fundamental.set_xlabel(r"\texttt{vari\_rrlyrae} fundamental period $P_{\rm F}$ [days]")
     ax_fundamental.set_ylabel(r"L-S period $P_{\rm LS}$ [days]")
     ax_fundamental.set_xlim(lo, hi)
     ax_fundamental.set_ylim(lo, hi)
@@ -675,7 +669,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table, classifications: np.ndarray
             transform=ax_first_overtone.transAxes,
         )
 
-    ax_first_overtone.set_xlabel(r"Catalog first-overtone period $P_{1\rm O}$ [days]")
+    ax_first_overtone.set_xlabel(r"\texttt{vari\_rrlyrae} first-overtone period $P_{1\rm O}$ [days]")
     ax_first_overtone.set_ylabel(r"L-S period $P_{\rm LS}$ [days]")
     ax_first_overtone.set_title(r"L-S periods vs. \texttt{vari\_rrlyrae} first-overtone periods (RRd only)")
     _apply_grid(ax_first_overtone)
@@ -726,7 +720,7 @@ def plot_raw_phase_folded_lightcurve(data: Table, classification: str, period: f
     mag = np.asarray(data["g_transit_mag"], dtype=float)
     phase = (epoch % period) / period
 
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(84 / 25), sharey=True)
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(84 / 25))
 
     mag_err = None
     if "g_transit_mag_err" in data.colnames:
@@ -785,7 +779,7 @@ def plot_raw_phase_folded_lightcurve(data: Table, classification: str, period: f
     )
     axes[1].invert_yaxis()
     axes[1].set_xlabel("Phase")
-    axes[1].tick_params(axis="y", left=False, labelleft=False)
+    axes[1].set_ylabel(mag_label)
     axes[1].legend(loc="best")
     _apply_grid(axes[1])
 
@@ -794,7 +788,7 @@ def plot_raw_phase_folded_lightcurve(data: Table, classification: str, period: f
 
     source_id = int(np.asarray(data["source_id"], dtype=np.int64)[0])
     fig.suptitle(
-        _escape_latex_text(f"Lightcurves for source {source_id} ({classification})"),
+        _escape_latex_text(f"Lightcurves for Gaia DR3 {source_id} ({classification})"),
         fontsize=EMPHASIS_SIZE,
     )
     return axes
@@ -841,9 +835,8 @@ def plot_fourier_harmonic_fits(
     fig, outer_grid = _grid_nx1(
         len(K_values),
         figsize=(TEXTWIDTH_IN, 2.5 * len(K_values)),
-        hspace=0.26,
+        hspace=0.36,
     )
-    fig.set_dpi(300)
     axes = np.empty((len(K_values), 2), dtype=object)
     first_curve_ax = None
     for i in range(len(K_values)):
@@ -928,10 +921,293 @@ def plot_fourier_harmonic_fits(
             for ax_resid in axes[:, 1]:
                 ax_resid.set_ylim(-resid_max, resid_max)
 
-    source_id = int(np.asarray(data["source_id"], dtype=np.int64)[0])
-    title = rf"Fourier-series fits for Gaia DR3 {source_id} ({classification}, $P={period:.4f}\,\mathrm{{d}}$)"
-    fig.suptitle(_escape_latex_text(title), y=0.998, fontsize=EMPHASIS_SIZE)
-    fig.subplots_adjust(top=0.985)
+    return axes
+
+
+def plot_fourier_cross_validation(
+    Ks: np.ndarray,
+    chi2r_train: np.ndarray,
+    chi2r_cv: np.ndarray,
+    best_K: int,
+    target_id: int,
+    n_train: int,
+    n_cv: int,
+):
+    Ks = np.asarray(Ks, dtype=int)
+    chi2r_train = np.asarray(chi2r_train, dtype=float)
+    chi2r_cv = np.asarray(chi2r_cv, dtype=float)
+    valid = np.isfinite(chi2r_train) & np.isfinite(chi2r_cv)
+    if not np.any(valid):
+        raise ValueError("No finite cross-validation values are available for plotting.")
+
+    best_mask = Ks == int(best_K)
+    if not np.any(best_mask):
+        raise ValueError("best_K must be present in Ks.")
+    cv_best = float(chi2r_cv[best_mask][0])
+
+    _, ax = _single_panel((6.0, 4.0))
+    ax.plot(Ks[valid], chi2r_train[valid], marker="o", ms=MARKER_MS_FINE, lw=LW_STANDARD, alpha=ALPHA_GUIDE, label=r"Training $\chi_r^2$")
+    ax.plot(Ks[valid], chi2r_cv[valid], marker="o", ms=MARKER_MS_FINE, lw=LW_STANDARD, alpha=ALPHA_GUIDE, label=r"Cross-validation $\chi_r^2$")
+    ax.axhline(1.0, color=NEUTRAL_COLOR, ls="--", lw=LW_GUIDE, alpha=ALPHA_STANDARD, label=r"$\chi_r^2 = 1$")
+    ax.axvline(best_K, color=TERTIARY_COLOR, ls=":", lw=LW_LIGHT, alpha=ALPHA_GUIDE, label=rf"Best $K={best_K}$")
+    ax.axhline(cv_best, color=TERTIARY_COLOR, ls=":", lw=LW_LIGHT, alpha=ALPHA_GUIDE, label=rf"Best CV $\chi_r^2={cv_best:.3f}$")
+    ax.set_yscale("log")
+    ax.set_xlabel(r"$K$ (number of Fourier harmonics)")
+    ax.set_ylabel(r"$\chi_r^2$")
+    ax.set_title(
+        _escape_latex_text(
+            f"Cross-validation for Gaia DR3 {target_id}\n20% CV, train={n_train} points, CV={n_cv} points"
+        ),
+        fontsize=EMPHASIS_SIZE,
+    )
+    ax.legend(loc="lower center")
+    _apply_grid(ax)
+    return ax
+
+
+def plot_fourier_normalized_residual_histograms(
+    train_norm_low: np.ndarray,
+    cv_norm_low: np.ndarray,
+    train_norm_best: np.ndarray,
+    cv_norm_best: np.ndarray,
+    low_K: int,
+    best_K: int,
+):
+    fig, axes = _grid_1x2(figsize=(TEXTWIDTH_IN, 0.30 * TEXTWIDTH_IN))
+    bins = np.linspace(-5.0, 5.0, 31)
+    x_gauss = np.linspace(-5.0, 5.0, 400)
+    gaussian = np.exp(-0.5 * x_gauss**2) / np.sqrt(2.0 * np.pi)
+
+    panels = (
+        (axes[0], np.asarray(train_norm_low, dtype=float), np.asarray(cv_norm_low, dtype=float), rf"Low $K={low_K}$"),
+        (axes[1], np.asarray(train_norm_best, dtype=float), np.asarray(cv_norm_best, dtype=float), rf"Best $K={best_K}$"),
+    )
+
+    for ax, train_norm, cv_norm, label in panels:
+        train_norm = train_norm[np.isfinite(train_norm)]
+        cv_norm = cv_norm[np.isfinite(cv_norm)]
+        ax.hist(train_norm, bins=bins, histtype="step", density=True, color=PRIMARY_COLOR, lw=LW_MEDIUM, label="Training")
+        ax.hist(cv_norm, bins=bins, histtype="step", density=True, color=SECONDARY_COLOR, lw=LW_MEDIUM, label="CV")
+        ax.plot(x_gauss, gaussian, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD, label=r"$\mathcal{N}(0,1)$")
+        ax.axvline(0.0, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD)
+        ax.set_title(label)
+        ax.set_xlabel(r"$(G - G_{\rm model})/\sigma$")
+        _apply_grid(ax)
+
+    axes[0].set_ylabel("Density")
+    axes[1].set_ylabel("Density")
+    axes[0].legend(loc="best")
+    return axes
+
+
+def plot_fourier_train_cv_phase_comparison(
+    train_phase: np.ndarray,
+    train_mags: np.ndarray,
+    cv_phase: np.ndarray,
+    cv_mags: np.ndarray,
+    phase_grid: np.ndarray,
+    model_mag_best: np.ndarray,
+    model_mag_high: np.ndarray,
+    best_K: int,
+    high_K: int,
+):
+    train_phase = np.asarray(train_phase, dtype=float)
+    train_mags = np.asarray(train_mags, dtype=float)
+    cv_phase = np.asarray(cv_phase, dtype=float)
+    cv_mags = np.asarray(cv_mags, dtype=float)
+    phase_grid = np.asarray(phase_grid, dtype=float)
+    model_mag_best = np.asarray(model_mag_best, dtype=float)
+    model_mag_high = np.asarray(model_mag_high, dtype=float)
+
+    fig, axes = _grid_1x2(figsize=(TEXTWIDTH_IN, 0.34 * TEXTWIDTH_IN))
+    all_mags = np.concatenate([train_mags[np.isfinite(train_mags)], cv_mags[np.isfinite(cv_mags)]])
+    pad = 0.05 * (np.max(all_mags) - np.min(all_mags))
+    y_limits = (np.max(all_mags) + pad, np.min(all_mags) - pad)
+
+    panels = (
+        (axes[0], model_mag_best, best_K),
+        (axes[1], model_mag_high, high_K),
+    )
+
+    for ax, model_mag, K in panels:
+        ax.scatter(train_phase, train_mags, s=RRLYRAE_SCATTER_S, alpha=0.25, color=PRIMARY_COLOR, rasterized=True, label="Training")
+        ax.scatter(cv_phase, cv_mags, s=RRLYRAE_SCATTER_S, alpha=0.35, color=QUATERNARY_COLOR, rasterized=True, label="CV")
+        ax.plot(phase_grid, model_mag, color=SECONDARY_COLOR, lw=LW_STANDARD, label=rf"Model ($K={K}$)")
+        ax.set_ylim(y_limits)
+        ax.invert_yaxis()
+        ax.set_xlabel("Phase")
+        ax.set_title(rf"Phase-folded fit with $K={K}$")
+        _apply_grid(ax)
+
+    axes[0].set_ylabel(r"$G$ [mag]")
+    axes[1].set_ylabel(r"$G$ [mag]")
+    axes[0].legend(loc="best")
+    return axes
+
+
+def plot_fourier_extrapolation(
+    fit,
+    epoch_grid: np.ndarray,
+    mag_grid: np.ndarray,
+    epoch_pred: float,
+    mag_pred: float,
+    time_label: str,
+):
+    epochs = np.asarray(fit.epochs, dtype=float)
+    mags = np.asarray(fit.mags, dtype=float)
+    mag_errs = np.asarray(fit.mag_errs, dtype=float)
+    epoch_grid = np.asarray(epoch_grid, dtype=float)
+    mag_grid = np.asarray(mag_grid, dtype=float)
+    epoch_last = float(np.max(epochs))
+
+    observed_mask = epochs >= float(np.min(epoch_grid))
+    model_observed = epoch_grid <= float(epoch_last)
+
+    _, ax = _single_panel((TEXTWIDTH_IN, 0.5 * TEXTWIDTH_IN))
+    ax.errorbar(
+        epochs[observed_mask],
+        mags[observed_mask],
+        yerr=mag_errs[observed_mask],
+        fmt="o",
+        ms=RRLYRAE_MARKER_MS,
+        elinewidth=LW_FINE,
+        color=PRIMARY_COLOR,
+        alpha=RRLYRAE_POINT_ALPHA,
+        label="Gaia data",
+    )
+    ax.plot(
+        epoch_grid[model_observed],
+        mag_grid[model_observed],
+        color=SECONDARY_COLOR,
+        lw=LW_STANDARD,
+        label=rf"Fourier fit ($K={fit.K}$)",
+    )
+    ax.plot(
+        epoch_grid[~model_observed],
+        mag_grid[~model_observed],
+        color=SECONDARY_COLOR,
+        lw=LW_STANDARD,
+        ls="--",
+        label="12-day extrapolation",
+    )
+    ax.axvline(epoch_last, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD, alpha=ALPHA_GUIDE)
+    ax.plot(
+        epoch_pred,
+        mag_pred,
+        marker="*",
+        ms=MARKER_MS_STANDARD,
+        color="k",
+        lw=LW_NONE,
+        label=rf"10-day prediction: $G={mag_pred:.3f}$",
+    )
+    ax.invert_yaxis()
+    ax.set_xlim(float(np.min(epoch_grid)), float(np.max(epoch_grid)))
+    ax.set_xlabel(time_label)
+    ax.set_ylabel(r"$G$ [mag]")
+    title = rf"Fourier extrapolation for Gaia DR3 {fit.source_id} ($K={fit.K}$, $P={fit.period:.4f}\,\mathrm{{d}}$)"
+    ax.set_title(title, fontsize=EMPHASIS_SIZE)
+    ax.legend(loc="upper left")
+    _apply_grid(ax)
+    return ax
+
+
+def plot_mean_g_catalog_comparison(
+    gaia_int_average_g: np.ndarray,
+    simple_mean_g: np.ndarray,
+    fourier_mean_g: np.ndarray,
+    resid_simple: np.ndarray,
+    resid_fourier: np.ndarray,
+    best_K: int,
+):
+    gaia_int_average_g = np.asarray(gaia_int_average_g, dtype=float)
+    simple_mean_g = np.asarray(simple_mean_g, dtype=float)
+    fourier_mean_g = np.asarray(fourier_mean_g, dtype=float)
+    resid_simple = np.asarray(resid_simple, dtype=float)
+    resid_fourier = np.asarray(resid_fourier, dtype=float)
+
+    simple_valid = np.isfinite(simple_mean_g) & np.isfinite(gaia_int_average_g) & np.isfinite(resid_simple)
+    fourier_valid = np.isfinite(fourier_mean_g) & np.isfinite(gaia_int_average_g) & np.isfinite(resid_fourier)
+    all_values = np.concatenate(
+        [
+            simple_mean_g[simple_valid],
+            fourier_mean_g[fourier_valid],
+            gaia_int_average_g[simple_valid],
+            gaia_int_average_g[fourier_valid],
+        ]
+    )
+    pad = 0.05 * (np.max(all_values) - np.min(all_values))
+    lims = np.array([np.min(all_values) - pad, np.max(all_values) + pad])
+    resid_max = 1.1 * np.nanmax(
+        np.abs(np.concatenate([resid_simple[simple_valid], resid_fourier[fourier_valid]]))
+    )
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(TEXTWIDTH_IN, 0.68 * TEXTWIDTH_IN),
+        sharex="col",
+        gridspec_kw={"height_ratios": [4, 1], "hspace": 0.0},
+    )
+    (ax_simple, ax_fourier), (ax_simple_resid, ax_fourier_resid) = axes
+
+    ax_simple.scatter(
+        gaia_int_average_g[simple_valid],
+        simple_mean_g[simple_valid],
+        s=RRLYRAE_SCATTER_S,
+        alpha=RRLYRAE_POINT_ALPHA,
+        color=PRIMARY_COLOR,
+        rasterized=True,
+    )
+    ax_simple.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
+    ax_simple.set_xlim(lims)
+    ax_simple.set_ylim(lims)
+    ax_simple.set_ylabel(r"Part (3) $\langle G \rangle$ [mag]")
+    ax_simple.set_title("Direct flux-space mean vs Gaia catalog")
+    _apply_grid(ax_simple)
+
+    ax_simple_resid.scatter(
+        gaia_int_average_g[simple_valid],
+        resid_simple[simple_valid],
+        s=RRLYRAE_SCATTER_S,
+        alpha=RRLYRAE_POINT_ALPHA,
+        color=PRIMARY_COLOR,
+        rasterized=True,
+    )
+    ax_simple_resid.axhline(0.0, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
+    ax_simple_resid.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
+    ax_simple_resid.set_ylabel("Res.")
+    ax_simple_resid.set_ylim(-resid_max, resid_max)
+    _apply_grid(ax_simple_resid)
+
+    ax_fourier.scatter(
+        gaia_int_average_g[fourier_valid],
+        fourier_mean_g[fourier_valid],
+        s=RRLYRAE_SCATTER_S,
+        alpha=RRLYRAE_POINT_ALPHA,
+        color=SECONDARY_COLOR,
+        rasterized=True,
+    )
+    ax_fourier.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
+    ax_fourier.set_xlim(lims)
+    ax_fourier.set_ylim(lims)
+    ax_fourier.set_ylabel(r"Fourier $\langle G \rangle$ [mag]")
+    ax_fourier.set_title(rf"Fourier mean ($K={best_K}$) vs Gaia catalog")
+    _apply_grid(ax_fourier)
+
+    ax_fourier_resid.scatter(
+        gaia_int_average_g[fourier_valid],
+        resid_fourier[fourier_valid],
+        s=RRLYRAE_SCATTER_S,
+        alpha=RRLYRAE_POINT_ALPHA,
+        color=SECONDARY_COLOR,
+        rasterized=True,
+    )
+    ax_fourier_resid.axhline(0.0, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
+    ax_fourier_resid.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
+    ax_fourier_resid.set_ylabel("Res.")
+    ax_fourier_resid.set_ylim(-resid_max, resid_max)
+    _apply_grid(ax_fourier_resid)
+
     return axes
 
 

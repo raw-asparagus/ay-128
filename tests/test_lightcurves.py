@@ -178,6 +178,7 @@ class LightcurveHelperTests(unittest.TestCase):
         )
         target = Table(
             {
+                "source_id": np.ones(len(epochs), dtype=int),
                 "g_transit_time": epochs,
                 "g_transit_mag": mags,
                 "g_transit_mag_err": np.full(len(epochs), 0.02),
@@ -197,6 +198,7 @@ class LightcurveHelperTests(unittest.TestCase):
         mags = mags + rng.normal(0.0, 0.02, size=len(mags))
         target = Table(
             {
+                "source_id": np.ones(len(epochs), dtype=int),
                 "g_transit_time": epochs,
                 "g_transit_mag": mags,
                 "g_transit_mag_err": np.full(len(epochs), 0.02),

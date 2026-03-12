@@ -29,6 +29,7 @@ class FourierHelperTests(unittest.TestCase):
         self.mags = self.true_model + rng.normal(0.0, self.mag_err[0], size=len(self.times))
         self.target = Table(
             {
+                "source_id": np.ones(len(self.times), dtype=int),
                 "g_transit_time": self.times,
                 "g_transit_mag": self.mags,
                 "g_transit_mag_err": self.mag_err,

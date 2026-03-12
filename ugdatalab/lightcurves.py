@@ -164,8 +164,8 @@ def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarra
     value_err = _as_float_array(target["g_transit_flux_error"])
 
     freqs, power = LombScargle(epoch, values, value_err).autopower(
-        minimum_frequency=1.0 / float(DEFAULT_PERIOD_MAX),
-        maximum_frequency=1.0 / float(DEFAULT_PERIOD_MIN),
+        minimum_frequency=1.0 / DEFAULT_PERIOD_MAX,
+        maximum_frequency=1.0 / DEFAULT_PERIOD_MIN,
     )
 
     periods = 1.0 / np.asarray(freqs, dtype=float)
@@ -173,13 +173,13 @@ def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarra
     order = np.argsort(power)[::-1]
     periods = periods[order]
     power = power[order]
-    max_power = float(np.max(power))
+    max_power = np.max(power)
     near_max = np.where(power >= 0.98 * max_power)[0]
     if len(near_max) == 0:
-        best_period = float(periods[int(np.argmax(power))])
+        best_period = periods[int(np.argmax(power))]
     else:
-        best_period = float(periods[int(near_max[np.argmax(periods[near_max])])])
-    return periods, power, best_period
+        best_period = periods[int(near_max[np.argmax(periods[near_max])])]
+    return periods, power, float(best_period)
 
 
 def estimate_periods_from_epoch_photometry(data: table.Table) -> tuple[np.ndarray, np.ndarray]:
@@ -198,13 +198,13 @@ def estimate_periods_from_epoch_photometry(data: table.Table) -> tuple[np.ndarra
 def phase_fold(epoch: np.ndarray, period: float) -> np.ndarray:
     """Map times to phase in [0, 1)."""
     epoch = np.asarray(epoch, dtype=float)
-    return (epoch % float(period)) / float(period)
+    return (epoch % period) / period
 
 
 def build_fourier_matrix(epoch: Iterable[float], omega: float, k: int) -> np.ndarray:
     """Build the design matrix X for a Fourier series with known angular frequency."""
     epochs = np.asarray(epoch, dtype=float)
-    period = 2.0 * np.pi / float(omega)
+    period = 2.0 * np.pi / omega
     epochs_mod = epochs % period
 
     X = np.ones((len(epochs_mod), 2 * k + 1), dtype=float)
@@ -215,12 +215,13 @@ def build_fourier_matrix(epoch: Iterable[float], omega: float, k: int) -> np.nda
 
 
 def _fourier_predict(epoch_eval: Iterable[float], period: float, k: int, beta: np.ndarray) -> np.ndarray:
-    omega = 2.0 * np.pi / float(period)
+    omega = 2.0 * np.pi / period
     return build_fourier_matrix(epoch_eval, omega, k) @ np.asarray(beta, dtype=float)
 
 
 @dataclass(frozen=True)
-class _FourierFit:
+class FourierFit:
+    source_id: int
     period: float
     K: int
     epochs: np.ndarray
@@ -233,21 +234,17 @@ class _FourierFit:
         return _fourier_predict(epoch_eval, self.period, self.K, self.beta)
 
 
-def fourier_fit(target: table.Table, period: float, k: int) -> _FourierFit:
+def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
     """Fit a weighted Fourier series to one light curve with a fixed period."""
+    source_id = int(np.asarray(target["source_id"], dtype=np.int64)[0])
     epochs = _as_float_array(target["g_transit_time"])
     mags = _as_float_array(target["g_transit_mag"])
     mag_errs = _as_float_array(target["g_transit_mag_err"])
-    valid = np.isfinite(epochs) & np.isfinite(mags) & np.isfinite(mag_errs) & (mag_errs > 0)
-
-    epochs = epochs[valid]
-    mags = mags[valid]
-    mag_errs = mag_errs[valid]
 
     if len(epochs) <= 2 * k + 1:
         raise ValueError("Not enough epochs for the requested number of Fourier harmonics.")
 
-    omega = 2.0 * np.pi / float(period)
+    omega = 2.0 * np.pi / period
     X = build_fourier_matrix(epochs, omega, k)
     weights = 1.0 / mag_errs
     beta, _, _, _ = np.linalg.lstsq(X * weights[:, None], mags * weights, rcond=None)
@@ -257,7 +254,8 @@ def fourier_fit(target: table.Table, period: float, k: int) -> _FourierFit:
     chi2_r = float(np.sum((resid / mag_errs) ** 2) / nu)
     period = float(period)
 
-    return _FourierFit(
+    return FourierFit(
+        source_id=source_id,
         period=period,
         K=k,
         epochs=epochs,
@@ -272,18 +270,12 @@ def cross_validate_harmonics(target: table.Table, period: float) -> tuple[np.nda
     """Cross-validate the harmonic order of a fixed-period Fourier model."""
     Ks = np.arange(1, 26, dtype=int)
     epochs = _as_float_array(target["g_transit_time"])
-    mags = _as_float_array(target["g_transit_mag"])
-    mag_errs = _as_float_array(target["g_transit_mag_err"])
-    valid = np.isfinite(epochs) & np.isfinite(mags) & np.isfinite(mag_errs) & (mag_errs > 0)
-    clean = target[valid]
 
     rng = np.random.default_rng(42)
-    idx = rng.permutation(len(clean))
-    n_cv = max(1, int(round(0.2 * len(clean))))
+    idx = rng.permutation(len(epochs))
+    n_cv = max(1, int(round(0.2 * len(epochs))))
     cv_idx = idx[:n_cv]
     train_idx = idx[n_cv:]
-    if len(train_idx) == 0:
-        raise ValueError("Cross-validation split left no training data.")
 
     chi2r_train = np.full(len(Ks), np.nan, dtype=float)
     chi2r_cv = np.full(len(Ks), np.nan, dtype=float)
@@ -291,17 +283,14 @@ def cross_validate_harmonics(target: table.Table, period: float) -> tuple[np.nda
     for i, K in enumerate(Ks):
         if len(train_idx) <= 2 * K + 1:
             continue
-        fit = fourier_fit(clean[train_idx], period, K)
+        fit = fourier_fit(target[train_idx], period, K)
         chi2r_train[i] = fit.chi2_r
 
-        cv_epochs = _as_float_array(clean[cv_idx]["g_transit_time"])
-        cv_mags = _as_float_array(clean[cv_idx]["g_transit_mag"])
-        cv_mag_errs = _as_float_array(clean[cv_idx]["g_transit_mag_err"])
+        cv_epochs = _as_float_array(target[cv_idx]["g_transit_time"])
+        cv_mags = _as_float_array(target[cv_idx]["g_transit_mag"])
+        cv_mag_errs = _as_float_array(target[cv_idx]["g_transit_mag_err"])
         resid_cv = cv_mags - fit.predict(cv_epochs)
         chi2r_cv[i] = float(np.sum((resid_cv / cv_mag_errs) ** 2) / len(cv_idx))
-
-    if not np.isfinite(chi2r_cv).any():
-        raise ValueError("No valid harmonic orders for cross-validation.")
 
     best_k = Ks[int(np.nanargmin(chi2r_cv))]
     return (
@@ -314,7 +303,7 @@ def cross_validate_harmonics(target: table.Table, period: float) -> tuple[np.nda
     )
 
 
-def predict_future_magnitude(fit: _FourierFit) -> tuple[float, float]:
+def predict_future_magnitude(fit: FourierFit) -> tuple[float, float]:
     """Predict the magnitude a fixed number of days after the last observed epoch."""
     epoch_last = float(np.max(fit.epochs))
     epoch_pred = epoch_last + 10.0
@@ -322,8 +311,8 @@ def predict_future_magnitude(fit: _FourierFit) -> tuple[float, float]:
     return epoch_pred, mag_pred
 
 
-def fourier_mean_magnitude(fit: _FourierFit) -> float:
+def fourier_mean_magnitude(fit: FourierFit) -> float:
     """Compute the flux-space mean magnitude implied by a fitted Fourier model."""
     epoch_grid = np.linspace(0.0, fit.period, 1000, endpoint=False)
-    flux_grid = 10.0 ** (-0.4 * (fit.predict(epoch_grid) - float(ZP_G)))
-    return float(-2.5 * np.log10(np.mean(flux_grid)) + float(ZP_G))
+    flux_grid = 10.0 ** (-0.4 * (fit.predict(epoch_grid) - ZP_G))
+    return -2.5 * np.log10(np.mean(flux_grid)) + ZP_G
