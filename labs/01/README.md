@@ -52,7 +52,7 @@
 - Light-curve download and period finding:
   `build_rrlyrae_top_n_query(...)`, `get_epoch_photometry(...)`, `join_catalog_with_epoch_photometry(...)`, and `lomb_scargle_periodogram(...)`.
 - Fourier modeling:
-  `fourier_fit(...)`, `cross_validate_harmonics(...)`, `predict_future_magnitude(...)`, and `estimate_fourier_mean_magnitudes(...)`.
+  `fourier_fit(...)`, `cross_validate_harmonics(...)`, `predict_future_magnitude(...)`, and `fourier_mean_magnitude(...)`.
 - Outlier rejection:
   `MixtureContaminationModel(rrlyrae)`.
 - Period-luminosity calibration:

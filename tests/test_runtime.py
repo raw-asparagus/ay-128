@@ -1,5 +1,6 @@
 import importlib
 import os
+import sys
 import tempfile
 import unittest
 import uuid
@@ -50,6 +51,17 @@ class PackageSmokeTests(unittest.TestCase):
         self.assertTrue(hasattr(module, "plot_raw_phase_folded_lightcurve"))
         self.assertTrue(hasattr(module, "plot_corner"))
         self.assertTrue(hasattr(module, "attach_periodogram_periods"))
+
+    def test_fourier_module_import_emits_deprecation_warning(self):
+        sys.modules.pop("ugdatalab.fourier", None)
+
+        with self.assertWarnsRegex(
+            DeprecationWarning,
+            r"ugdatalab\.fourier is deprecated; import Fourier helpers from ugdatalab\.lightcurves instead\.",
+        ):
+            module = importlib.import_module("ugdatalab.fourier")
+
+        self.assertTrue(hasattr(module, "fourier_fit"))
 
     def test_plot_corner_works(self):
         from ugdatalab import MetropolisHastings, plot_corner

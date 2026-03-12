@@ -11,7 +11,6 @@ from ugdatalab import (
     build_rrlyrae_class_lightcurve_query,
     build_rrlyrae_top_n_query,
     cross_validate_harmonics,
-    estimate_fourier_mean_magnitudes,
     fetch_epoch_photometry,
     fourier_fit,
     fourier_mean_magnitude,
@@ -167,7 +166,7 @@ class LightcurveHelperTests(unittest.TestCase):
         self.assertGreaterEqual(power[0], power[-1])
 
     def test_build_fourier_matrix_has_expected_shape(self):
-        X = build_fourier_matrix([0.0, 0.5, 1.0], omega=2.0 * np.pi, K=2)
+        X = build_fourier_matrix([0.0, 0.5, 1.0], omega=2.0 * np.pi, k=2)
         self.assertEqual(X.shape, (3, 5))
         np.testing.assert_allclose(X[:, 0], 1.0)
 
@@ -185,7 +184,7 @@ class LightcurveHelperTests(unittest.TestCase):
             }
         )
 
-        fit = fourier_fit(target, period, k_harmonics=2)
+        fit = fourier_fit(target, period, k=2)
 
         self.assertLess(fit.chi2_r, 1e-10)
         np.testing.assert_allclose(fit.predict(epochs), mags, atol=1e-10)
@@ -204,12 +203,14 @@ class LightcurveHelperTests(unittest.TestCase):
             }
         )
 
-        result = cross_validate_harmonics(target, period, k_values=[1, 2, 3], seed=5)
+        result = cross_validate_harmonics(target, period)
+        k_values, chi2r_train, chi2r_cv, best_k, _, _ = result
+        expected_k_values = tuple(range(1, 26))
 
-        self.assertIn(result.best_k, {1, 2, 3})
-        self.assertEqual(len(result.k_values), 3)
-        self.assertEqual(len(result.chi2r_train), 3)
-        self.assertEqual(len(result.chi2r_cv), 3)
+        self.assertIn(best_k, expected_k_values)
+        self.assertEqual(tuple(k_values), expected_k_values)
+        self.assertEqual(len(chi2r_train), len(expected_k_values))
+        self.assertEqual(len(chi2r_cv), len(expected_k_values))
 
     def test_fourier_mean_helpers_match_constant_signal(self):
         period = 0.6
@@ -224,21 +225,13 @@ class LightcurveHelperTests(unittest.TestCase):
             }
         )
 
-        fit = fourier_fit(target, period, k_harmonics=1)
+        fit = fourier_fit(target, period, k=1)
         mean_mag = fourier_mean_magnitude(fit)
-        epoch_pred, mag_pred = predict_future_magnitude(fit, days_after_last=10.0)
-        batch_ids, batch = estimate_fourier_mean_magnitudes(
-            target,
-            periods=[period],
-            k_harmonics=1,
-            source_ids=[1],
-        )
+        epoch_pred, mag_pred = predict_future_magnitude(fit)
 
         self.assertAlmostEqual(mean_mag, 15.0, places=6)
         self.assertAlmostEqual(mag_pred, 15.0, places=6)
         self.assertAlmostEqual(epoch_pred, float(np.max(epochs) + 10.0), places=6)
-        np.testing.assert_array_equal(batch_ids, [1])
-        np.testing.assert_allclose(batch, [15.0], atol=1e-6)
 
 
 if __name__ == "__main__":

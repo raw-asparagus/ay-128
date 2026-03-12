@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Iterable
 
 import numpy as np
@@ -18,12 +21,16 @@ def _as_float_array(column) -> np.ndarray:
     values = np.ma.asarray(column, dtype=float)
     return np.asarray(np.ma.filled(values, np.nan), dtype=float)
 
+
+# Data loading and photometric preprocessing
+
+
 def _epoch_payload(datalink: dict, source_id: int):
-    key = f"EPOCH_PHOTOMETRY-{EPOCH_DATA_RELEASE} {int(source_id)}.{EPOCH_FILE_FORMAT}"
+    key = f"EPOCH_PHOTOMETRY-{EPOCH_DATA_RELEASE} {source_id}.{EPOCH_FILE_FORMAT}"
     if key in datalink:
         return datalink[key]
 
-    source_id_str = str(int(source_id))
+    source_id_str = str(source_id)
     for dl_key, payload in datalink.items():
         if source_id_str in dl_key:
             return payload
@@ -47,7 +54,6 @@ def _empty_joined_table(catalog: table.Table, epoch_data: table.Table) -> table.
 @_cache_stable(module="ugdatalab.gaia")
 def get_epoch_photometry(source_id: int) -> table.Table:
     """Download Gaia epoch photometry for one source."""
-    source_id = int(source_id)
     datalink = Gaia.load_data(
         ids=[source_id],
         data_release=EPOCH_DATA_RELEASE,
@@ -63,7 +69,7 @@ def get_epoch_photometry(source_id: int) -> table.Table:
 
 def fetch_epoch_photometry(source_ids: Iterable[int]) -> table.Table:
     """Download epoch photometry for many Gaia sources and stack the results."""
-    source_ids = tuple(int(source_id) for source_id in source_ids)
+    source_ids = tuple(source_id for source_id in source_ids)
     chunks = []
     for source_id in source_ids:
         chunk = get_epoch_photometry(source_id)
@@ -109,7 +115,7 @@ def _add_g_transit_mag_error(data: table.Table) -> table.Table:
     flux = _as_float_array(data["g_transit_flux"])
     flux_err = _as_float_array(data["g_transit_flux_error"])
     meas_err = (2.5 / np.log(10.0)) * np.abs(flux_err / flux)
-    data["g_transit_mag_err"] = np.sqrt(meas_err**2 + float(ZP_ERR_G) ** 2)
+    data["g_transit_mag_err"] = np.sqrt(meas_err**2 + ZP_ERR_G ** 2)
     return data
 
 
@@ -117,34 +123,37 @@ def _get_mean_mags(epoch_table: table.Table) -> tuple[float, float]:
     flux = _as_float_array(epoch_table["g_transit_flux"])
     flux_err = _as_float_array(epoch_table["g_transit_flux_error"])
 
-    mean_flux = float(np.mean(flux))
-    mean_flux_err = float(np.sqrt(np.sum(flux_err**2)) / len(flux_err))
-    mean_g_mag = -2.5 * np.log10(mean_flux) + float(ZP_G)
+    mean_flux = np.mean(flux)
+    mean_flux_err = np.sqrt(np.sum(flux_err**2)) / len(flux_err)
+    mean_g_mag = -2.5 * np.log10(mean_flux) + ZP_G
     mean_meas_err = (2.5 / np.log(10.0)) * (mean_flux_err / mean_flux)
-    mean_g_mag_err = float(np.sqrt(mean_meas_err**2 + float(ZP_ERR_G) ** 2))
+    mean_g_mag_err = np.sqrt(mean_meas_err**2 + ZP_ERR_G ** 2)
     return mean_g_mag, mean_g_mag_err
 
 
 def attach_flux_mean_magnitudes(data: table.Table) -> table.Table:
     """Attach per-epoch magnitude errors and repeated per-source flux means."""
-    res = _add_g_transit_mag_error(data)
-    source_column = np.asarray(res["source_id"], dtype=np.int64)
+    _add_g_transit_mag_error(data)
+    source_column = np.asarray(data["source_id"], dtype=np.int64)
     source_ids = np.unique(source_column)
 
     lookup = {}
-    for source_id in np.asarray(list(source_ids), dtype=np.int64):
-        lookup[int(source_id)] = _get_mean_mags(res[source_column == source_id])
+    for source_id in np.asarray(source_ids, dtype=np.int64):
+        lookup[source_id] = _get_mean_mags(data[source_column == source_id])
 
-    res["mean_g_transit_mag"] = [lookup[int(source_id)][0] for source_id in res["source_id"]]
-    res["mean_g_transit_mag_err"] = [lookup[int(source_id)][1] for source_id in res["source_id"]]
-    return res
+    data["mean_g_transit_mag"] = [lookup[source_id][0] for source_id in data["source_id"]]
+    data["mean_g_transit_mag_err"] = [lookup[source_id][1] for source_id in data["source_id"]]
+    return data
+
+
+# Lomb-Scargle period finding
 
 
 def attach_periodogram_periods(data: table.Table) -> table.Table:
     """Attach repeated per-source Lomb-Scargle periods to a joined epoch table."""
     source_ids, periods = estimate_periods_from_epoch_photometry(data)
-    lookup = {int(source_id): float(period) for source_id, period in zip(source_ids, periods)}
-    data["period_ls"] = [lookup[int(source_id)] for source_id in data["source_id"]]
+    lookup = {source_id: float(period) for source_id, period in zip(source_ids, periods)}
+    data["period_ls"] = [lookup[source_id] for source_id in data["source_id"]]
     return data
 
 
@@ -173,9 +182,7 @@ def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarra
     return periods, power, best_period
 
 
-def estimate_periods_from_epoch_photometry(
-    data: table.Table,
-) -> tuple[np.ndarray, np.ndarray]:
+def estimate_periods_from_epoch_photometry(data: table.Table) -> tuple[np.ndarray, np.ndarray]:
     """Estimate the best Lomb-Scargle period for each source in a joined table."""
     source_column = np.asarray(data["source_id"], dtype=np.int64)
     source_ids = np.unique(source_column)
@@ -183,3 +190,140 @@ def estimate_periods_from_epoch_photometry(
     for i, source_id in enumerate(source_ids):
         _, _, periods[i] = lomb_scargle_periodogram(data[source_column == source_id])
     return source_ids, periods
+
+
+# Fourier-series light-curve modeling
+
+
+def phase_fold(epoch: np.ndarray, period: float) -> np.ndarray:
+    """Map times to phase in [0, 1)."""
+    epoch = np.asarray(epoch, dtype=float)
+    return (epoch % float(period)) / float(period)
+
+
+def build_fourier_matrix(epoch: Iterable[float], omega: float, k: int) -> np.ndarray:
+    """Build the design matrix X for a Fourier series with known angular frequency."""
+    epochs = np.asarray(epoch, dtype=float)
+    period = 2.0 * np.pi / float(omega)
+    epochs_mod = epochs % period
+
+    X = np.ones((len(epochs_mod), 2 * k + 1), dtype=float)
+    for k in range(1, k + 1):
+        X[:, 2 * k - 1] = np.cos(k * omega * epochs_mod)
+        X[:, 2 * k] = np.sin(k * omega * epochs_mod)
+    return X
+
+
+def _fourier_predict(epoch_eval: Iterable[float], period: float, k: int, beta: np.ndarray) -> np.ndarray:
+    omega = 2.0 * np.pi / float(period)
+    return build_fourier_matrix(epoch_eval, omega, k) @ np.asarray(beta, dtype=float)
+
+
+@dataclass(frozen=True)
+class _FourierFit:
+    period: float
+    K: int
+    epochs: np.ndarray
+    mags: np.ndarray
+    mag_errs: np.ndarray
+    beta: np.ndarray
+    chi2_r: float
+
+    def predict(self, epoch_eval: Iterable[float]) -> np.ndarray:
+        return _fourier_predict(epoch_eval, self.period, self.K, self.beta)
+
+
+def fourier_fit(target: table.Table, period: float, k: int) -> _FourierFit:
+    """Fit a weighted Fourier series to one light curve with a fixed period."""
+    epochs = _as_float_array(target["g_transit_time"])
+    mags = _as_float_array(target["g_transit_mag"])
+    mag_errs = _as_float_array(target["g_transit_mag_err"])
+    valid = np.isfinite(epochs) & np.isfinite(mags) & np.isfinite(mag_errs) & (mag_errs > 0)
+
+    epochs = epochs[valid]
+    mags = mags[valid]
+    mag_errs = mag_errs[valid]
+
+    if len(epochs) <= 2 * k + 1:
+        raise ValueError("Not enough epochs for the requested number of Fourier harmonics.")
+
+    omega = 2.0 * np.pi / float(period)
+    X = build_fourier_matrix(epochs, omega, k)
+    weights = 1.0 / mag_errs
+    beta, _, _, _ = np.linalg.lstsq(X * weights[:, None], mags * weights, rcond=None)
+
+    resid = mags - X @ beta
+    nu = len(epochs) - (2 * k + 1)
+    chi2_r = float(np.sum((resid / mag_errs) ** 2) / nu)
+    period = float(period)
+
+    return _FourierFit(
+        period=period,
+        K=k,
+        epochs=epochs,
+        mags=mags,
+        mag_errs=mag_errs,
+        beta=beta,
+        chi2_r=chi2_r,
+    )
+
+
+def cross_validate_harmonics(target: table.Table, period: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, np.ndarray, np.ndarray]:
+    """Cross-validate the harmonic order of a fixed-period Fourier model."""
+    Ks = np.arange(1, 26, dtype=int)
+    epochs = _as_float_array(target["g_transit_time"])
+    mags = _as_float_array(target["g_transit_mag"])
+    mag_errs = _as_float_array(target["g_transit_mag_err"])
+    valid = np.isfinite(epochs) & np.isfinite(mags) & np.isfinite(mag_errs) & (mag_errs > 0)
+    clean = target[valid]
+
+    rng = np.random.default_rng(42)
+    idx = rng.permutation(len(clean))
+    n_cv = max(1, int(round(0.2 * len(clean))))
+    cv_idx = idx[:n_cv]
+    train_idx = idx[n_cv:]
+    if len(train_idx) == 0:
+        raise ValueError("Cross-validation split left no training data.")
+
+    chi2r_train = np.full(len(Ks), np.nan, dtype=float)
+    chi2r_cv = np.full(len(Ks), np.nan, dtype=float)
+
+    for i, K in enumerate(Ks):
+        if len(train_idx) <= 2 * K + 1:
+            continue
+        fit = fourier_fit(clean[train_idx], period, K)
+        chi2r_train[i] = fit.chi2_r
+
+        cv_epochs = _as_float_array(clean[cv_idx]["g_transit_time"])
+        cv_mags = _as_float_array(clean[cv_idx]["g_transit_mag"])
+        cv_mag_errs = _as_float_array(clean[cv_idx]["g_transit_mag_err"])
+        resid_cv = cv_mags - fit.predict(cv_epochs)
+        chi2r_cv[i] = float(np.sum((resid_cv / cv_mag_errs) ** 2) / len(cv_idx))
+
+    if not np.isfinite(chi2r_cv).any():
+        raise ValueError("No valid harmonic orders for cross-validation.")
+
+    best_k = Ks[int(np.nanargmin(chi2r_cv))]
+    return (
+        Ks,
+        chi2r_train,
+        chi2r_cv,
+        best_k,
+        np.asarray(train_idx, dtype=int),
+        np.asarray(cv_idx, dtype=int),
+    )
+
+
+def predict_future_magnitude(fit: _FourierFit) -> tuple[float, float]:
+    """Predict the magnitude a fixed number of days after the last observed epoch."""
+    epoch_last = float(np.max(fit.epochs))
+    epoch_pred = epoch_last + 10.0
+    mag_pred = float(fit.predict([epoch_pred])[0])
+    return epoch_pred, mag_pred
+
+
+def fourier_mean_magnitude(fit: _FourierFit) -> float:
+    """Compute the flux-space mean magnitude implied by a fitted Fourier model."""
+    epoch_grid = np.linspace(0.0, fit.period, 1000, endpoint=False)
+    flux_grid = 10.0 ** (-0.4 * (fit.predict(epoch_grid) - float(ZP_G)))
+    return float(-2.5 * np.log10(np.mean(flux_grid)) + float(ZP_G))

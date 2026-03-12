@@ -5,14 +5,17 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.table import Table
 
 from ugdatalab.plotting import (
+    LW_GRID,
     figure,
     figure_names,
     plot_corner,
+    plot_fourier_harmonic_fits,
     plot_hr,
     plot_inlier_prob_map,
     plot_lomb_scargle_periodogram,
@@ -45,14 +48,41 @@ def _gaia_quality_table():
 
 
 def _lightcurve_table():
+    flux = 10.0 ** (-0.4 * (np.asarray([15.1, 15.4, 15.2]) - 25.6874))
     return Table(
         {
             "source_id": [1, 1, 1],
             "g_transit_time": [0.1, 0.4, 0.7],
             "g_transit_mag": [15.1, 15.4, 15.2],
+            "g_transit_mag_err": [0.03, 0.04, 0.03],
+            "g_transit_flux": flux,
+            "g_transit_flux_error": 0.03 * flux,
+            "period_ls": [0.5, 0.5, 0.5],
             "best_classification": ["RRab", "RRab", "RRab"],
             "pf": [0.5, 0.5, 0.5],
             "p1_o": [np.nan, np.nan, np.nan],
+        }
+    )
+
+
+def _fourier_lightcurve_table():
+    period = 0.5
+    phase = np.linspace(0.0, 1.0, 40, endpoint=False)
+    epoch = phase * period
+    mag = 15.2 + 0.25 * np.cos(2.0 * np.pi * phase) - 0.1 * np.sin(4.0 * np.pi * phase)
+    flux = 10.0 ** (-0.4 * (mag - 25.6874))
+    return Table(
+        {
+            "source_id": np.ones(len(epoch), dtype=int),
+            "g_transit_time": epoch,
+            "g_transit_mag": mag,
+            "g_transit_mag_err": np.full(len(epoch), 0.02),
+            "g_transit_flux": flux,
+            "g_transit_flux_error": np.full(len(epoch), 0.02) * flux,
+            "period_ls": np.full(len(epoch), period),
+            "best_classification": np.full(len(epoch), "RRab"),
+            "pf": np.full(len(epoch), period),
+            "p1_o": np.full(len(epoch), np.nan),
         }
     )
 
@@ -88,8 +118,10 @@ def _vari_rrlyrae_period_table():
         {
             "best_classification": ["RRab", "RRc", "RRd"],
             "pf": [0.55, np.nan, 0.74],
+            "pf_error": [0.01, np.nan, 0.02],
             "best_period": [0.57, 0.31, 0.55],
             "p1_o": [np.nan, np.nan, 0.55],
+            "p1_o_error": [np.nan, np.nan, 0.01],
         }
     )
 
@@ -136,6 +168,9 @@ class PlottingHelperTests(unittest.TestCase):
             self.assertIsNotNone(ax)
             plt.close(ax.figure)
 
+    def test_rcparams_use_visual_weight_tokens(self):
+        self.assertEqual(mpl.rcParams["grid.linewidth"], LW_GRID)
+
     def test_plot_inlier_prob_map_uses_all_data(self):
         source = SimpleNamespace(all_data=_gaia_quality_table())
 
@@ -145,7 +180,7 @@ class PlottingHelperTests(unittest.TestCase):
         plt.close(ax.figure)
 
     def test_plot_raw_phase_folded_lightcurve_returns_axes(self):
-        axes = plot_raw_phase_folded_lightcurve(_lightcurve_table(), source_id=1)
+        axes = plot_raw_phase_folded_lightcurve(_lightcurve_table(), "RRab", 0.5)
 
         self.assertEqual(len(axes), 2)
         for ax in axes:
@@ -153,26 +188,49 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertTrue(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
         self.assertEqual(axes[1].get_ylabel(), "")
         self.assertFalse(any(label.get_visible() for label in axes[1].get_yticklabels()))
+        self.assertEqual(axes[0].get_title(), "")
+        self.assertEqual(axes[1].get_title(), "")
+        self.assertEqual(axes[0].get_legend().texts[0].get_text(), "Raw light curve")
+        self.assertEqual(axes[1].get_legend().texts[0].get_text(), "Phase-folded light curve")
+        phase_color = mpl.colors.to_rgba("C1", alpha=0.55)
+        np.testing.assert_allclose(axes[1].collections[-1].get_facecolors()[0], phase_color)
+        self.assertEqual(len(axes[0].containers), 1)
+        self.assertEqual(len(axes[1].containers), 1)
         plt.close(axes[0].figure)
 
     def test_plot_lomb_scargle_periodogram_marks_selected_period(self):
-        periodogram = (
-            np.array([0.2, 0.4, 0.6, 0.8], dtype=float),
-            np.array([0.1, 0.4, 0.8, 0.3], dtype=float),
-            0.6,
-        )
-
-        ax = plot_lomb_scargle_periodogram(_lightcurve_table(), periodogram=periodogram, period=0.6)
+        ax = plot_lomb_scargle_periodogram(_fourier_lightcurve_table(), "RRab")
 
         self.assertIsNotNone(ax)
         self.assertEqual(ax.get_xlabel(), r"$P$ [days]")
         self.assertTrue(
             any(
-                len(line.get_xdata()) == 2 and np.allclose(line.get_xdata(), [0.6, 0.6])
+                len(line.get_xdata()) == 2 and np.allclose(line.get_xdata(), [0.5, 0.5])
                 for line in ax.lines
             )
         )
         plt.close(ax.figure)
+
+    def test_plot_fourier_harmonic_fits_returns_grid_of_axes(self):
+        axes = plot_fourier_harmonic_fits(_fourier_lightcurve_table(), "RRab", 0.5, [1, 3])
+        within_gap = axes[0, 0].get_position().y0 - axes[0, 1].get_position().y1
+        between_gap = axes[0, 1].get_position().y0 - axes[1, 0].get_position().y1
+
+        self.assertEqual(np.asarray(axes).shape, (2, 2))
+        self.assertEqual(axes[0, 0].get_ylabel(), r"$G$ [mag]")
+        self.assertEqual(axes[0, 1].get_ylabel(), "Res.")
+        self.assertEqual(axes[0, 0].get_subplotspec().colspan.start, 0)
+        self.assertEqual(axes[0, 1].get_subplotspec().colspan.start, 0)
+        self.assertEqual(axes[0, 0].get_subplotspec().rowspan.stop - axes[0, 0].get_subplotspec().rowspan.start, 1)
+        self.assertEqual(axes[0, 1].get_subplotspec().rowspan.stop - axes[0, 1].get_subplotspec().rowspan.start, 1)
+        self.assertAlmostEqual(axes[0, 0].get_position().x0, axes[0, 1].get_position().x0, places=3)
+        self.assertAlmostEqual(axes[0, 0].get_position().x1, axes[0, 1].get_position().x1, places=3)
+        self.assertGreater(axes[0, 0].get_position().height, 3.0 * axes[0, 1].get_position().height)
+        self.assertLess(within_gap, 1e-6)
+        self.assertGreater(between_gap, 1e-2)
+        self.assertEqual(axes[0, 1].get_xlabel(), "Phase")
+        self.assertEqual(axes[1, 1].get_xlabel(), "Phase")
+        plt.close(axes[0, 0].figure)
 
     def test_plot_period_abs_mag_can_use_periodogram_columns(self):
         ax = plot_period_abs_mag(_period_abs_mag_table(), use_periodogram=True)
@@ -187,17 +245,41 @@ class PlottingHelperTests(unittest.TestCase):
         plt.close(ax.figure)
 
     def test_plot_period_mean_g_returns_axes(self):
-        ax = plot_period_mean_g(_period_mean_g_table())
+        data = _period_mean_g_table()
+        ax = plot_period_mean_g(data, np.asarray(data["best_classification"]).astype(str))
 
         self.assertIsNotNone(ax)
         self.assertEqual(ax.get_xscale(), "log")
         self.assertEqual(ax.get_xlabel(), r"$P$ [days]")
         self.assertEqual(ax.get_ylabel(), r"$\langle G \rangle$ [mag]")
         self.assertEqual(len(ax.get_legend().texts), 2)
+        self.assertEqual(len(ax.containers), 1)
         plt.close(ax.figure)
 
     def test_plot_vari_rrlyrae_period_comparison_returns_two_axes(self):
-        axes = plot_vari_rrlyrae_period_comparison(_vari_rrlyrae_period_table())
+        data = _vari_rrlyrae_period_table()
+        axes = plot_vari_rrlyrae_period_comparison(data, np.asarray(data["best_classification"]).astype(str))
+        finite = np.isfinite(np.asarray(data["pf"], dtype=float)) & np.isfinite(np.asarray(data["best_period"], dtype=float))
+        data_min = float(
+            np.nanmin(
+                np.concatenate(
+                    [
+                        np.asarray(data["pf"], dtype=float)[finite],
+                        np.asarray(data["best_period"], dtype=float)[finite],
+                    ]
+                )
+            )
+        )
+        data_max = float(
+            np.nanmax(
+                np.concatenate(
+                    [
+                        np.asarray(data["pf"], dtype=float)[finite],
+                        np.asarray(data["best_period"], dtype=float)[finite],
+                    ]
+                )
+            )
+        )
 
         self.assertEqual(len(axes), 2)
         self.assertEqual(
@@ -210,8 +292,15 @@ class PlottingHelperTests(unittest.TestCase):
         )
         self.assertEqual(axes[0].get_ylabel(), r"L-S period $P_{\rm LS}$ [days]")
         self.assertEqual(axes[1].get_ylabel(), r"L-S period $P_{\rm LS}$ [days]")
+        self.assertAlmostEqual(axes[0].get_xlim()[0], axes[0].get_ylim()[0])
+        self.assertAlmostEqual(axes[0].get_xlim()[1], axes[0].get_ylim()[1])
+        self.assertLess(axes[0].get_xlim()[0], data_min)
+        self.assertGreater(axes[0].get_xlim()[1], data_max)
+        self.assertEqual(axes[0].get_aspect(), 1.0)
+        self.assertEqual(len(axes[0].containers), 2)
+        self.assertEqual(len(axes[1].containers), 1)
         self.assertEqual(len(axes[0].get_legend().texts), 4)
-        self.assertEqual(len(axes[1].get_legend().texts), 2)
+        self.assertEqual(len(axes[1].get_legend().texts), 1)
         plt.close(axes[0].figure)
 
     def test_mcmc_plot_helpers_return_axes(self):
