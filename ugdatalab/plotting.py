@@ -122,42 +122,19 @@ def _as_table(source, attr: str = "data") -> Table:
 
 
 def _plot_period_values(data: Table) -> np.ndarray:
-    if {"best_classification", "pf", "p1_o"} <= set(data.colnames):
-        return rrlyrae_representative_period(data)
-    if "period" in data.colnames:
-        return np.asarray(data["period"], dtype=float)
-    raise ValueError(
-        "Could not determine RR Lyrae periods for plotting; expected "
-        "`best_classification` with `pf`/`p1_o`, or a `period` column."
-    )
+    return rrlyrae_representative_period(data)
 
 
 def _plot_class_masks(data: Table) -> list[tuple[str, np.ndarray]]:
-    if "best_classification" in data.colnames:
-        classifications = np.asarray(data["best_classification"], dtype=str)
-        ordered = ["RRab", "RRc", "RRd"]
-        labels = [label for label in ordered if np.any(classifications == label)]
-        labels.extend(
-            label
-            for label in np.unique(classifications)
-            if label not in ordered
-        )
-        return [(label, classifications == label) for label in labels]
-
-    if "is_rrc" in data.colnames:
-        rrc = np.asarray(data["is_rrc"], dtype=bool)
-        rrab = ~rrc
-        return [("RRab", rrab), ("RRc", rrc)]
-
-    if {"pf", "p1_o"} <= set(data.colnames):
-        pf = np.asarray(data["pf"], dtype=float)
-        p1_o = np.asarray(data["p1_o"], dtype=float)
-        return [
-            ("RRab", np.isfinite(pf) & ~np.isfinite(p1_o)),
-            ("RRc", ~np.isfinite(pf) & np.isfinite(p1_o)),
-        ]
-
-    return []
+    classifications = np.asarray(data["best_classification"], dtype=str)
+    ordered = ["RRab", "RRc", "RRd"]
+    labels = [label for label in ordered if np.any(classifications == label)]
+    labels.extend(
+        label
+        for label in np.unique(classifications)
+        if label not in ordered
+    )
+    return [(label, classifications == label) for label in labels]
 
 
 def _labels(source, override=None):
@@ -385,18 +362,8 @@ def plot_lomb_scargle_periodogram(data: Table):
     periods = periods[order]
     power = power[order]
 
-    period = best_period
-    if "period_ls" in data.colnames:
-        period_values = np.asarray(data["period_ls"], dtype=float)
-        finite_periods = period_values[np.isfinite(period_values)]
-        if len(finite_periods):
-            period = float(finite_periods[0])
-
-    classification = "RR Lyrae"
-    if "best_classification" in data.colnames:
-        classifications = np.asarray(data["best_classification"], dtype=str)
-        if len(classifications):
-            classification = str(classifications[0])
+    period = float(data["period_ls"][0])
+    classification = str(data["best_classification"][0])
 
     _, ax = _single_panel(_columnwidth_figsize(35 / 16))
 
@@ -526,9 +493,6 @@ def plot_period_luminosity_diff(source, subset, ax=None, title=None, **scatter_k
 
 
 def plot_period_mean_g(data: Table):
-    if "best_classification" not in data.colnames:
-        raise ValueError("Expected `best_classification` in the summary table.")
-
     _, ax = _single_panel(_columnwidth_figsize(10 / 4))
 
     classifications = np.asarray(data["best_classification"]).astype(str)
@@ -572,9 +536,6 @@ def plot_period_mean_g(data: Table):
 
 
 def plot_vari_rrlyrae_period_comparison(data: Table):
-    if "best_classification" not in data.colnames:
-        raise ValueError("Expected `best_classification` in the summary table.")
-
     classifications = np.asarray(data["best_classification"]).astype(str)
     fundamental_period = np.asarray(data["pf"], dtype=float)
     best_period = np.asarray(data["best_period"], dtype=float)
@@ -752,55 +713,13 @@ def plot_hr(source, ax=None, title=None, **scatter_kwargs):
     return ax
 
 
-def plot_raw_phase_folded_lightcurve(
-    data_or_source_id,
-    classification_or_data,
-    period: float | None = None,
-    *,
-    classification: str | None = None,
-):
-    if isinstance(data_or_source_id, Table):
-        data = data_or_source_id
-        if classification is None:
-            classification = str(classification_or_data)
-        if period is None:
-            raise TypeError(
-                "period is required when passing a per-source light-curve table directly."
-            )
-    else:
-        source_id = int(data_or_source_id)
-        data = _as_table(classification_or_data)
-        if "source_id" not in data.colnames:
-            raise ValueError("Expected `source_id` in the light-curve table.")
-        data = data[np.asarray(data["source_id"], dtype=np.int64) == source_id]
-        if classification is None:
-            if "best_classification" in data.colnames and len(data):
-                classification = str(np.asarray(data["best_classification"], dtype=str)[0])
-            else:
-                classification = "RR Lyrae"
-        if period is None:
-            if {"best_classification", "pf", "p1_o"} <= set(data.colnames) and len(data):
-                period_values = rrlyrae_representative_period(data)
-            elif "period" in data.colnames:
-                period_values = np.asarray(data["period"], dtype=float)
-            elif "pf" in data.colnames:
-                period_values = np.asarray(data["pf"], dtype=float)
-            elif "p1_o" in data.colnames:
-                period_values = np.asarray(data["p1_o"], dtype=float)
-            else:
-                period_values = np.array([], dtype=float)
-            finite_periods = np.asarray(period_values, dtype=float)
-            finite_periods = finite_periods[np.isfinite(finite_periods)]
-            if len(finite_periods):
-                period = float(finite_periods[0])
-
+def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
+    data = _as_table(data)
+    data = data[data["source_id"] == int(source_id)]
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
-    if "g_transit_mag_err" not in data.colnames:
-        raise ValueError("Expected `g_transit_mag_err` in the light-curve table.")
-    if period is None:
-        raise ValueError("Could not determine a finite period for phase folding.")
-    period = float(period)
+    classification = str(data["best_classification"][0])
+    period = float(rrlyrae_representative_period(data)[0])
 
     epoch = np.asarray(data["g_transit_time"], dtype=float)
     mag = np.asarray(data["g_transit_mag"], dtype=float)
@@ -881,25 +800,13 @@ def plot_fourier_harmonic_fits(
     K_values: list[int] | tuple[int, ...],
 ):
     data = _as_table(data)
-    if "source_id" not in data.colnames:
-        raise ValueError("Expected `source_id` in the light-curve table.")
-
-    data = data[np.asarray(data["source_id"], dtype=np.int64) == int(target_id)]
+    data = data[data["source_id"] == int(target_id)]
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
-    if "g_transit_mag_err" not in data.colnames:
-        raise ValueError("Expected `g_transit_mag_err` in the light-curve table.")
-    if "period_ls" not in data.colnames:
-        raise ValueError("Expected `period_ls` in the light-curve table.")
 
     from ugdatalab.lightcurves import fourier_fit, phase_fold
 
-    period_values = np.asarray(data["period_ls"], dtype=float)
-    finite_periods = np.asarray(period_values, dtype=float)
-    finite_periods = finite_periods[np.isfinite(finite_periods)]
-    if len(finite_periods) == 0:
-        raise ValueError("Could not determine a finite period for Fourier fitting.")
-    period = float(finite_periods[0])
+    period = float(data["period_ls"][0])
 
     epoch = np.asarray(data["g_transit_time"], dtype=float)
     mag = np.asarray(data["g_transit_mag"], dtype=float)

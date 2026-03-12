@@ -55,30 +55,13 @@ def _as_float_array(column: Any) -> np.ndarray:
 def _class_mask(data, rr_class: str) -> np.ndarray:
     if rr_class not in {"RRab", "RRc"}:
         raise ValueError(f"Unsupported RR Lyrae class: {rr_class}")
-
-    if "best_classification" in data.colnames:
-        return rrlyrae_class_mask(data, rr_class)
-    if rr_class == "RRab" and "is_rrab" in data.colnames:
-        return np.asarray(data["is_rrab"], dtype=bool)
-    if rr_class == "RRc" and "is_rrc" in data.colnames:
-        return np.asarray(data["is_rrc"], dtype=bool)
-
-    raise ValueError(
-        "Could not determine RR Lyrae class mask; expected `best_classification` or class flags."
-    )
+    return rrlyrae_class_mask(data, rr_class)
 
 
 def _period_column(data, rr_class: str) -> np.ndarray:
-    if rr_class == "RRab" and "pf" in data.colnames:
+    if rr_class == "RRab":
         return _as_float_array(data["pf"])
-    if rr_class == "RRc" and "p1_o" in data.colnames:
-        return _as_float_array(data["p1_o"])
-    if "period" in data.colnames:
-        return _as_float_array(data["period"])
-
-    raise ValueError(
-        "Could not determine period column; expected class-specific Gaia period columns or `period`."
-    )
+    return _as_float_array(data["p1_o"])
 
 
 def relation_parameter_labels(relation_kind: str) -> list[str]:

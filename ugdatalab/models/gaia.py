@@ -68,21 +68,18 @@ def sanitize_vari_rrlyrae_table(data: table.Table) -> table.Table:
 
 
 def rrlyrae_class_mask(data: table.Table, rr_class: str) -> np.ndarray:
-    classifications = np.asarray(data["best_classification"], dtype=str)
-    return classifications == rr_class
+    return data["best_classification"] == rr_class
 
 
 def rrlyrae_representative_period(data: table.Table) -> np.ndarray:
-    classifications = np.asarray(data["best_classification"], dtype=str)
-    pf = _as_float_array(data["pf"])
-    p1_o = _as_float_array(data["p1_o"])
+    classifications = data["best_classification"]
 
     period = np.full(len(data), np.nan, dtype=float)
     fundamental = classifications == "RRab"
     first_overtone = (classifications == "RRc") | (classifications == "RRd")
 
-    period[fundamental] = pf[fundamental]
-    period[first_overtone] = p1_o[first_overtone]
+    period[fundamental] = data["pf"][fundamental]
+    period[first_overtone] = data["p1_o"][first_overtone]
     return period
 
 

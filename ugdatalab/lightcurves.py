@@ -93,8 +93,6 @@ def clean_epoch_photometry(data: table.Table) -> table.Table:
     """Drop rows with missing Gaia G epoch time, flux, or magnitude values."""
     if len(data) == 0:
         out = data.copy()
-        if "source_id" in out.colnames:
-            out["source_id"] = np.asarray(out["source_id"], dtype=np.int64)
         for name in _EPOCH_FLOAT_COLUMNS:
             if name in out.colnames:
                 out[name] = _as_float_array(out[name])
@@ -107,7 +105,6 @@ def clean_epoch_photometry(data: table.Table) -> table.Table:
         & np.isfinite(_as_float_array(data["g_transit_flux_error"]))
     )
     out = data[mask].copy()
-    out["source_id"] = np.asarray(out["source_id"], dtype=np.int64)
     for name in _EPOCH_FLOAT_COLUMNS:
         out[name] = _as_float_array(out[name])
     return out
@@ -157,10 +154,10 @@ def attach_flux_mean_magnitudes(data: table.Table) -> table.Table:
 
     lookup = {}
     for source_id in source_ids:
-        lookup[int(source_id)] = _get_mean_mags(data[source_column == source_id])
+        lookup[source_id] = _get_mean_mags(data[source_column == source_id])
 
-    data["mean_g_transit_mag"] = [lookup[int(source_id)][0] for source_id in data["source_id"]]
-    data["mean_g_transit_mag_err"] = [lookup[int(source_id)][1] for source_id in data["source_id"]]
+    data["mean_g_transit_mag"] = [lookup[source_id][0] for source_id in data["source_id"]]
+    data["mean_g_transit_mag_err"] = [lookup[source_id][1] for source_id in data["source_id"]]
     return data
 
 
@@ -170,7 +167,7 @@ def attach_flux_mean_magnitudes(data: table.Table) -> table.Table:
 def attach_periodogram_periods(data: table.Table) -> table.Table:
     """Attach repeated per-source Lomb-Scargle periods to a joined epoch table."""
     source_ids, periods = estimate_periods_from_epoch_photometry(data)
-    lookup = {source_id: float(period) for source_id, period in zip(source_ids, periods)}
+    lookup = {source_id: period for source_id, period in zip(source_ids, periods)}
     data["period_ls"] = [lookup[source_id] for source_id in data["source_id"]]
     return data
 
@@ -197,7 +194,7 @@ def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarra
         best_period = periods[int(np.argmax(power))]
     else:
         best_period = periods[int(near_max[np.argmax(periods[near_max])])]
-    return periods, power, float(best_period)
+    return periods, power, best_period
 
 
 def estimate_periods_from_epoch_photometry(data: table.Table) -> tuple[np.ndarray, np.ndarray]:
@@ -269,7 +266,6 @@ def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
     resid = mags - X @ beta
     nu = len(epochs) - (2 * k + 1)
     chi2_r = float(np.sum((resid / mag_errs) ** 2) / nu)
-    period = float(period)
 
     return FourierFit(
         source_id=source_id,
@@ -286,7 +282,7 @@ def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
 def cross_validate_harmonics(target: table.Table) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, np.ndarray, np.ndarray]:
     """Cross-validate the harmonic order of a fixed-period Fourier model."""
     Ks = np.arange(1, 26, dtype=int)
-    period = float(target["period_ls"][0])
+    period = target["period_ls"][0]
     epochs = target["g_transit_time"]
 
     rng = np.random.default_rng(42)

@@ -14,7 +14,6 @@ from ugdatalab import (
     compute_empirical_extinction,
     empirical_vs_catalog_extinction,
     load_relation_posteriors,
-    prepare_rrlyrae_class_columns,
     sample_sfd_ebv,
     summarize_relation_samples,
 )
@@ -33,21 +32,6 @@ class DustHelperTests(unittest.TestCase):
         self.assertIn("JOIN gaiadr3.gaia_source AS gs", query)
         self.assertIn("ABS(gs.b) > 30", query)
         self.assertIn("ORDER BY gs.parallax_over_error DESC", query)
-
-    def test_prepare_rrlyrae_class_columns_assigns_period_and_class_masks(self):
-        data = Table(
-            {
-                "best_classification": ["RRab", "RRc", "RRd"],
-                "pf": [0.6, np.nan, 0.74],
-                "p1_o": [np.nan, 0.32, 0.41],
-            }
-        )
-
-        result = prepare_rrlyrae_class_columns(data)
-
-        np.testing.assert_allclose(result["period"], [0.6, 0.32, 0.41])
-        self.assertEqual(list(result["is_rrab"]), [True, False, False])
-        self.assertEqual(list(result["is_rrc"]), [False, True, False])
 
     def test_summarize_relation_samples_and_load_relation_posteriors(self):
         samples = np.array(

@@ -84,9 +84,6 @@ from ugdatalab.dust import (
     RelationPosteriorSummary,
     ExtinctionResiduals,
     build_rrlyrae_gaia_source_query,
-    prepare_rrlyrae_class_columns,
-    prepare_full_rrlyrae_table,
-    get_full_rrlyrae_catalog,
     summarize_relation_samples,
     summarize_relation_posteriors,
     load_relation_posteriors,
@@ -96,7 +93,6 @@ from ugdatalab.dust import (
     extinction_residuals,
     build_reddening_quality_mask,
     apply_reddening_quality_mask,
-    rrlyrae_class_masks,
     sample_sfd_ebv,
     attach_sfd_ebv,
 )

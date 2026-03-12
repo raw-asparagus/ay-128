@@ -11,7 +11,6 @@ from astropy import table
 from astropy.coordinates import SkyCoord
 
 from ugdatalab.models.gaia import (
-    get_gaia,
     rrlyrae_class_mask,
     rrlyrae_representative_period,
 )
@@ -76,34 +75,6 @@ def build_rrlyrae_gaia_source_query(
     if order_by is not None:
         query_lines.append(f"ORDER BY {order_by}")
     return "\n".join(query_lines)
-
-
-def prepare_rrlyrae_class_columns(data: table.Table, *, copy: bool = True) -> table.Table:
-    """Attach the period, RRab, and RRc columns expected by later analysis steps."""
-    out = data.copy(copy_data=True) if copy else data
-    out["period"] = rrlyrae_representative_period(out)
-    out["is_rrab"] = rrlyrae_class_mask(out, "RRab")
-    out["is_rrc"] = rrlyrae_class_mask(out, "RRc")
-    return out
-
-
-def prepare_full_rrlyrae_table(data: table.Table, copy: bool = True) -> table.Table:
-    """Alias matching the notebook-oriented naming for class-column preparation."""
-    return prepare_rrlyrae_class_columns(data, copy=copy)
-
-
-def rrlyrae_class_masks(data: table.Table) -> dict[str, np.ndarray]:
-    """Return boolean masks for the RRab and RRc subclasses."""
-    return {
-        "RRab": rrlyrae_class_mask(data, "RRab"),
-        "RRc": rrlyrae_class_mask(data, "RRc"),
-    }
-
-
-def get_full_rrlyrae_catalog(query: str = FULL_RRLYRAE_GAIA_SOURCE_QUERY) -> table.Table:
-    """Fetch the full Gaia RR Lyrae cross-match and attach class columns."""
-    return prepare_rrlyrae_class_columns(get_gaia(query), copy=True)
-
 
 def summarize_relation_samples(samples: np.ndarray) -> RelationPosteriorSummary:
     """Summarize `[slope, intercept, log10_sigma]` posterior samples."""

@@ -44,8 +44,9 @@ def _gaia_quality_table():
             "source_id": [1, 2],
             "l": [120.0, 130.0],
             "b": [40.0, 45.0],
-            "period": [0.57, 0.62],
-            "is_rrc": [False, True],
+            "best_classification": ["RRab", "RRc"],
+            "pf": [0.57, np.nan],
+            "p1_o": [np.nan, 0.62],
             "M_G": [0.6, 0.4],
             "sigma_M": [0.08, 0.07],
             "bp_rp": [0.72, 0.39],
@@ -98,9 +99,10 @@ def _period_abs_mag_table():
     return Table(
         {
             "source_id": [1, 2],
-            "period": [0.55, 0.62],
+            "best_classification": ["RRab", "RRc"],
+            "pf": [0.55, np.nan],
+            "p1_o": [np.nan, 0.62],
             "period_ls": [0.81, 0.93],
-            "is_rrc": [False, True],
             "M_G": [0.6, 0.4],
             "sigma_M": [0.08, 0.07],
             "M_G_ls": [0.1, -0.2],
@@ -233,7 +235,8 @@ class PlottingHelperTests(unittest.TestCase):
         plt.close(ax.figure)
 
     def test_plot_raw_phase_folded_lightcurve_returns_axes(self):
-        axes = plot_raw_phase_folded_lightcurve(_lightcurve_table(), "RRab", 0.5)
+        lightcurve = _lightcurve_table()
+        axes = plot_raw_phase_folded_lightcurve(lightcurve["source_id"][0], lightcurve)
 
         self.assertEqual(len(axes), 2)
         for ax in axes:
@@ -249,18 +252,6 @@ class PlottingHelperTests(unittest.TestCase):
         np.testing.assert_allclose(axes[1].collections[-1].get_facecolors()[0], phase_color)
         self.assertEqual(len(axes[0].containers), 1)
         self.assertEqual(len(axes[1].containers), 1)
-        plt.close(axes[0].figure)
-
-    def test_plot_raw_phase_folded_lightcurve_accepts_source_id_and_table(self):
-        lightcurve = _lightcurve_table()
-
-        axes = plot_raw_phase_folded_lightcurve(lightcurve["source_id"][0], lightcurve)
-
-        self.assertEqual(len(axes), 2)
-        for ax in axes:
-            self.assertIsNotNone(ax)
-        self.assertEqual(axes[0].get_legend().texts[0].get_text(), "Raw light curve")
-        self.assertEqual(axes[1].get_legend().texts[0].get_text(), "Phase-folded light curve")
         plt.close(axes[0].figure)
 
     def test_plot_lomb_scargle_periodogram_marks_selected_period(self):
