@@ -4,18 +4,13 @@ from unittest.mock import patch
 import numpy as np
 from astropy.table import MaskedColumn, Table
 
+import ugdatalab.lightcurves as lightcurves
 from ugdatalab import (
     attach_flux_mean_magnitudes,
     attach_periodogram_periods,
-    build_fourier_matrix,
-    build_rrlyrae_class_lightcurve_query,
-    build_rrlyrae_top_n_query,
     cross_validate_harmonics,
-    fetch_epoch_photometry,
     fourier_fit,
     fourier_mean_magnitude,
-    get_epoch_photometry,
-    join_catalog_with_epoch_photometry,
     lomb_scargle_periodogram,
     predict_future_magnitude,
 )
@@ -23,24 +18,8 @@ from ugdatalab import (
 
 class LightcurveHelperTests(unittest.TestCase):
     def setUp(self):
-        get_epoch_photometry.clear()
-        self.addCleanup(get_epoch_photometry.clear)
-
-    def test_build_rrlyrae_top_n_query_matches_lab_filters(self):
-        query = build_rrlyrae_top_n_query()
-
-        self.assertIn("TOP 100", query)
-        self.assertIn("FROM gaiadr3.vari_rrlyrae", query)
-        self.assertIn("pf IS NOT NULL", query)
-        self.assertIn("num_clean_epochs_g > 40", query)
-        self.assertIn("ORDER BY num_clean_epochs_g DESC", query)
-
-    def test_build_rrlyrae_class_lightcurve_query_uses_rr_class_brightness_and_epoch_filters(self):
-        query = build_rrlyrae_class_lightcurve_query("RRc")
-
-        self.assertIn("best_classification = 'RRc'", query)
-        self.assertIn("int_average_g < 15", query)
-        self.assertIn("num_clean_epochs_g > 80", query)
+        lightcurves._get_epoch_photometry.clear()
+        self.addCleanup(lightcurves._get_epoch_photometry.clear)
 
     def test_attach_flux_mean_magnitudes_adds_source_level_columns(self):
         data = Table(
@@ -95,7 +74,7 @@ class LightcurveHelperTests(unittest.TestCase):
         self.assertAlmostEqual(float(result["period_ls"][0]), period_1, places=2)
         self.assertAlmostEqual(float(result["period_ls"][-1]), period_2, places=2)
 
-    def test_fetch_epoch_photometry_raises_for_missing_sources(self):
+    def test__fetch_epoch_photometry_raises_for_missing_sources(self):
         epochs1 = Table(
             {
                 "source_id": [1, 1],
@@ -120,11 +99,11 @@ class LightcurveHelperTests(unittest.TestCase):
                 raise KeyError("missing")
             return epochs1 if source_id == 1 else epochs3
 
-        with patch("ugdatalab.lightcurves.get_epoch_photometry", side_effect=fake_get_epoch_photometry):
+        with patch.object(lightcurves, "_get_epoch_photometry", side_effect=fake_get_epoch_photometry):
             with self.assertRaises(KeyError):
-                fetch_epoch_photometry([1, 2, 3])
+                lightcurves._fetch_epoch_photometry([1, 2, 3])
 
-    def test_clean_epoch_photometry_returns_plain_numeric_columns(self):
+    def test__clean_epoch_photometry_returns_plain_numeric_columns(self):
         raw = Table(
             {
                 "source_id": MaskedColumn([1, 1, 1], mask=[False, False, False]),
@@ -135,19 +114,15 @@ class LightcurveHelperTests(unittest.TestCase):
             }
         )
 
-        cleaned = join_catalog_with_epoch_photometry(
-            Table({"source_id": [1], "pf": [0.55]}),
-            raw,
-        )
+        cleaned = lightcurves._clean_epoch_photometry(raw)
 
         self.assertEqual(len(cleaned), 2)
-        self.assertEqual(cleaned["source_id"].dtype.kind, "i")
         self.assertEqual(cleaned["g_transit_time"].dtype.kind, "f")
         self.assertEqual(cleaned["g_transit_mag"].dtype.kind, "f")
         self.assertEqual(cleaned["g_transit_flux"].dtype.kind, "f")
         self.assertEqual(cleaned["g_transit_flux_error"].dtype.kind, "f")
 
-    def test_join_catalog_with_epoch_photometry_repeats_catalog_columns(self):
+    def test__join_catalog_with_epoch_photometry_repeats_catalog_columns(self):
         catalog = Table(
             {
                 "source_id": [1, 2],
@@ -164,38 +139,11 @@ class LightcurveHelperTests(unittest.TestCase):
             }
         )
 
-        joined = join_catalog_with_epoch_photometry(catalog, epochs)
+        joined = lightcurves._join_catalog_with_epoch_photometry(catalog, epochs)
 
         self.assertEqual(len(joined), 3)
         np.testing.assert_allclose(joined["period"][joined["source_id"] == 1], [0.55, 0.55])
         np.testing.assert_allclose(joined["period"][joined["source_id"] == 2], [0.62])
-
-    def test_join_catalog_with_epoch_photometry_sanitizes_catalog_columns(self):
-        catalog = Table(
-            {
-                "source_id": [1, 2],
-                "pf": MaskedColumn([0.55, 0.0], mask=[False, True]),
-                "p1_o": MaskedColumn([0.0, 0.31], mask=[True, False]),
-            }
-        )
-        epochs = Table(
-            {
-                "source_id": [2, 1],
-                "g_transit_time": [0.5, 0.2],
-                "g_transit_mag": [16.0, 15.0],
-                "g_transit_flux": [900.0, 1010.0],
-                "g_transit_flux_error": [9.0, 10.0],
-            }
-        )
-
-        joined = join_catalog_with_epoch_photometry(catalog, epochs)
-
-        self.assertEqual(joined["pf"].dtype.kind, "f")
-        self.assertEqual(joined["p1_o"].dtype.kind, "f")
-        self.assertAlmostEqual(float(joined["pf"][joined["source_id"] == 1][0]), 0.55)
-        self.assertTrue(np.isnan(float(joined["pf"][joined["source_id"] == 2][0])))
-        self.assertTrue(np.isnan(float(joined["p1_o"][joined["source_id"] == 1][0])))
-        self.assertAlmostEqual(float(joined["p1_o"][joined["source_id"] == 2][0]), 0.31)
 
     def test_lomb_scargle_periodogram_recovers_known_period(self):
         true_period = 0.61
@@ -215,8 +163,8 @@ class LightcurveHelperTests(unittest.TestCase):
         self.assertAlmostEqual(best_period, true_period, places=2)
         self.assertGreaterEqual(power[0], power[-1])
 
-    def test_build_fourier_matrix_has_expected_shape(self):
-        X = build_fourier_matrix([0.0, 0.5, 1.0], omega=2.0 * np.pi, k=2)
+    def test__build_fourier_matrix_has_expected_shape(self):
+        X = lightcurves._build_fourier_matrix([0.0, 0.5, 1.0], omega=2.0 * np.pi, k=2)
         self.assertEqual(X.shape, (3, 5))
         np.testing.assert_allclose(X[:, 0], 1.0)
 
@@ -257,13 +205,14 @@ class LightcurveHelperTests(unittest.TestCase):
         )
 
         result = cross_validate_harmonics(target)
-        k_values, chi2r_train, chi2r_cv, best_k, _, _ = result
         expected_k_values = tuple(range(1, 26))
 
-        self.assertIn(best_k, expected_k_values)
-        self.assertEqual(tuple(k_values), expected_k_values)
-        self.assertEqual(len(chi2r_train), len(expected_k_values))
-        self.assertEqual(len(chi2r_cv), len(expected_k_values))
+        self.assertEqual(result.source_id, 1)
+        self.assertAlmostEqual(result.period, period)
+        self.assertIn(result.best_K, expected_k_values)
+        self.assertEqual(tuple(result.Ks), expected_k_values)
+        self.assertEqual(len(result.chi2r_train), len(expected_k_values))
+        self.assertEqual(len(result.chi2r_cv), len(expected_k_values))
 
     def test_fourier_mean_helpers_match_constant_signal(self):
         period = 0.6

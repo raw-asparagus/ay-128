@@ -1,6 +1,5 @@
 import importlib
 import os
-import sys
 import tempfile
 import unittest
 import uuid
@@ -37,13 +36,10 @@ class PackageSmokeTests(unittest.TestCase):
         self.assertTrue(hasattr(module, "fit_relation_nuts"))
         self.assertTrue(hasattr(module, "_cache_stable"))
         self.assertTrue(hasattr(module, "get_gaia"))
-        self.assertTrue(hasattr(module, "get_gaia_quality"))
-        self.assertTrue(hasattr(module, "sanitize_vari_rrlyrae_table"))
         self.assertTrue(hasattr(module, "SDSSData"))
         self.assertTrue(hasattr(module, "SDSSQuality"))
         self.assertTrue(hasattr(module, "get_sdss"))
         self.assertTrue(hasattr(module, "get_sdss_quality"))
-        self.assertTrue(hasattr(module, "build_rrlyrae_top_n_query"))
         self.assertTrue(hasattr(module, "fourier_fit"))
         self.assertTrue(hasattr(module, "compute_empirical_extinction"))
         self.assertTrue(hasattr(module, "sample_sfd_ebv"))
@@ -52,17 +48,6 @@ class PackageSmokeTests(unittest.TestCase):
         self.assertTrue(hasattr(module, "plot_raw_phase_folded_lightcurve"))
         self.assertTrue(hasattr(module, "plot_corner"))
         self.assertTrue(hasattr(module, "attach_periodogram_periods"))
-
-    def test_fourier_module_import_emits_deprecation_warning(self):
-        sys.modules.pop("ugdatalab.fourier", None)
-
-        with self.assertWarnsRegex(
-            DeprecationWarning,
-            r"ugdatalab\.fourier is deprecated; import Fourier helpers from ugdatalab\.lightcurves instead\.",
-        ):
-            module = importlib.import_module("ugdatalab.fourier")
-
-        self.assertTrue(hasattr(module, "fourier_fit"))
 
     def test_plot_corner_works(self):
         from ugdatalab import MetropolisHastings, plot_corner

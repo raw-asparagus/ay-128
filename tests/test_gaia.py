@@ -3,7 +3,6 @@ from unittest.mock import patch
 
 import numpy as np
 from astropy.table import MaskedColumn, Table
-from requests import exceptions as requests_exceptions
 
 import ugdatalab.models.gaia as gaia
 
@@ -12,6 +11,7 @@ def _raw_gaia_table():
     return Table(
         {
             "source_id": [1, 2, 3],
+            "num_clean_epochs_g": [90, 80, 70],
             "l": [120.0, 130.0, 140.0],
             "b": [40.0, 50.0, 20.0],
             "best_classification": ["RRab", "RRc", "RRd"],
@@ -48,11 +48,11 @@ def _epoch_table():
 class GaiaCatalogTests(unittest.TestCase):
     def setUp(self):
         gaia.get_gaia.clear()
-        gaia.get_gaia_quality.clear()
+        gaia._get_gaia_quality.clear()
         self.addCleanup(gaia.get_gaia.clear)
-        self.addCleanup(gaia.get_gaia_quality.clear)
+        self.addCleanup(gaia._get_gaia_quality.clear)
 
-    def test_get_gaia_quality_filters_and_caches_result(self):
+    def test__get_gaia_quality_filters_and_caches_result(self):
         raw = _raw_gaia_table()
         calls = 0
 
@@ -62,8 +62,8 @@ class GaiaCatalogTests(unittest.TestCase):
             return raw
 
         with patch.object(gaia, "get_gaia", side_effect=fake_get_gaia):
-            result1 = gaia.get_gaia_quality("SELECT *")
-            result2 = gaia.get_gaia_quality("SELECT *")
+            result1 = gaia._get_gaia_quality("SELECT *")
+            result2 = gaia._get_gaia_quality("SELECT *")
 
         self.assertEqual(calls, 1)
         self.assertEqual(list(result1["source_id"]), [1])
@@ -93,7 +93,7 @@ class GaiaCatalogTests(unittest.TestCase):
         np.testing.assert_allclose(period[:2], [0.57, 0.31])
         self.assertAlmostEqual(float(period[2]), 0.46)
 
-    def test_sanitize_vari_rrlyrae_table_normalizes_masked_columns(self):
+    def test__sanitize_vari_rrlyrae_table_normalizes_masked_columns(self):
         raw = Table(
             {
                 "source_id": [1, 2],
@@ -107,7 +107,7 @@ class GaiaCatalogTests(unittest.TestCase):
             }
         )
 
-        result = gaia.sanitize_vari_rrlyrae_table(raw)
+        result = gaia._sanitize_vari_rrlyrae_table(raw)
 
         self.assertEqual(result["source_id"].dtype.kind, "i")
         self.assertEqual(result["num_clean_epochs_g"].dtype.kind, "i")
@@ -118,40 +118,24 @@ class GaiaCatalogTests(unittest.TestCase):
         self.assertTrue(np.isnan(float(result["p1_o"][0])))
         self.assertAlmostEqual(float(result["p1_o"][1]), 0.55)
 
-    def test_add_gaia_photometry_columns_skips_parallax_outputs_when_missing(self):
-        data = Table(
-            {
-                "phot_g_mean_flux": [1000.0],
-                "phot_g_mean_flux_error": [10.0],
-                "phot_g_mean_mag": [15.0],
-            }
-        )
-
-        result = gaia._add_gaia_photometry_columns(data)
-
-        self.assertIn("sigma_G", result.colnames)
-        self.assertNotIn("mu", result.colnames)
-        self.assertNotIn("sigma_mu", result.colnames)
-        self.assertNotIn("M_G", result.colnames)
-        self.assertNotIn("sigma_M", result.colnames)
-
-    def test_add_gaia_photometry_columns_skips_parallax_outputs_when_parallax_error_missing(self):
+    def test__add_gaia_photometry_columns_adds_distance_and_absolute_mag_columns(self):
         data = Table(
             {
                 "phot_g_mean_flux": [1000.0],
                 "phot_g_mean_flux_error": [10.0],
                 "phot_g_mean_mag": [15.0],
                 "parallax": [0.5],
+                "parallax_error": [0.05],
             }
         )
 
         result = gaia._add_gaia_photometry_columns(data)
 
         self.assertIn("sigma_G", result.colnames)
-        self.assertNotIn("mu", result.colnames)
-        self.assertNotIn("sigma_mu", result.colnames)
-        self.assertNotIn("M_G", result.colnames)
-        self.assertNotIn("sigma_M", result.colnames)
+        self.assertIn("mu", result.colnames)
+        self.assertIn("sigma_mu", result.colnames)
+        self.assertIn("M_G", result.colnames)
+        self.assertIn("sigma_M", result.colnames)
 
     def test_gaia_data_instantiation_uses_raw_getter(self):
         raw = _raw_gaia_table()
@@ -161,47 +145,47 @@ class GaiaCatalogTests(unittest.TestCase):
 
         mock_get_gaia.assert_called_once_with("SELECT raw")
         self.assertEqual(list(data.data["source_id"]), [1, 2, 3])
-        self.assertIsNone(data.lightcurve_data)
+        self.assertIsNone(data.lightcurves)
 
     def test_gaia_data_can_load_lightcurves_at_instantiation(self):
         raw = _raw_gaia_table()
         lightcurves = _epoch_table()
+        expected = gaia._sanitize_vari_rrlyrae_table(raw)
 
         with patch.object(gaia, "get_gaia", return_value=raw):
-            with patch("ugdatalab.lightcurves.fetch_joined_epoch_photometry", return_value=lightcurves) as mock_fetch:
+            with patch("ugdatalab.lightcurves._fetch_joined_epoch_photometry", return_value=lightcurves) as mock_fetch:
                 data = gaia.GaiaData("SELECT raw", include_lightcurve=True)
 
-        mock_fetch.assert_called_once_with(raw)
-        self.assertEqual(list(data.lightcurve_data["source_id"]), [2, 1, 1])
+        mock_fetch.assert_called_once()
+        np.testing.assert_array_equal(mock_fetch.call_args.args[0]["source_id"], expected["source_id"])
+        self.assertEqual(list(data.lightcurves["source_id"]), [2, 1, 1])
 
-    def test_get_gaia_falls_back_to_sync_query_after_async_http_error(self):
+    def test_get_gaia_uses_async_query(self):
         raw = _raw_gaia_table()
 
         class _FakeJob:
             def get_results(self):
                 return raw
 
-        with patch.object(gaia.Gaia, "launch_job_async", side_effect=requests_exceptions.HTTPError("Error 500")) as mock_async:
-            with patch.object(gaia.Gaia, "launch_job", return_value=_FakeJob()) as mock_sync:
-                result = gaia.get_gaia("SELECT raw")
+        with patch.object(gaia.Gaia, "launch_job_async", return_value=_FakeJob()) as mock_async:
+            result = gaia.get_gaia("SELECT raw")
 
         mock_async.assert_called_once_with("SELECT raw")
-        mock_sync.assert_called_once_with("SELECT raw")
         self.assertEqual(list(result["source_id"]), [1, 2, 3])
 
     def test_gaia_quality_instantiation_uses_quality_getter(self):
         quality = _raw_gaia_table()[:1]
 
-        with patch.object(gaia, "get_gaia_quality", return_value=quality) as mock_get_gaia_quality:
+        with patch.object(gaia, "_get_gaia_quality", return_value=quality) as mock_get_gaia_quality:
             data = gaia.GaiaQuality("SELECT quality")
 
         mock_get_gaia_quality.assert_called_once_with("SELECT quality")
         self.assertEqual(list(data.data["source_id"]), [1])
-        self.assertIsNone(data.lightcurve_data)
+        self.assertIsNone(data.lightcurves)
 
     def test_local_uses_quality_gaia_data(self):
         quality = _raw_gaia_table()[:1]
-        with patch.object(gaia, "get_gaia_quality", return_value=quality):
+        with patch.object(gaia, "_get_gaia_quality", return_value=quality):
             source = gaia.GaiaQuality("SELECT quality")
             local = gaia.Local(source)
 
@@ -211,16 +195,16 @@ class GaiaCatalogTests(unittest.TestCase):
         quality = _raw_gaia_table()
         quality["parallax"][1] = 0.2
 
-        with patch.object(gaia, "get_gaia_quality", return_value=quality):
+        with patch.object(gaia, "_get_gaia_quality", return_value=quality):
             source = gaia.GaiaQuality("SELECT quality")
 
         source.include_lightcurve = True
-        source.lightcurve_data = _epoch_table()
+        source.lightcurves = _epoch_table()
         local = gaia.Local(source)
 
         self.assertEqual(list(local.data["source_id"]), [1, 3])
         self.assertFalse(local.include_lightcurve)
-        self.assertIsNone(local.lightcurve_data)
+        self.assertIsNone(local.lightcurves)
 
 
 if __name__ == "__main__":

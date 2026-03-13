@@ -16,6 +16,8 @@ from ugdatalab.plotting import (
     figure_names,
     plot_corner,
     plot_fourier_cross_validation,
+    plot_fourier_cv_normalized_residual_histograms,
+    plot_fourier_cv_phase_comparison,
     plot_fourier_harmonic_fits,
     plot_rrlyrae_shape_comparison,
     plot_fourier_extrapolation,
@@ -35,7 +37,7 @@ from ugdatalab.plotting import (
     plot_raw_phase_folded_lightcurve,
     plot_trace,
 )
-from ugdatalab.lightcurves import fourier_fit
+from ugdatalab.lightcurves import HarmonicCrossValidationResult, cross_validate_harmonics, fourier_fit
 
 
 def _gaia_quality_table():
@@ -87,6 +89,28 @@ def _fourier_lightcurve_table():
             "g_transit_mag_err": np.full(len(epoch), 0.02),
             "g_transit_flux": flux,
             "g_transit_flux_error": np.full(len(epoch), 0.02) * flux,
+            "period_ls": np.full(len(epoch), period),
+            "best_classification": np.full(len(epoch), "RRab"),
+            "pf": np.full(len(epoch), period),
+            "p1_o": np.full(len(epoch), np.nan),
+        }
+    )
+
+
+def _dense_fourier_lightcurve_table():
+    period = 0.5
+    phase = np.linspace(0.0, 1.0, 120, endpoint=False)
+    epoch = phase * (6.0 * period)
+    mag = 15.2 + 0.25 * np.cos(2.0 * np.pi * epoch / period) - 0.1 * np.sin(4.0 * np.pi * epoch / period)
+    flux = 10.0 ** (-0.4 * (mag - 25.6874))
+    return Table(
+        {
+            "source_id": np.full(len(epoch), 1, dtype=int),
+            "g_transit_time": epoch,
+            "g_transit_mag": mag,
+            "g_transit_mag_err": np.full(len(epoch), 0.03),
+            "g_transit_flux": flux,
+            "g_transit_flux_error": 0.03 * flux,
             "period_ls": np.full(len(epoch), period),
             "best_classification": np.full(len(epoch), "RRab"),
             "pf": np.full(len(epoch), period),
@@ -242,7 +266,9 @@ class PlottingHelperTests(unittest.TestCase):
         for ax in axes:
             self.assertIsNotNone(ax)
         self.assertFalse(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
-        self.assertEqual(axes[1].get_ylabel(), "G")
+        self.assertEqual(axes[0].get_xlabel(), "Time [days]")
+        self.assertEqual(axes[0].get_ylabel(), "G [mag]")
+        self.assertEqual(axes[1].get_ylabel(), "G [mag]")
         self.assertTrue(any(label.get_visible() for label in axes[1].get_yticklabels()))
         self.assertEqual(axes[0].get_title(), "")
         self.assertEqual(axes[1].get_title(), "")
@@ -255,10 +281,12 @@ class PlottingHelperTests(unittest.TestCase):
         plt.close(axes[0].figure)
 
     def test_plot_lomb_scargle_periodogram_marks_selected_period(self):
-        ax = plot_lomb_scargle_periodogram(_fourier_lightcurve_table())
+        data = _fourier_lightcurve_table()
+        ax = plot_lomb_scargle_periodogram(int(data["source_id"][0]), data)
 
         self.assertIsNotNone(ax)
-        self.assertEqual(ax.get_xlabel(), r"$P$ [days]")
+        self.assertEqual(ax.get_xlabel(), r"$P_{\rm LS}$ [days]")
+        self.assertEqual(ax.get_ylim(), (0.0, 1.0))
         self.assertTrue(
             any(
                 len(line.get_xdata()) == 2 and np.allclose(line.get_xdata(), [0.5, 0.5])
@@ -269,7 +297,7 @@ class PlottingHelperTests(unittest.TestCase):
 
     def test_plot_fourier_harmonic_fits_returns_grid_of_axes(self):
         data = _fourier_lightcurve_table()
-        axes = plot_fourier_harmonic_fits(data, int(data["source_id"][0]), [1, 3])
+        axes = plot_fourier_harmonic_fits(int(data["source_id"][0]), data, [1, 3])
         within_gap = axes[0, 0].get_position().y0 - axes[0, 1].get_position().y1
         between_gap = axes[0, 1].get_position().y0 - axes[1, 0].get_position().y1
 
@@ -291,8 +319,18 @@ class PlottingHelperTests(unittest.TestCase):
 
     def test_plot_fourier_cross_validation_returns_axis(self):
         Ks, chi2r_train, chi2r_cv = _cross_validation_series()
+        result = HarmonicCrossValidationResult(
+            source_id=1,
+            period=0.5,
+            Ks=Ks,
+            chi2r_train=chi2r_train,
+            chi2r_cv=chi2r_cv,
+            best_K=3,
+            train_idx=np.arange(32, dtype=int),
+            cv_idx=np.arange(32, 40, dtype=int),
+        )
 
-        ax = plot_fourier_cross_validation(Ks, chi2r_train, chi2r_cv, best_K=3, target_id=1, n_train=32, n_cv=8)
+        ax = plot_fourier_cross_validation(result)
 
         self.assertEqual(ax.get_yscale(), "log")
         self.assertEqual(ax.get_xlabel(), r"$K$ (number of Fourier harmonics)")
@@ -300,6 +338,32 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertTrue(any(len(line.get_xdata()) == 2 and np.allclose(line.get_xdata(), [3, 3]) for line in ax.lines))
         self.assertTrue(any(len(line.get_ydata()) == 2 and np.allclose(line.get_ydata(), [0.88, 0.88]) for line in ax.lines))
         plt.close(ax.figure)
+
+    def test_plot_fourier_cv_normalized_residual_histograms_returns_two_axes(self):
+        data = _dense_fourier_lightcurve_table()
+        result = cross_validate_harmonics(data)
+
+        axes = plot_fourier_cv_normalized_residual_histograms(data, result)
+
+        self.assertEqual(len(axes), 2)
+        self.assertEqual(axes[0].get_ylabel(), "Density")
+        self.assertEqual(axes[1].get_ylabel(), "Density")
+        self.assertEqual(axes[0].get_xlabel(), r"$(G - G_{\rm model})/\sigma$")
+        self.assertEqual(axes[1].get_xlabel(), r"$(G - G_{\rm model})/\sigma$")
+        plt.close(axes[0].figure)
+
+    def test_plot_fourier_cv_phase_comparison_returns_two_axes(self):
+        data = _dense_fourier_lightcurve_table()
+        result = cross_validate_harmonics(data)
+
+        axes = plot_fourier_cv_phase_comparison(data, result)
+
+        self.assertEqual(len(axes), 2)
+        self.assertEqual(axes[0].get_xlabel(), "Phase")
+        self.assertEqual(axes[1].get_xlabel(), "Phase")
+        self.assertEqual(axes[0].get_ylabel(), r"$G$ [mag]")
+        self.assertEqual(axes[1].get_ylabel(), r"$G$ [mag]")
+        plt.close(axes[0].figure)
 
     def test_plot_rrlyrae_shape_comparison_returns_three_by_two_axes(self):
         axes = plot_rrlyrae_shape_comparison(_shape_comparison_panels())
@@ -434,7 +498,7 @@ class PlottingHelperTests(unittest.TestCase):
 
         self.assertIsNotNone(ax)
         self.assertEqual(ax.get_xscale(), "log")
-        self.assertEqual(ax.get_xlabel(), r"$P$ [days]")
+        self.assertEqual(ax.get_xlabel(), r"L-S period $P_{\rm LS}$ [days]")
         self.assertEqual(ax.get_ylabel(), r"$\langle G \rangle$ [mag]")
         self.assertEqual(len(ax.get_legend().texts), 3)
         self.assertEqual(len(ax.containers), 1)

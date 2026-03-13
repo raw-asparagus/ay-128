@@ -9,7 +9,7 @@ from astropy import table
 from astropy.timeseries import LombScargle
 
 from ugdatalab.models.cache import _cache_stable
-from ugdatalab.models.gaia import ZP_ERR_G, ZP_G, sanitize_vari_rrlyrae_table
+from ugdatalab.models.gaia import ZP_ERR_G, ZP_G
 
 DEFAULT_PERIOD_MIN = 0.2
 DEFAULT_PERIOD_MAX = 1.2
@@ -58,7 +58,7 @@ def _empty_joined_table(catalog: table.Table, epoch_data: table.Table) -> table.
 
 
 @_cache_stable(module="ugdatalab.gaia")
-def get_epoch_photometry(source_id: int) -> table.Table:
+def _get_epoch_photometry(source_id: int) -> table.Table:
     """Download Gaia epoch photometry for one source."""
     datalink = Gaia.load_data(
         ids=[source_id],
@@ -73,12 +73,12 @@ def get_epoch_photometry(source_id: int) -> table.Table:
     return data
 
 
-def fetch_epoch_photometry(source_ids: Iterable[int]) -> table.Table:
+def _fetch_epoch_photometry(source_ids: Iterable[int]) -> table.Table:
     """Download epoch photometry for many Gaia sources and stack the results."""
     source_ids = tuple(source_id for source_id in source_ids)
     chunks = []
     for source_id in source_ids:
-        chunk = get_epoch_photometry(source_id)
+        chunk = _get_epoch_photometry(source_id)
         if len(chunk):
             chunks.append(chunk)
 
@@ -89,7 +89,7 @@ def fetch_epoch_photometry(source_ids: Iterable[int]) -> table.Table:
     return table.vstack(chunks)
 
 
-def clean_epoch_photometry(data: table.Table) -> table.Table:
+def _clean_epoch_photometry(data: table.Table) -> table.Table:
     """Drop rows with missing Gaia G epoch time, flux, or magnitude values."""
     if len(data) == 0:
         out = data.copy()
@@ -110,19 +110,18 @@ def clean_epoch_photometry(data: table.Table) -> table.Table:
     return out
 
 
-def join_catalog_with_epoch_photometry(catalog: table.Table, epoch_data: table.Table) -> table.Table:
+def _join_catalog_with_epoch_photometry(catalog: table.Table, epoch_data: table.Table) -> table.Table:
     """Join a source catalog to epoch photometry on `source_id` and clean the result."""
-    catalog = sanitize_vari_rrlyrae_table(catalog)
-    epoch_data = clean_epoch_photometry(epoch_data)
+    epoch_data = _clean_epoch_photometry(epoch_data)
     if len(epoch_data) == 0 or "source_id" not in epoch_data.colnames:
         return _empty_joined_table(catalog, epoch_data)
     return table.join(catalog, epoch_data, keys="source_id")
 
 
-def fetch_joined_epoch_photometry(catalog: table.Table) -> table.Table:
+def _fetch_joined_epoch_photometry(catalog: table.Table) -> table.Table:
     """Fetch epoch photometry for a catalog and return the cleaned joined table."""
-    epoch_data = fetch_epoch_photometry(catalog["source_id"])
-    return join_catalog_with_epoch_photometry(catalog, epoch_data)
+    epoch_data = _fetch_epoch_photometry(catalog["source_id"])
+    return _join_catalog_with_epoch_photometry(catalog, epoch_data)
 
 
 def _add_g_transit_mag_error(data: table.Table) -> table.Table:
@@ -166,7 +165,7 @@ def attach_flux_mean_magnitudes(data: table.Table) -> table.Table:
 
 def attach_periodogram_periods(data: table.Table) -> table.Table:
     """Attach repeated per-source Lomb-Scargle periods to a joined epoch table."""
-    source_ids, periods = estimate_periods_from_epoch_photometry(data)
+    source_ids, periods = _estimate_periods_from_epoch_photometry(data)
     lookup = {source_id: period for source_id, period in zip(source_ids, periods)}
     data["period_ls"] = [lookup[source_id] for source_id in data["source_id"]]
     return data
@@ -197,7 +196,7 @@ def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarra
     return periods, power, best_period
 
 
-def estimate_periods_from_epoch_photometry(data: table.Table) -> tuple[np.ndarray, np.ndarray]:
+def _estimate_periods_from_epoch_photometry(data: table.Table) -> tuple[np.ndarray, np.ndarray]:
     """Estimate the best Lomb-Scargle period for each source in a joined table."""
     source_column = data["source_id"]
     source_ids = np.unique(source_column)
@@ -215,7 +214,7 @@ def phase_fold(epochs: np.ndarray, period: float) -> np.ndarray:
     return (epochs % period) / period
 
 
-def build_fourier_matrix(epochs: Iterable[float], omega: float, k: int) -> np.ndarray:
+def _build_fourier_matrix(epochs: Iterable[float], omega: float, k: int) -> np.ndarray:
     """Build the design matrix X for a Fourier series with known angular frequency."""
     epochs = np.asarray(epochs, dtype=float)
     period = 2.0 * np.pi / omega
@@ -230,7 +229,7 @@ def build_fourier_matrix(epochs: Iterable[float], omega: float, k: int) -> np.nd
 
 def _fourier_predict(epoch_eval: Iterable[float], period: float, k: int, beta: np.ndarray) -> np.ndarray:
     omega = 2.0 * np.pi / period
-    return build_fourier_matrix(epoch_eval, omega, k) @ beta
+    return _build_fourier_matrix(epoch_eval, omega, k) @ beta
 
 
 @dataclass(frozen=True)
@@ -248,6 +247,18 @@ class FourierFit:
         return _fourier_predict(epoch_eval, self.period, self.K, self.beta)
 
 
+@dataclass(frozen=True)
+class HarmonicCrossValidationResult:
+    source_id: int
+    period: float
+    Ks: np.ndarray
+    chi2r_train: np.ndarray
+    chi2r_cv: np.ndarray
+    best_K: int
+    train_idx: np.ndarray
+    cv_idx: np.ndarray
+
+
 def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
     """Fit a weighted Fourier series to one light curve with a fixed period."""
     source_id = target["source_id"][0]
@@ -259,7 +270,7 @@ def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
         raise ValueError("Not enough epochs for the requested number of Fourier harmonics.")
 
     omega = 2.0 * np.pi / period
-    X = build_fourier_matrix(epochs, omega, k)
+    X = _build_fourier_matrix(epochs, omega, k)
     weights = 1.0 / mag_errs
     beta, _, _, _ = np.linalg.lstsq(X * weights[:, None], mags * weights, rcond=None)
 
@@ -279,8 +290,9 @@ def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
     )
 
 
-def cross_validate_harmonics(target: table.Table) -> tuple[np.ndarray, np.ndarray, np.ndarray, int, np.ndarray, np.ndarray]:
+def cross_validate_harmonics(target: table.Table) -> HarmonicCrossValidationResult:
     """Cross-validate the harmonic order of a fixed-period Fourier model."""
+    source_id = target["source_id"][0]
     Ks = np.arange(1, 26, dtype=int)
     period = target["period_ls"][0]
     epochs = target["g_transit_time"]
@@ -307,13 +319,15 @@ def cross_validate_harmonics(target: table.Table) -> tuple[np.ndarray, np.ndarra
         chi2r_cv[i] = float(np.sum((resid_cv / cv_mag_errs) ** 2) / len(cv_idx))
 
     best_k = Ks[int(np.nanargmin(chi2r_cv))]
-    return (
-        Ks,
-        chi2r_train,
-        chi2r_cv,
-        best_k,
-        np.asarray(train_idx, dtype=int),
-        np.asarray(cv_idx, dtype=int),
+    return HarmonicCrossValidationResult(
+        source_id=source_id,
+        period=period,
+        Ks=Ks,
+        chi2r_train=chi2r_train,
+        chi2r_cv=chi2r_cv,
+        best_K=best_k,
+        train_idx=train_idx,
+        cv_idx=cv_idx,
     )
 
 

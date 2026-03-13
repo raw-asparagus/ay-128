@@ -55,7 +55,7 @@ def _as_float_array(column) -> np.ndarray:
     return np.asarray(np.ma.filled(values, np.nan), dtype=float)
 
 
-def sanitize_vari_rrlyrae_table(data: table.Table) -> table.Table:
+def _sanitize_vari_rrlyrae_table(data: table.Table) -> table.Table:
     out = data.copy()
 
     out["source_id"] = np.asarray(out["source_id"], dtype=np.int64)
@@ -105,8 +105,8 @@ def get_gaia(query):
 
 
 @_cache_stable(module="ugdatalab.gaia")
-def get_gaia_quality(query):
-    raw = sanitize_vari_rrlyrae_table(get_gaia(query))
+def _get_gaia_quality(query):
+    raw = get_gaia(query)
     poe = raw["parallax_over_error"]
     b = raw["b"]
     data = raw[(poe > 5) & (np.abs(b) > 30)]
@@ -123,20 +123,20 @@ class GaiaData:
     query: str
     include_lightcurve: bool = False
     data: table.Table = field(init=False, repr=False)
-    lightcurve_data: table.Table | None = field(default=None, init=False, repr=False)
+    lightcurves: table.Table | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
-        self.data = get_gaia(self.query)
+        self.data = _sanitize_vari_rrlyrae_table(get_gaia(self.query))
         self._load_lightcurves()
 
     def _load_lightcurves(self):
         if not self.include_lightcurve:
-            self.lightcurve_data = None
+            self.lightcurves = None
             return
 
-        from ugdatalab.lightcurves import fetch_joined_epoch_photometry
+        from ugdatalab.lightcurves import _fetch_joined_epoch_photometry
 
-        self.lightcurve_data = fetch_joined_epoch_photometry(
+        self.lightcurves = _fetch_joined_epoch_photometry(
             self.data,
         )
 
@@ -145,7 +145,7 @@ class GaiaQuality(GaiaData):
     """Fetches and caches the quality-filtered Gaia sample with photometry-derived columns."""
 
     def __post_init__(self):
-        self.data = get_gaia_quality(self.query)
+        self.data = _sanitize_vari_rrlyrae_table(_get_gaia_quality(self.query))
         self._load_lightcurves()
 
 
@@ -154,7 +154,7 @@ class Local(GaiaQuality):
         self.query = source.query
         self.include_lightcurve = False
         self.data = source.data[source.data["parallax"] > 0.25]
-        self.lightcurve_data = None
+        self.lightcurves = None
 
 
 class StrictGBPRP(GaiaQuality):
@@ -174,7 +174,7 @@ class StrictGBPRP(GaiaQuality):
             (source.data["phot_rp_mean_flux_over_error"] > 5)
         )
         self.data  = source.data[mask]
-        self.lightcurve_data = None
+        self.lightcurves = None
 
 
 class Cut1(GaiaQuality):
@@ -190,7 +190,7 @@ class Cut1(GaiaQuality):
         u_max = 1.2 * np.maximum(1, np.exp(-0.2 * (G - 19.5)))
         mask = source.data["ruwe"] < u_max
         self.data = source.data[mask]
-        self.lightcurve_data = None
+        self.lightcurves = None
 
 
 class Cut2(GaiaQuality):
@@ -209,4 +209,4 @@ class Cut2(GaiaQuality):
             (E < 1.3 + 0.06  * bp_rp**2)
         )
         self.data = source.data[mask]
-        self.lightcurve_data = None
+        self.lightcurves = None

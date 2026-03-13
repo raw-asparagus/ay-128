@@ -3,8 +3,8 @@ import unittest
 import numpy as np
 from astropy.table import Table
 
+import ugdatalab.lightcurves as lightcurves
 from ugdatalab import (
-    build_fourier_matrix,
     cross_validate_harmonics,
     fourier_fit,
     fourier_mean_magnitude,
@@ -42,8 +42,8 @@ class FourierHelperTests(unittest.TestCase):
         np.testing.assert_allclose(phases, [0.1 / self.period] * 3)
 
         omega = 2.0 * np.pi / self.period
-        X0 = build_fourier_matrix([0.25], omega, 2)
-        X1 = build_fourier_matrix([0.25 + 10 * self.period], omega, 2)
+        X0 = lightcurves._build_fourier_matrix([0.25], omega, 2)
+        X1 = lightcurves._build_fourier_matrix([0.25 + 10 * self.period], omega, 2)
         np.testing.assert_allclose(X0, X1)
 
     def test_fourier_fit_recovers_training_series(self):
@@ -56,12 +56,11 @@ class FourierHelperTests(unittest.TestCase):
 
     def test_cross_validate_harmonics_finds_low_order_model(self):
         result = cross_validate_harmonics(self.target)
-        _, chi2r_train, chi2r_cv, best_k, _, _ = result
         expected_k_values = tuple(range(1, 26))
 
-        self.assertIn(best_k, expected_k_values)
-        self.assertTrue(np.all(np.isfinite(chi2r_train[np.isfinite(chi2r_train)])))
-        self.assertTrue(np.isfinite(chi2r_cv).any())
+        self.assertIn(result.best_K, expected_k_values)
+        self.assertTrue(np.all(np.isfinite(result.chi2r_train[np.isfinite(result.chi2r_train)])))
+        self.assertTrue(np.isfinite(result.chi2r_cv).any())
 
     def test_predict_future_magnitude_and_fourier_mean_magnitude_are_finite(self):
         fit = fourier_fit(self.target, period=self.period, k=2)

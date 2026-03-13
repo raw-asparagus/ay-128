@@ -11,3 +11,5 @@ Requires-Dist: numpy
 Requires-Dist: pymc
 Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
+Provides-Extra: dust
+Requires-Dist: dustmaps; extra == "dust"

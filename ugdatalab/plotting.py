@@ -11,6 +11,7 @@ import numpy as np
 from astropy.table import Table
 from matplotlib.figure import Figure
 
+from .lightcurves import HarmonicCrossValidationResult
 from .models.gaia import rrlyrae_representative_period
 from .paths import FIGURES_DIR, ensure_output_dirs
 
@@ -51,7 +52,9 @@ RRLYRAE_SCATTER_S = 4
 RRLYRAE_MARKER_MS = 2.5
 RRLYRAE_POINT_ALPHA = 0.55
 
-ALPHA_SHADE = 0.10
+ALPHA_SHADE = 0.1
+ALPHA_DIM = 0.3
+ALPHA_MUTED = 0.4
 ALPHA_FAINT = 0.5
 ALPHA_LIGHT = 0.6
 ALPHA_STANDARD = 0.7
@@ -347,7 +350,9 @@ def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
     return ax
 
 
-def plot_lomb_scargle_periodogram(data: Table):
+def plot_lomb_scargle_periodogram(source_id: int, data: Table):
+    data = _as_table(data)
+    data = data[data["source_id"] == int(source_id)]
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
 
@@ -376,9 +381,9 @@ def plot_lomb_scargle_periodogram(data: Table):
         alpha=ALPHA_EMPHASIS,
         label=rf"$P={period:.4f}$ d",
     )
-    ax.set_xlabel(r"$P$ [days]")
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel(r"$P_{\rm LS}$ [days]")
     ax.set_ylabel("Lomb-Scargle power")
-    source_id = int(data["source_id"][0])
     ax.set_title(
         _escape_latex_text(f"Lomb-Scargle periodogram for\nGaia DR3 {source_id} ({classification})"),
         fontsize=EMPHASIS_SIZE,
@@ -444,7 +449,7 @@ def plot_period_abs_mag(
 
     ax.set_xscale("log")
     ax.invert_yaxis()
-    ax.set_xlabel(r"$P$ [days]")
+    ax.set_xlabel(r"L-S period $P_{\rm LS}$ [days]")
     ax.set_ylabel(r"$M_G$ [mag]")
     _set_title(ax, title)
     ax.legend()
@@ -526,7 +531,7 @@ def plot_period_mean_g(data: Table):
 
     ax.set_xscale("log")
     ax.invert_yaxis()
-    ax.set_xlabel(r"$P$ [days]")
+    ax.set_xlabel(r"L-S period $P_{\rm LS}$ [days]")
     ax.set_ylabel(r"$\langle G \rangle$ [mag]")
     ax.autoscale_view()
     ax.legend()
@@ -728,11 +733,6 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
 
     fig, axes = _grid_1x2(figsize=_textwidth_figsize(84 / 25))
 
-    time_unit = getattr(data["g_transit_time"], "unit", None)
-    mag_unit = getattr(data["g_transit_mag"], "unit", None)
-    time_label = f"Time [{time_unit}]" if time_unit is not None else "Time"
-    mag_label = f"G [{mag_unit}]" if mag_unit is not None else "G"
-
     errorbar_alpha = RRLYRAE_POINT_ALPHA * (ALPHA_LIGHT / ALPHA_STANDARD)
     raw_errorbar_kwargs = {
         "fmt": "none",
@@ -762,8 +762,8 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
         label="Raw light curve",
     )
     axes[0].invert_yaxis()
-    axes[0].set_xlabel(time_label)
-    axes[0].set_ylabel(mag_label)
+    axes[0].set_xlabel("Time [days]")
+    axes[0].set_ylabel("G [mag]")
     axes[0].legend(loc="best")
     _apply_grid(axes[0])
 
@@ -779,7 +779,7 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     )
     axes[1].invert_yaxis()
     axes[1].set_xlabel("Phase")
-    axes[1].set_ylabel(mag_label)
+    axes[1].set_ylabel("G [mag]")
     axes[1].legend(loc="best")
     _apply_grid(axes[1])
 
@@ -795,8 +795,8 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
 
 
 def plot_fourier_harmonic_fits(
-    data: Table,
     target_id: int,
+    data: Table,
     K_values: list[int] | tuple[int, ...],
 ):
     data = _as_table(data)
@@ -844,7 +844,6 @@ def plot_fourier_harmonic_fits(
 
     all_curve_values = [mag]
     all_residual_values = []
-
     for i, K in enumerate(K_values):
         fit = fourier_fit(data, period, K)
         model_mag = fit.predict(epoch_grid)
@@ -863,7 +862,7 @@ def plot_fourier_harmonic_fits(
             ms=RRLYRAE_MARKER_MS,
             elinewidth=LW_FINE,
             color=PRIMARY_COLOR,
-            alpha=RRLYRAE_POINT_ALPHA,
+            alpha=ALPHA_MUTED,
             zorder=2,
         )
         ax_curve.plot(phase_grid, model_mag, color=SECONDARY_COLOR, lw=LW_MEDIUM, zorder=3)
@@ -886,7 +885,7 @@ def plot_fourier_harmonic_fits(
             ms=RRLYRAE_MARKER_MS,
             elinewidth=LW_FINE,
             color=PRIMARY_COLOR,
-            alpha=RRLYRAE_POINT_ALPHA,
+            alpha=ALPHA_MUTED,
             zorder=2,
         )
         _zero_line(ax_resid)
@@ -1005,28 +1004,24 @@ def plot_rrlyrae_shape_comparison(panels: list[dict[str, Any]]):
     return axes
 
 
-def plot_fourier_cross_validation(
-    Ks: np.ndarray,
-    chi2r_train: np.ndarray,
-    chi2r_cv: np.ndarray,
-    best_K: int,
-    target_id: int,
-    n_train: int,
-    n_cv: int,
-):
-    Ks = np.asarray(Ks, dtype=int)
-    chi2r_train = np.asarray(chi2r_train, dtype=float)
-    chi2r_cv = np.asarray(chi2r_cv, dtype=float)
+def plot_fourier_cross_validation(result: HarmonicCrossValidationResult):
+    Ks = np.asarray(result.Ks, dtype=int)
+    chi2r_train = np.asarray(result.chi2r_train, dtype=float)
+    chi2r_cv = np.asarray(result.chi2r_cv, dtype=float)
+    best_K = int(result.best_K)
+    target_id = int(result.source_id)
+    n_train = len(result.train_idx)
+    n_cv = len(result.cv_idx)
     valid = np.isfinite(chi2r_train) & np.isfinite(chi2r_cv)
     if not np.any(valid):
         raise ValueError("No finite cross-validation values are available for plotting.")
 
-    best_mask = Ks == int(best_K)
+    best_mask = Ks == best_K
     if not np.any(best_mask):
         raise ValueError("best_K must be present in Ks.")
     cv_best = float(chi2r_cv[best_mask][0])
 
-    _, ax = _single_panel(_textwidth_figsize(16 / 3))
+    _, ax = _single_panel(_columnwidth_figsize(9 / 4))
     ax.plot(Ks[valid], chi2r_train[valid], marker="o", ms=MARKER_MS_FINE, lw=LW_STANDARD, alpha=ALPHA_GUIDE, label=r"Training $\chi_r^2$")
     ax.plot(Ks[valid], chi2r_cv[valid], marker="o", ms=MARKER_MS_FINE, lw=LW_STANDARD, alpha=ALPHA_GUIDE, label=r"Cross-validation $\chi_r^2$")
     ax.axhline(1.0, color=NEUTRAL_COLOR, ls="--", lw=LW_GUIDE, alpha=ALPHA_STANDARD, label=r"$\chi_r^2 = 1$")
@@ -1044,6 +1039,42 @@ def plot_fourier_cross_validation(
     ax.legend(loc="lower center")
     _apply_grid(ax)
     return ax
+
+
+def plot_fourier_cv_normalized_residual_histograms(data: Table, result: HarmonicCrossValidationResult):
+    data = _as_table(data)
+
+    from ugdatalab.lightcurves import fourier_fit
+
+    train_lightcurve = data[result.train_idx]
+    cv_lightcurve = data[result.cv_idx]
+    period = float(result.period)
+    low_K = int(result.Ks[0])
+    best_K = int(result.best_K)
+
+    train_epochs = np.asarray(train_lightcurve["g_transit_time"], dtype=float)
+    train_mags = np.asarray(train_lightcurve["g_transit_mag"], dtype=float)
+    train_errs = np.asarray(train_lightcurve["g_transit_mag_err"], dtype=float)
+    cv_epochs = np.asarray(cv_lightcurve["g_transit_time"], dtype=float)
+    cv_mags = np.asarray(cv_lightcurve["g_transit_mag"], dtype=float)
+    cv_errs = np.asarray(cv_lightcurve["g_transit_mag_err"], dtype=float)
+
+    fit_low = fourier_fit(train_lightcurve, period, low_K)
+    fit_best = fourier_fit(train_lightcurve, period, best_K)
+
+    train_norm_low = (train_mags - fit_low.predict(train_epochs)) / train_errs
+    cv_norm_low = (cv_mags - fit_low.predict(cv_epochs)) / cv_errs
+    train_norm_best = (train_mags - fit_best.predict(train_epochs)) / train_errs
+    cv_norm_best = (cv_mags - fit_best.predict(cv_epochs)) / cv_errs
+
+    return plot_fourier_normalized_residual_histograms(
+        train_norm_low,
+        cv_norm_low,
+        train_norm_best,
+        cv_norm_best,
+        low_K,
+        best_K,
+    )
 
 
 def plot_fourier_normalized_residual_histograms(
@@ -1081,6 +1112,45 @@ def plot_fourier_normalized_residual_histograms(
     return axes
 
 
+def plot_fourier_cv_phase_comparison(data: Table, result: HarmonicCrossValidationResult):
+    data = _as_table(data)
+
+    from ugdatalab.lightcurves import fourier_fit, phase_fold
+
+    train_lightcurve = data[result.train_idx]
+    cv_lightcurve = data[result.cv_idx]
+    period = float(result.period)
+    best_K = int(result.best_K)
+    high_K = int(result.Ks[-1])
+
+    train_epochs = np.asarray(train_lightcurve["g_transit_time"], dtype=float)
+    train_mags = np.asarray(train_lightcurve["g_transit_mag"], dtype=float)
+    cv_epochs = np.asarray(cv_lightcurve["g_transit_time"], dtype=float)
+    cv_mags = np.asarray(cv_lightcurve["g_transit_mag"], dtype=float)
+
+    train_phase = phase_fold(train_epochs, period)
+    cv_phase = phase_fold(cv_epochs, period)
+    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+    epoch_grid = phase_grid * period
+
+    fit_best = fourier_fit(train_lightcurve, period, best_K)
+    fit_high = fourier_fit(train_lightcurve, period, high_K)
+    model_mag_best = fit_best.predict(epoch_grid)
+    model_mag_high = fit_high.predict(epoch_grid)
+
+    return plot_fourier_train_cv_phase_comparison(
+        train_phase,
+        train_mags,
+        cv_phase,
+        cv_mags,
+        phase_grid,
+        model_mag_best,
+        model_mag_high,
+        best_K,
+        high_K,
+    )
+
+
 def plot_fourier_train_cv_phase_comparison(
     train_phase: np.ndarray,
     train_mags: np.ndarray,
@@ -1115,7 +1185,7 @@ def plot_fourier_train_cv_phase_comparison(
             train_phase,
             train_mags,
             s=RRLYRAE_SCATTER_S,
-            alpha=ALPHA_FAINT,
+            alpha=ALPHA_DIM,
             color=PRIMARY_COLOR,
             rasterized=True,
             label="Training",
@@ -1124,7 +1194,7 @@ def plot_fourier_train_cv_phase_comparison(
             cv_phase,
             cv_mags,
             s=RRLYRAE_SCATTER_S,
-            alpha=ALPHA_LIGHT,
+            alpha=ALPHA_MUTED,
             color=SECONDARY_COLOR,
             rasterized=True,
             label="CV",
