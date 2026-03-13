@@ -8,6 +8,7 @@ from ugdatalab import (
     cross_validate_harmonics,
     fourier_fit,
     fourier_mean_magnitude,
+    fourier_mean_magnitude_error,
     phase_fold,
     predict_future_magnitude,
 )
@@ -64,12 +65,17 @@ class FourierHelperTests(unittest.TestCase):
 
     def test_predict_future_magnitude_and_fourier_mean_magnitude_are_finite(self):
         fit = fourier_fit(self.target, period=self.period, k=2)
-        epoch_pred, mag_pred = predict_future_magnitude(fit)
+        epoch_pred, mag_pred, sigma_pred = predict_future_magnitude(fit)
         mean_mag = fourier_mean_magnitude(fit)
+        mean_mag_err = fourier_mean_magnitude_error(fit)
 
         self.assertGreater(epoch_pred, self.times.max())
         self.assertTrue(np.isfinite(mag_pred))
+        self.assertTrue(np.isfinite(sigma_pred))
+        self.assertGreaterEqual(sigma_pred, 0.0)
         self.assertTrue(np.isfinite(mean_mag))
+        self.assertTrue(np.isfinite(mean_mag_err))
+        self.assertGreaterEqual(mean_mag_err, 0.0)
 
 
 if __name__ == "__main__":

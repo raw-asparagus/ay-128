@@ -11,6 +11,7 @@ from ugdatalab import (
     cross_validate_harmonics,
     fourier_fit,
     fourier_mean_magnitude,
+    fourier_mean_magnitude_error,
     lomb_scargle_periodogram,
     predict_future_magnitude,
 )
@@ -229,11 +230,32 @@ class LightcurveHelperTests(unittest.TestCase):
 
         fit = fourier_fit(target, period, k=1)
         mean_mag = fourier_mean_magnitude(fit)
-        epoch_pred, mag_pred = predict_future_magnitude(fit)
+        epoch_pred, mag_pred, sigma_pred = predict_future_magnitude(fit)
 
         self.assertAlmostEqual(mean_mag, 15.0, places=6)
         self.assertAlmostEqual(mag_pred, 15.0, places=6)
         self.assertAlmostEqual(epoch_pred, float(np.max(epochs) + 10.0), places=6)
+        self.assertGreaterEqual(sigma_pred, 0.0)
+
+    def test_fourier_mean_magnitude_error_is_finite_and_nonnegative(self):
+        period = 0.6
+        epochs = np.linspace(0.0, 3.0 * period, 60, endpoint=False)
+        mags = 15.0 + 0.2 * np.cos(2.0 * np.pi * epochs / period)
+        target = Table(
+            {
+                "source_id": np.ones(len(epochs), dtype=int),
+                "g_transit_time": epochs,
+                "g_transit_mag": mags,
+                "g_transit_mag_err": np.full(len(epochs), 0.02),
+                "period_ls": np.full(len(epochs), period),
+            }
+        )
+
+        fit = fourier_fit(target, period, k=1)
+        sigma_mean = fourier_mean_magnitude_error(fit)
+
+        self.assertTrue(np.isfinite(sigma_mean))
+        self.assertGreaterEqual(sigma_mean, 0.0)
 
 
 if __name__ == "__main__":

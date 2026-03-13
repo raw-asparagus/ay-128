@@ -21,6 +21,7 @@ _EPOCH_FLOAT_COLUMNS = (
     "g_transit_flux",
     "g_transit_flux_error",
 )
+_MIN_PERIOD = np.finfo(float).tiny
 
 
 def _as_float_array(column) -> np.ndarray:
@@ -171,8 +172,8 @@ def attach_periodogram_periods(data: table.Table) -> table.Table:
     return data
 
 
-def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarray, float]:
-    """Compute a Lomb-Scargle periodogram for one source's epoch photometry."""
+def _lomb_scargle_spectrum(target: table.Table) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the Lomb-Scargle frequency spectrum for one light curve."""
     epoch = target["g_transit_time"]
     values = target["g_transit_flux"]
     value_err = target["g_transit_flux_error"]
@@ -181,9 +182,13 @@ def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarra
         minimum_frequency=1.0 / DEFAULT_PERIOD_MAX,
         maximum_frequency=1.0 / DEFAULT_PERIOD_MIN,
     )
+    return np.asarray(freqs, dtype=float), np.asarray(power, dtype=float)
 
-    periods = 1.0 / np.asarray(freqs, dtype=float)
-    power = np.asarray(power, dtype=float)
+
+def lomb_scargle_periodogram(target: table.Table) -> tuple[np.ndarray, np.ndarray, float]:
+    """Compute a Lomb-Scargle periodogram for one source's epoch photometry."""
+    freqs, power = _lomb_scargle_spectrum(target)
+    periods = 1.0 / freqs
     order = np.argsort(power)[::-1]
     periods = periods[order]
     power = power[order]
@@ -241,10 +246,20 @@ class FourierFit:
     mags: np.ndarray
     mag_errs: np.ndarray
     beta: np.ndarray
+    beta_cov: np.ndarray | None
     chi2_r: float
+    classification: str | None = None
 
     def predict(self, epoch_eval: Iterable[float]) -> np.ndarray:
         return _fourier_predict(epoch_eval, self.period, self.K, self.beta)
+
+    def predict_std(self, epoch_eval: Iterable[float]) -> np.ndarray:
+        epoch_eval = np.atleast_1d(np.asarray(epoch_eval, dtype=float))
+
+        omega = 2.0 * np.pi / self.period
+        X_eval = _build_fourier_matrix(epoch_eval, omega, self.K)
+        pred_var = np.einsum("ij,jk,ik->i", X_eval, self.beta_cov, X_eval)
+        return np.sqrt(np.clip(pred_var, 0.0, None))
 
 
 @dataclass(frozen=True)
@@ -257,11 +272,13 @@ class HarmonicCrossValidationResult:
     best_K: int
     train_idx: np.ndarray
     cv_idx: np.ndarray
+    classification: str
 
 
 def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
     """Fit a weighted Fourier series to one light curve with a fixed period."""
     source_id = target["source_id"][0]
+    classification = target["best_classification"][0]
     epochs = target["g_transit_time"]
     mags = target["g_transit_mag"]
     mag_errs = target["g_transit_mag_err"]
@@ -277,6 +294,13 @@ def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
     resid = mags - X @ beta
     nu = len(epochs) - (2 * k + 1)
     chi2_r = float(np.sum((resid / mag_errs) ** 2) / nu)
+    inv_var = 1.0 / np.square(mag_errs)
+    normal_matrix = X.T @ (X * inv_var[:, None])
+    try:
+        beta_cov = np.linalg.inv(normal_matrix)
+    except np.linalg.LinAlgError:
+        beta_cov = np.linalg.pinv(normal_matrix)
+    beta_cov = beta_cov * max(chi2_r, 1.0)
 
     return FourierFit(
         source_id=source_id,
@@ -286,13 +310,16 @@ def fourier_fit(target: table.Table, period: float, k: int) -> FourierFit:
         mags=mags,
         mag_errs=mag_errs,
         beta=beta,
+        beta_cov=beta_cov,
         chi2_r=chi2_r,
+        classification=classification,
     )
 
 
 def cross_validate_harmonics(target: table.Table) -> HarmonicCrossValidationResult:
-    """Cross-validate the harmonic order of a fixed-period Fourier model."""
+    """Cross-validate the harmonic order using the source's Lomb-Scargle period."""
     source_id = target["source_id"][0]
+    classification = target["best_classification"][0]
     Ks = np.arange(1, 26, dtype=int)
     period = target["period_ls"][0]
     epochs = target["g_transit_time"]
@@ -328,19 +355,38 @@ def cross_validate_harmonics(target: table.Table) -> HarmonicCrossValidationResu
         best_K=best_k,
         train_idx=train_idx,
         cv_idx=cv_idx,
+        classification=classification,
     )
 
-
-def predict_future_magnitude(fit: FourierFit) -> tuple[float, float]:
-    """Predict the magnitude a fixed number of days after the last observed epoch."""
+def predict_future_magnitude(fit: FourierFit) -> tuple[float, float, float]:
+    """Predict the magnitude and its uncertainty a fixed time after the last epoch."""
     epoch_last = float(np.max(fit.epochs))
     epoch_pred = epoch_last + 10.0
     mag_pred = float(fit.predict([epoch_pred])[0])
-    return epoch_pred, mag_pred
+    mag_pred_err = float(fit.predict_std([epoch_pred])[0])
+    return epoch_pred, mag_pred, mag_pred_err
+
+
+def _fourier_mean_magnitude_from_beta(period: float, k: int, beta: np.ndarray) -> float:
+    epoch_grid = np.linspace(0.0, period, 1000, endpoint=False)
+    flux_grid = 10.0 ** (-0.4 * (_fourier_predict(epoch_grid, period, k, beta) - ZP_G))
+    return -2.5 * np.log10(np.mean(flux_grid)) + ZP_G
 
 
 def fourier_mean_magnitude(fit: FourierFit) -> float:
     """Compute the flux-space mean magnitude implied by a fitted Fourier model."""
+    return _fourier_mean_magnitude_from_beta(fit.period, fit.K, fit.beta)
+
+
+def fourier_mean_magnitude_error(fit: FourierFit) -> float:
+    """Propagate fitted-coefficient covariance into the flux-space mean magnitude."""
     epoch_grid = np.linspace(0.0, fit.period, 1000, endpoint=False)
-    flux_grid = 10.0 ** (-0.4 * (fit.predict(epoch_grid) - ZP_G))
-    return -2.5 * np.log10(np.mean(flux_grid)) + ZP_G
+    omega = 2.0 * np.pi / fit.period
+    X_grid = _build_fourier_matrix(epoch_grid, omega, fit.K)
+    mag_grid = X_grid @ fit.beta
+    flux_grid = 10.0 ** (-0.4 * (mag_grid - ZP_G))
+    mean_flux = np.mean(flux_grid)
+
+    grad = np.mean(X_grid * flux_grid[:, None], axis=0) / mean_flux
+    mean_mag_var = grad @ fit.beta_cov @ grad
+    return float(np.sqrt(np.clip(mean_mag_var, 0.0, None)))

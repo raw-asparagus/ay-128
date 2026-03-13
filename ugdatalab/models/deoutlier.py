@@ -23,8 +23,9 @@ class MixtureContaminationModel:
     def _log_mix_terms(a, b, sig_scatter, f, x, y, sigma_y, mu_bg, sig_bg):
         """Per-star (log_f + ll_in, log_1mf + ll_out); all arguments broadcast."""
         var_in = sigma_y**2 + sig_scatter**2
+        var_out = sigma_y**2 + sig_bg**2
         ll_in  = -0.5 * (np.log(2*np.pi*var_in) + (y - (a + b*x))**2 / var_in)
-        ll_out = -0.5 * (np.log(2*np.pi*sig_bg**2) + (y - mu_bg)**2 / sig_bg**2)
+        ll_out = -0.5 * (np.log(2*np.pi*var_out) + (y - mu_bg)**2 / var_out)
         return np.log(f) + ll_in, np.log(1 - f) + ll_out
 
     @staticmethod

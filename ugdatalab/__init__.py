@@ -63,6 +63,7 @@ from ugdatalab.lightcurves import (
     cross_validate_harmonics,
     fourier_fit,
     fourier_mean_magnitude,
+    fourier_mean_magnitude_error,
     lomb_scargle_periodogram,
     phase_fold,
     predict_future_magnitude,
