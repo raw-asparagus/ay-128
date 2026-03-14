@@ -16,7 +16,7 @@
   Provides `Local`, `StrictGBPRP`, `Cut1`, and `Cut2` for the main quality and locality cuts.
 - `ugdatalab.plotting`
   Provides the reusable Gaia/deoutlier and MCMC plotting helpers used by the Lab 1 notebooks.
-- `ugdatalab.models.deoutlier.MixtureContaminationModel`
+- `ugdatalab.deoutlier.MixtureContaminationModel`
   Performs class-specific outlier rejection in period-luminosity space and adds posterior inlier probabilities.
 - `ugdatalab.relations`
   Prepares period-luminosity and period-color datasets and fits them with either Metropolis-Hastings or NUTS.
@@ -29,21 +29,41 @@
 
 - `01.ipynb`
   Uses the query, epoch-photometry, Lomb-Scargle, and Fourier helpers for Lab 1 parts 1-10.
-- `part-2.ipynb`
-  Uses `GaiaQuality`, the quality-cut classes, `MixtureContaminationModel`, `prepare_relation_data`, `fit_relation_mh`, and `fit_relation_nuts` to build the cleaned calibration sample and fit the class-specific period-luminosity and period-color relations.
+- `02-01.ipynb`
+  Builds the cleaned Gaia calibration sample and exports it as `rrlyrae_calibration_sample.npz`.
+- `02-02.ipynb`
+  Fits the class-specific Gaia $G$-band period-luminosity relations from `rrlyrae_calibration_sample.npz` and exports `rrlyrae_optical_pl_comparison_data.npz`.
+- `03.ipynb`
+  Loads `rrlyrae_calibration_sample.npz`, caches the Gaia+WISE join in `rrlyrae_gaia_wise_query_data.npz`, compares against `rrlyrae_optical_pl_comparison_data.npz`, and exports `rrlyrae_infrared_pl_comparison_data.npz`.
+- `04.ipynb`
+  Consumes `rrlyrae_optical_pl_comparison_data.npz` and `rrlyrae_infrared_pl_comparison_data.npz` for the optical-literature comparison and the Gaia $G$ versus WISE $W2$ discussion.
+- `05.ipynb`
+  Fits the class-specific Gaia period-color relations with native PyMC NUTS and writes notebook-local handoff archives `rrlyrae_optical_pc_comparison_data.npz` and `rrlyrae_rrab_rrc_full_catalog.npz` for `06.ipynb`.
+- `06.ipynb`
+  Loads `rrlyrae_optical_pc_comparison_data.npz` and `rrlyrae_rrab_rrc_full_catalog.npz`, computes `E_bprp` and empirical `A_G`, and compares that result to Gaia DR3 `g_absorption`.
 - `part-3.ipynb`
-  Continues from the fitted period-color posteriors and computes class-specific intrinsic colors, `E_bprp`, `A_G_calc`, the comparison to Gaia `g_absorption`, and the full-sky reddening map.
-- `flat_pc_rrab.npy` and `flat_pc_rrc.npy`
-  Store posterior samples reused by `part-3.ipynb` for the dust/reddening stage.
+  Legacy broader dust-stage notebook that combines the empirical extinction comparison with the full-sky reddening map.
+- `rrlyrae_calibration_sample.npz`
+  Stores the cleaned Gaia calibration sample exported by `02-01.ipynb`.
+- `rrlyrae_optical_pl_comparison_data.npz`
+  Stores the summarized RRab and RRc Gaia $G$-band relation values exported by `02-02.ipynb`.
+- `rrlyrae_infrared_pl_comparison_data.npz`
+  Stores the summarized RRab and RRc WISE $W2$ relation values exported by `03.ipynb`.
+- `rrlyrae_optical_pc_comparison_data.npz` and `rrlyrae_rrab_rrc_full_catalog.npz`
+  Store the local dust/reddening handoff data used by `06.ipynb`.
 
 ## Recommended Order
 
 1. Install the package in the project environment with `pip install -e .[dev]`.
 2. Run `01.ipynb` for the light-curve, Lomb-Scargle, and Fourier sections (parts 1-10).
-3. Run `part-2.ipynb` to generate or validate the RR Lyrae calibration sample and fitted PL/PC relations.
-4. Confirm the saved period-color posterior samples exist as `flat_pc_rrab.npy` and `flat_pc_rrc.npy`.
-5. Run `part-3.ipynb` to compute the empirical extinction quantities and produce the reddening-map figures.
-6. Use the notebook outputs, not the raw package API alone, as the direct basis for the lab writeup.
+3. Run `02-01.ipynb` to generate `rrlyrae_calibration_sample.npz`.
+4. Run `02-02.ipynb` to generate `rrlyrae_optical_pl_comparison_data.npz`.
+5. Run `03.ipynb` to generate the WISE comparison and `rrlyrae_infrared_pl_comparison_data.npz`.
+6. Run `04.ipynb` after `02-02.ipynb` and `03.ipynb` to compare the derived Gaia $G$ and WISE $W2$ relations against the literature.
+7. Run `05.ipynb` to generate `rrlyrae_optical_pc_comparison_data.npz` and `rrlyrae_rrab_rrc_full_catalog.npz` for the reddening/extinction stage.
+8. Run `06.ipynb` to load those local archives, compute the empirical extinction quantities, and compare them to Gaia DR3 `g_absorption`.
+9. Use `part-3.ipynb` only if you also want the older full-sky reddening-map workflow.
+10. Use the notebook outputs, not the raw package API alone, as the direct basis for the lab writeup.
 
 ## Package-To-Analysis Mapping
 
@@ -60,7 +80,7 @@
 - Period-color calibration:
   `prepare_relation_data(..., "pc")` and `fit_relation_nuts(...)`.
 - Dust stage:
-  `load_relation_posteriors(...)`, `compute_period_color_extinction(...)`, and `empirical_vs_catalog_extinction(...)`.
+  `load_or_create_rrab_rrc_full_catalog(...)`, `load_optical_pc_comparison_data(...)`, `compute_period_color_extinction(...)`, and `empirical_vs_catalog_extinction(...)`.
 
 ## Important Constraints
 

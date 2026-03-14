@@ -7,13 +7,16 @@ from astropy.table import Table
 
 from ugdatalab import (
     RelationPosteriorSummary,
+    RRAB_RRC_GAIA_SOURCE_QUERY,
     apply_reddening_quality_mask,
     attach_sfd_ebv,
     build_reddening_quality_mask,
     build_rrlyrae_gaia_source_query,
     compute_empirical_extinction,
     empirical_vs_catalog_extinction,
+    load_or_create_rrab_rrc_full_catalog,
     load_relation_posteriors,
+    save_table_npz,
     sample_sfd_ebv,
     summarize_relation_samples,
 )
@@ -32,6 +35,9 @@ class DustHelperTests(unittest.TestCase):
         self.assertIn("JOIN gaiadr3.gaia_source AS gs", query)
         self.assertIn("ABS(gs.b) > 30", query)
         self.assertIn("ORDER BY gs.parallax_over_error DESC", query)
+
+    def test_rrab_rrc_query_filters_to_single_mode_classes(self):
+        self.assertIn("vr.best_classification IN ('RRab', 'RRc')", RRAB_RRC_GAIA_SOURCE_QUERY)
 
     def test_summarize_relation_samples_and_load_relation_posteriors(self):
         samples = np.array(
@@ -144,6 +150,26 @@ class DustHelperTests(unittest.TestCase):
         self.assertEqual(mask.tolist(), [True, False, False])
         self.assertEqual(len(filtered), 1)
 
+    def test_reddening_quality_mask_physical_value_cuts(self):
+        data = Table({
+            "E_bprp":  [-0.1, 0.4, 3.5, 0.2, 0.05],
+            "A_G_calc": [0.2,  0.8, 7.0, 0.4,  0.1],
+            "bp_rp":   [0.5,  0.5, 0.5, 0.5,  0.5],
+            "phot_bp_mean_flux_over_error": [10, 10, 10, 10, 10],
+            "phot_rp_mean_flux_over_error": [10, 10, 10, 10, 10],
+            "phot_bp_rp_excess_factor":    [1.02, 1.02, 1.02, 1.02, 1.02],
+            "sigma_E": [0.05, 0.05, 0.05, 0.30, 0.05],
+        })
+        # row 0: negative E (fails min_ebprp)
+        # row 1: passes all
+        # row 2: extreme positive E (fails max_ebprp)
+        # row 3: low reddening SNR (0.2/0.30 ≈ 0.67, fails min_reddening_snr=1.0)
+        # row 4: passes all
+        mask = build_reddening_quality_mask(
+            data, min_ebprp=0.0, max_ebprp=3.0, min_reddening_snr=1.0
+        )
+        self.assertEqual(mask.tolist(), [False, True, False, False, True])
+
     def test_sample_sfd_ebv_and_attach_sfd_ebv_use_injected_query(self):
         data = Table({"l": [10.0, 25.0], "b": [30.0, -12.0]})
         calls = []
@@ -158,6 +184,29 @@ class DustHelperTests(unittest.TestCase):
         np.testing.assert_allclose(samples, [0.11, 0.22])
         np.testing.assert_allclose(result["sfd_ebv"], [0.11, 0.22])
         self.assertEqual(len(calls), 2)
+
+    def test_load_or_create_rrab_rrc_full_catalog_uses_existing_archive(self):
+        data = Table(
+            {
+                "best_classification": ["RRab", "RRc"],
+                "source_id": [1, 2],
+                "pf": [0.62, np.nan],
+                "p1_o": [np.nan, 0.31],
+                "bp_rp": [0.71, 0.39],
+                "phot_bp_mean_flux_over_error": [30.0, 40.0],
+                "phot_rp_mean_flux_over_error": [25.0, 35.0],
+                "g_absorption": [0.22, 0.11],
+            }
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "rrab_rrc_catalog.npz"
+            save_table_npz(path, data)
+            loaded, status = load_or_create_rrab_rrc_full_catalog(path)
+
+        self.assertEqual(status, "loaded")
+        self.assertEqual(len(loaded), 2)
+        np.testing.assert_array_equal(loaded["best_classification"], ["RRab", "RRc"])
 
 
 if __name__ == "__main__":

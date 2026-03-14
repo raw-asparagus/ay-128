@@ -47,6 +47,8 @@ class PackageSmokeTests(unittest.TestCase):
         self.assertTrue(hasattr(module, "plot_lomb_scargle_periodogram"))
         self.assertTrue(hasattr(module, "plot_raw_phase_folded_lightcurve"))
         self.assertTrue(hasattr(module, "plot_corner"))
+        self.assertTrue(hasattr(module, "plot_pc_posterior_predictive"))
+        self.assertTrue(hasattr(module, "plot_pc_posterior_predictive_comparison"))
         self.assertTrue(hasattr(module, "attach_periodogram_periods"))
 
     def test_plot_corner_works(self):

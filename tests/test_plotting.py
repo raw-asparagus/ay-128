@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 from contextlib import contextmanager
+import inspect
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -35,16 +36,27 @@ from ugdatalab.plotting import (
     plot_lomb_scargle_periodogram,
     plot_mean_g_catalog_comparison,
     plot_mollweide,
+    plot_mollweide_period_abs_mag_overview,
     plot_mollweide_diff,
     plot_period_abs_mag,
+    plot_period_abs_mag_ls,
+    plot_period_abs_mag_comparison,
     plot_period_mean_g,
     plot_vari_rrlyrae_period_comparison,
     plot_period_luminosity_diff,
+    plot_inlier_prob_period_luminosity_comparison,
+    plot_optical_pl_literature_comparison,
+    plot_pl_posterior_predictive,
+    plot_pl_posterior_predictive_comparison,
+    plot_pl_sampler_comparison_corner,
+    plot_pc_posterior_predictive,
+    plot_pc_posterior_predictive_comparison,
     plot_posterior,
     plot_raw_phase_folded_lightcurve,
     plot_trace,
 )
 from ugdatalab.lightcurves import HarmonicCrossValidationResult, cross_validate_harmonics, fourier_fit
+from ugdatalab.models.gaia import rrlyrae_representative_period
 
 
 def _gaia_quality_table():
@@ -206,6 +218,7 @@ def _shape_comparison_source(rr_class, source_ids, periods, phase_shifts):
         rows=lightcurve_rows,
         names=("source_id", "g_transit_time", "g_transit_mag", "g_transit_flux", "g_transit_flux_error"),
     )
+    lightcurves["best_classification"] = [rr_class] * len(lightcurves)
     return SimpleNamespace(data=data, lightcurves=lightcurves)
 
 
@@ -215,6 +228,79 @@ def _sampler_view():
         log_probs=np.array([-2.0, -1.5, -1.2, -1.0], dtype=float),
         n_burn=1,
         param_labels=[r"$a$", r"$b$"],
+    )
+
+
+def _pl_context(class_label: str):
+    x_centered = np.linspace(-0.25, 0.25, 8)
+    slope = -2.2 if class_label == "RRab" else -2.0
+    intercept = 0.62 if class_label == "RRab" else 0.56
+    sigma = np.full(len(x_centered), 0.05)
+    sigma_logp = np.full(len(x_centered), 0.01)
+    y = slope * x_centered + intercept
+    return SimpleNamespace(
+        class_label=class_label,
+        x_centered=x_centered,
+        y=y,
+        sigma=sigma,
+        sigma_logp=sigma_logp,
+    )
+
+
+def _pl_samples(slope: float, intercept: float, scatter: float):
+    offsets = np.linspace(-0.03, 0.03, 60)
+    return np.column_stack(
+        [
+            slope + offsets,
+            intercept + 0.5 * offsets,
+            scatter + 0.2 * offsets,
+        ]
+    )
+
+
+def _optical_pl_comparison(rr_class: str, slope: float, intercept: float):
+    x_obs = np.linspace(-0.35, 0.05, 8)
+    y_obs = slope * x_obs + intercept
+    sigma_obs = np.full(len(x_obs), 0.08)
+    x_grid = np.linspace(float(np.min(x_obs)), float(np.max(x_obs)), 120)
+    median = slope * x_grid + intercept
+    return SimpleNamespace(
+        rr_class=rr_class,
+        x_obs=x_obs,
+        y_obs=y_obs,
+        sigma_obs=sigma_obs,
+        x_grid=x_grid,
+        median_mean=median,
+        predictive_q16=median - 0.12,
+        predictive_q84=median + 0.12,
+    )
+
+
+def _pc_context(class_label: str):
+    x_centered = np.linspace(-0.20, 0.20, 8)
+    slope = 0.18 if class_label == "RRab" else 0.11
+    intercept = 0.72 if class_label == "RRab" else 0.42
+    sigma = np.full(len(x_centered), 0.02)
+    sigma_logp = np.full(len(x_centered), 0.01)
+    y = slope * x_centered + intercept
+    return SimpleNamespace(
+        class_label=class_label,
+        x_centered=x_centered,
+        y=y,
+        sigma=sigma,
+        sigma_logp=sigma_logp,
+        y_label=r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]",
+    )
+
+
+def _pc_samples(slope: float, intercept: float, scatter: float):
+    offsets = np.linspace(-0.02, 0.02, 60)
+    return np.column_stack(
+        [
+            slope + offsets,
+            intercept + 0.3 * offsets,
+            scatter + 0.1 * offsets,
+        ]
     )
 
 
@@ -240,10 +326,20 @@ class PlottingHelperTests(unittest.TestCase):
     def test_gaia_plot_helpers_return_axes(self):
         data = _gaia_quality_table()
         subset = data[:1]
+        periods = rrlyrae_representative_period(data)
+        classifications = np.asarray(data["best_classification"], dtype=str)
 
-        ax1 = plot_mollweide(data)
+        ax1 = plot_mollweide(
+            np.asarray(data["l"], dtype=float),
+            np.asarray(data["b"], dtype=float),
+        )
         ax2 = plot_mollweide_diff(data, subset)
-        ax3 = plot_period_abs_mag(data)
+        ax3 = plot_period_abs_mag(
+            periods,
+            np.asarray(data["M_G"], dtype=float),
+            np.asarray(data["sigma_M"], dtype=float),
+            classifications,
+        )
         ax4 = plot_period_luminosity_diff(data, subset)
         ax5 = plot_hr(data)
 
@@ -254,6 +350,29 @@ class PlottingHelperTests(unittest.TestCase):
         for ax in (ax1, ax2, ax3, ax4, ax5):
             self.assertIsNotNone(ax)
             plt.close(ax.figure)
+
+    def test_plot_period_abs_mag_comparison_returns_two_axes(self):
+        data = _period_abs_mag_table()
+        left = data[:1]
+        right = data[1:]
+
+        axes = plot_period_abs_mag_comparison(
+            rrlyrae_representative_period(left),
+            np.asarray(left["M_G"], dtype=float),
+            np.asarray(left["sigma_M"], dtype=float),
+            np.asarray(left["best_classification"], dtype=str),
+            rrlyrae_representative_period(right),
+            np.asarray(right["M_G"], dtype=float),
+            np.asarray(right["sigma_M"], dtype=float),
+            np.asarray(right["best_classification"], dtype=str),
+        )
+
+        self.assertEqual(len(axes), 2)
+        self.assertTrue(axes[0].get_shared_x_axes().joined(axes[0], axes[1]))
+        self.assertTrue(axes[0].get_shared_y_axes().joined(axes[0], axes[1]))
+        self.assertEqual(axes[0].get_xlabel(), r"Catalog period $P$ [days]")
+        self.assertEqual(axes[1].get_xlabel(), r"Catalog period $P$ [days]")
+        plt.close(axes[0].figure)
 
     def test_rcparams_use_visual_weight_tokens(self):
         self.assertEqual(mpl.rcParams["grid.linewidth"], LW_GRID)
@@ -267,6 +386,38 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertTrue(ax.yaxis_inverted())
         plt.close(ax.figure)
 
+    def test_plot_inlier_prob_period_luminosity_comparison_returns_two_axes(self):
+        data = _gaia_quality_table()
+        subset = data[:1]
+        prob_source = SimpleNamespace(all_data=data)
+
+        axes = plot_inlier_prob_period_luminosity_comparison(
+            prob_source,
+            data,
+            subset,
+        )
+
+        self.assertEqual(len(axes), 2)
+        self.assertTrue(axes[0].yaxis_inverted())
+        self.assertTrue(axes[1].yaxis_inverted())
+        self.assertGreaterEqual(len(axes[0].figure.axes), 3)
+        plt.close(axes[0].figure)
+
+    def test_plot_mollweide_period_abs_mag_overview_returns_two_axes(self):
+        data = _gaia_quality_table()
+        axes = plot_mollweide_period_abs_mag_overview(
+            np.asarray(data["l"], dtype=float),
+            np.asarray(data["b"], dtype=float),
+            rrlyrae_representative_period(data),
+            np.asarray(data["M_G"], dtype=float),
+            np.asarray(data["sigma_M"], dtype=float),
+            np.asarray(data["best_classification"], dtype=str),
+        )
+
+        self.assertEqual(len(axes), 2)
+        self.assertEqual(axes[1].get_xlabel(), r"Catalog period $P$ [days]")
+        plt.close(axes[0].figure)
+
     def test_plot_raw_phase_folded_lightcurve_returns_axes(self):
         lightcurve = _lightcurve_table()
         axes = plot_raw_phase_folded_lightcurve(lightcurve["source_id"][0], lightcurve)
@@ -279,11 +430,8 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(axes[0].get_ylabel(), "G [mag]")
         self.assertEqual(axes[1].get_ylabel(), "G [mag]")
         self.assertTrue(any(label.get_visible() for label in axes[1].get_yticklabels()))
-        self.assertIn("RRab", axes[0].get_title(loc="left"))
-        self.assertIn("Gaia DR3 1", axes[0].get_title(loc="left"))
-        self.assertIn("Raw light curve", axes[0].get_title(loc="left"))
-        self.assertIn(r"$P=0.5000", axes[1].get_title(loc="left"))
-        self.assertIn("Phase-folded light curve", axes[1].get_title(loc="left"))
+        self.assertEqual(axes[0].get_title(loc="left"), "")
+        self.assertEqual(axes[1].get_title(loc="left"), "")
         self.assertEqual(axes[0].get_legend().texts[0].get_text(), "Raw light curve")
         self.assertEqual(axes[1].get_legend().texts[0].get_text(), "Phase-folded light curve")
         phase_color = mpl.colors.to_rgba("C1", alpha=0.55)
@@ -350,6 +498,7 @@ class PlottingHelperTests(unittest.TestCase):
             best_K=3,
             train_idx=np.arange(32, dtype=int),
             cv_idx=np.arange(32, 40, dtype=int),
+            classification="RRab",
         )
 
         ax = plot_fourier_cross_validation(result)
@@ -556,8 +705,133 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(len(axes[1, 1].containers), 1)
         plt.close(axes[0, 0].figure)
 
-    def test_plot_period_abs_mag_can_use_periodogram_columns(self):
-        ax = plot_period_abs_mag(_period_abs_mag_table(), use_periodogram=True)
+    def test_plot_pl_posterior_predictive_returns_axis(self):
+        ctx = _pl_context("RRab")
+        samples = _pl_samples(-2.2, 0.62, 0.18)
+
+        ax = plot_pl_posterior_predictive(ctx, samples)
+
+        self.assertEqual(
+            ax.get_xlabel(),
+            r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$",
+        )
+        self.assertEqual(ax.get_ylabel(), r"$M_{\rm G}$ [mag]")
+        legend_texts = [text.get_text() for text in ax.get_legend().get_texts()]
+        self.assertIn("RRab data", legend_texts)
+        self.assertIn("95% predictive envelope", legend_texts)
+        self.assertIn("68% predictive envelope", legend_texts)
+        self.assertIn("Posterior median", legend_texts)
+        plt.close(ax.figure)
+
+    def test_plot_pl_posterior_predictive_comparison_returns_axis(self):
+        rrab_ctx = _pl_context("RRab")
+        rrc_ctx = _pl_context("RRc")
+        rrab_samples = _pl_samples(-2.2, 0.62, 0.18)
+        rrc_samples = _pl_samples(-2.0, 0.56, 0.17)
+
+        ax = plot_pl_posterior_predictive_comparison(
+            rrab_ctx,
+            rrab_samples,
+            rrc_ctx,
+            rrc_samples,
+        )
+
+        legend_texts = [text.get_text() for text in ax.get_legend().get_texts()]
+        self.assertIn("RRab data", legend_texts)
+        self.assertIn("RRab posterior median", legend_texts)
+        self.assertIn("RRc data", legend_texts)
+        self.assertIn("RRc posterior median", legend_texts)
+        self.assertEqual(ax.get_ylabel(), r"$M_{\rm G}$ [mag]")
+        plt.close(ax.figure)
+
+    def test_plot_pc_posterior_predictive_returns_axis(self):
+        ctx = _pc_context("RRab")
+        samples = _pc_samples(0.18, 0.72, 0.05)
+
+        ax = plot_pc_posterior_predictive(ctx, samples)
+
+        self.assertEqual(
+            ax.get_xlabel(),
+            r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$",
+        )
+        self.assertEqual(ax.get_ylabel(), r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]")
+        legend_texts = [text.get_text() for text in ax.get_legend().get_texts()]
+        self.assertIn("RRab data", legend_texts)
+        self.assertIn("95% predictive envelope", legend_texts)
+        self.assertIn("68% predictive envelope", legend_texts)
+        self.assertIn("Posterior median", legend_texts)
+        plt.close(ax.figure)
+
+    def test_plot_pc_posterior_predictive_comparison_returns_axis(self):
+        rrab_ctx = _pc_context("RRab")
+        rrc_ctx = _pc_context("RRc")
+        rrab_samples = _pc_samples(0.18, 0.72, 0.05)
+        rrc_samples = _pc_samples(0.11, 0.42, 0.04)
+
+        ax = plot_pc_posterior_predictive_comparison(
+            rrab_ctx,
+            rrab_samples,
+            rrc_ctx,
+            rrc_samples,
+        )
+
+        legend_texts = [text.get_text() for text in ax.get_legend().get_texts()]
+        self.assertIn("RRab data", legend_texts)
+        self.assertIn("RRab posterior median", legend_texts)
+        self.assertIn("RRc data", legend_texts)
+        self.assertIn("RRc posterior median", legend_texts)
+        self.assertEqual(ax.get_ylabel(), r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]")
+        plt.close(ax.figure)
+
+    def test_plot_optical_pl_literature_comparison_returns_two_panel_figure(self):
+        rrab = _optical_pl_comparison("RRab", -2.2, 0.62)
+        rrc = _optical_pl_comparison("RRc", -2.0, 0.55)
+
+        fig = plot_optical_pl_literature_comparison(rrab, rrc)
+
+        self.assertEqual(len(fig.axes), 2)
+        self.assertEqual(fig.axes[0].get_xlabel(), r"$\log_{10}(P/\mathrm{day})$")
+        self.assertEqual(fig.axes[0].get_ylabel(), r"Absolute magnitude [mag]")
+        self.assertEqual(fig.axes[1].get_xlabel(), r"$\log_{10}(P/\mathrm{day})$")
+        self.assertTrue(fig.axes[0].yaxis_inverted())
+        self.assertTrue(fig.axes[1].yaxis_inverted())
+        self.assertIn("RRab", fig.axes[0].get_title())
+        self.assertIn("RRc", fig.axes[1].get_title())
+        left_text = "\n".join(text.get_text() for text in fig.axes[0].texts)
+        self.assertIn("Klein+Bloom 2014", left_text)
+        self.assertIn("Beaton+2018", left_text)
+        legend_texts = [text.get_text() for text in fig.axes[0].get_legend().get_texts()]
+        self.assertIn("RRab Gaia data", legend_texts)
+        self.assertIn(r"This work: median $M_{\rm G}$ fit", legend_texts)
+        self.assertIn("This work: 68% predictive band", legend_texts)
+        plt.close(fig)
+
+    def test_plot_pl_sampler_comparison_corner_returns_figure(self):
+        sample_map = {
+            "Metropolis-Hastings": _pl_samples(-2.2, 0.62, 0.18),
+            "NUTS + Potential": _pl_samples(-2.18, 0.61, 0.17),
+            "Native PyMC NUTS": _pl_samples(-2.21, 0.63, 0.16),
+        }
+
+        with self.writable_cache_env():
+            fig = plot_pl_sampler_comparison_corner(sample_map)
+
+        self.assertIsNotNone(fig)
+        self.assertEqual(len(fig.legends), 1)
+        legend_texts = [text.get_text() for text in fig.legends[0].get_texts()]
+        self.assertIn("Metropolis-Hastings", legend_texts)
+        self.assertIn("NUTS + Potential", legend_texts)
+        self.assertIn("Native PyMC NUTS", legend_texts)
+        plt.close(fig)
+
+    def test_plot_period_abs_mag_ls_uses_ls_label(self):
+        data = _period_abs_mag_table()
+        ax = plot_period_abs_mag_ls(
+            np.asarray(data["period_ls"], dtype=float),
+            np.asarray(data["M_G_ls"], dtype=float),
+            np.asarray(data["sigma_M_ls"], dtype=float),
+            np.asarray(data["best_classification"], dtype=str),
+        )
 
         self.assertIsNotNone(ax)
         self.assertEqual(ax.get_xlabel(), r"L-S period $P_{\rm LS}$ [days]")
@@ -662,8 +936,18 @@ class PlottingHelperTests(unittest.TestCase):
     def test_mcmc_plot_helpers_return_axes(self):
         sampler = _sampler_view()
 
-        ax = plot_posterior(sampler, param_idx=0)
-        axes = plot_trace(sampler)
+        ax = plot_posterior(
+            sampler.samples,
+            sampler.param_labels,
+            sampler.n_burn,
+            param_idx=0,
+        )
+        axes = plot_trace(
+            sampler.samples,
+            sampler.log_probs,
+            sampler.param_labels,
+            sampler.n_burn,
+        )
 
         self.assertIsNotNone(ax)
         self.assertEqual(len(axes), 3)
@@ -676,9 +960,11 @@ class PlottingHelperTests(unittest.TestCase):
         sampler = _sampler_view()
 
         ax = plot_posterior(
-            sampler,
+            sampler.samples,
+            [r"$\mu$", r"$b$"],
+            sampler.n_burn,
+            param_idx=0,
             pdf_fn=lambda x: np.exp(-0.5 * x**2),
-            label=r"$\mu$",
         )
         legend_texts = [text.get_text() for text in ax.get_legend().get_texts()]
 
@@ -694,6 +980,44 @@ class PlottingHelperTests(unittest.TestCase):
 
         self.assertIsNotNone(fig)
         plt.close(fig)
+
+    def test_public_plot_api_strips_presentation_overrides(self):
+        forbidden = {"title", "x_label", "show_panel_titles", "best_panel_title", "high_panel_title", "fig"}
+        signatures = {
+            "plot_mollweide": plot_mollweide,
+            "plot_mollweide_diff": plot_mollweide_diff,
+            "plot_period_abs_mag": plot_period_abs_mag,
+            "plot_period_abs_mag_ls": plot_period_abs_mag_ls,
+            "plot_period_abs_mag_comparison": plot_period_abs_mag_comparison,
+            "plot_period_luminosity_diff": plot_period_luminosity_diff,
+            "plot_inlier_prob_period_luminosity_comparison": plot_inlier_prob_period_luminosity_comparison,
+            "plot_hr": plot_hr,
+            "plot_inlier_prob_map": plot_inlier_prob_map,
+            "plot_pl_posterior_predictive": plot_pl_posterior_predictive,
+            "plot_pl_posterior_predictive_comparison": plot_pl_posterior_predictive_comparison,
+            "plot_pl_sampler_comparison_corner": plot_pl_sampler_comparison_corner,
+            "plot_pc_posterior_predictive": plot_pc_posterior_predictive,
+            "plot_pc_posterior_predictive_comparison": plot_pc_posterior_predictive_comparison,
+            "plot_posterior": plot_posterior,
+            "plot_trace": plot_trace,
+            "plot_corner": plot_corner,
+        }
+        allowed_ax = {
+            "plot_mollweide_diff",
+            "plot_period_abs_mag",
+            "plot_period_abs_mag_ls",
+            "plot_period_luminosity_diff",
+            "plot_hr",
+            "plot_inlier_prob_map",
+        }
+
+        for name, fn in signatures.items():
+            params = inspect.signature(fn).parameters
+            self.assertTrue(forbidden.isdisjoint(params), name)
+            if name == "plot_mollweide":
+                self.assertNotIn("ax", params)
+            elif name in allowed_ax:
+                self.assertIn("ax", params)
 
     def test_figure_helpers_access_named_figures(self):
         result = SimpleNamespace(figures={"b": object(), "a": object()})

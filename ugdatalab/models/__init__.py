@@ -10,5 +10,5 @@ from ugdatalab.models.gaia import (
     rrlyrae_class_mask,
     rrlyrae_representative_period,
 )
-from ugdatalab.models.deoutlier import MixtureContaminationModel
+from ugdatalab.deoutlier import MixtureContaminationModel
 from ugdatalab.models.sdss import SDSSData, SDSSQuality, get_sdss, get_sdss_quality

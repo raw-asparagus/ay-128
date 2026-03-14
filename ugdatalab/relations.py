@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -19,6 +21,54 @@ class RelationData:
     x_label: str
     y_label: str
     data_label: str
+
+
+@dataclass(frozen=True)
+class OpticalPLComparisonData:
+    rr_class: str
+    x_obs: np.ndarray
+    y_obs: np.ndarray
+    sigma_obs: np.ndarray
+    x_grid: np.ndarray
+    median_mean: np.ndarray
+    predictive_q16: np.ndarray
+    predictive_q84: np.ndarray
+    slope_q16: float
+    slope_q50: float
+    slope_q84: float
+    intercept_q16: float
+    intercept_q50: float
+    intercept_q84: float
+    sigma_scatter_q16: float
+    sigma_scatter_q50: float
+    sigma_scatter_q84: float
+
+
+@dataclass(frozen=True)
+class OpticalPCComparisonData:
+    rr_class: str
+    x_obs: np.ndarray
+    y_obs: np.ndarray
+    sigma_obs: np.ndarray
+    x_grid: np.ndarray
+    median_mean: np.ndarray
+    predictive_q16: np.ndarray
+    predictive_q84: np.ndarray
+    slope_q16: float
+    slope_q50: float
+    slope_q84: float
+    intercept_q16: float
+    intercept_q50: float
+    intercept_q84: float
+    sigma_scatter_q16: float
+    sigma_scatter_q50: float
+    sigma_scatter_q84: float
+    slope_median: float
+    slope_std: float
+    intercept_median: float
+    intercept_std: float
+    intrinsic_sigma_median: float
+    intrinsic_sigma_std: float
 
 
 _RELATION_META = {
@@ -68,6 +118,318 @@ def relation_parameter_labels(relation_kind: str) -> list[str]:
     if relation_kind not in _RELATION_META:
         raise ValueError(f"Unsupported relation kind: {relation_kind}")
     return list(_RELATION_META[relation_kind]["labels"])
+
+
+def _subsample_draws(values: np.ndarray, *, max_draws: int = 400, seed: int = 42) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    step = max(len(values) // max_draws, 1)
+    sample_pool = np.asarray(values[::step], dtype=float)
+    if len(sample_pool) > max_draws:
+        keep_idx = rng.choice(len(sample_pool), size=max_draws, replace=False)
+        sample_pool = sample_pool[keep_idx]
+    return sample_pool
+
+
+def _predictive_summary(
+    ctx: Any,
+    values: np.ndarray,
+    *,
+    sigma_transform=lambda arr: arr,
+    seed: int = 42,
+    n_grid: int = 300,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    x_obs = _as_float_array(ctx.x_raw)
+    sigma_obs = _as_float_array(ctx.sigma)
+    x_mean = float(ctx.x_mean)
+    if len(x_obs) == 0:
+        raise ValueError(f"No observations available for {getattr(ctx, 'class_label', 'relation')}.")
+
+    x_grid = np.linspace(float(np.min(x_obs)), float(np.max(x_obs)), int(n_grid))
+    order = np.argsort(x_obs)
+    sigma_logp = getattr(ctx, "sigma_logp", np.zeros_like(x_obs))
+    sigma_logp = _as_float_array(sigma_logp)
+    sigma_obs_grid = np.interp(x_grid, x_obs[order], sigma_obs[order])
+    sigma_x_grid = np.interp(x_grid, x_obs[order], sigma_logp[order])
+
+    rng = np.random.default_rng(seed)
+    sample_pool = _subsample_draws(values, max_draws=400, seed=seed)
+    mean_draws = np.empty((len(sample_pool), len(x_grid)), dtype=float)
+    predictive_draws = np.empty_like(mean_draws)
+    for i, (slope_draw, intercept_draw, sigma_draw) in enumerate(sample_pool):
+        sigma_scatter_draw = sigma_transform(sigma_draw)
+        mu_grid = slope_draw * (x_grid - x_mean) + intercept_draw
+        sigma_pred = np.sqrt(
+            sigma_obs_grid**2 + sigma_scatter_draw**2 + (slope_draw * sigma_x_grid) ** 2
+        )
+        mean_draws[i] = mu_grid
+        predictive_draws[i] = rng.normal(mu_grid, sigma_pred)
+
+    return (
+        x_grid,
+        np.quantile(mean_draws, 0.50, axis=0),
+        np.quantile(predictive_draws, 0.16, axis=0),
+        np.quantile(predictive_draws, 0.84, axis=0),
+    )
+
+
+def build_optical_pl_comparison_data(
+    ctx: Any,
+    samples: np.ndarray,
+    *,
+    n_grid: int = 300,
+) -> OpticalPLComparisonData:
+    """Summarize native-PyMC optical PL samples into the values plotted in Lab 1-04."""
+    rr_class = getattr(ctx, "class_label", None)
+    if rr_class not in {"RRab", "RRc"}:
+        raise ValueError("Expected `ctx.class_label` to be `RRab` or `RRc`.")
+
+    x_obs = _as_float_array(ctx.x_raw)
+    y_obs = _as_float_array(ctx.y)
+    sigma_obs = _as_float_array(ctx.sigma)
+    values = np.asarray(samples, dtype=float)
+    if values.ndim != 2 or values.shape[1] != 3:
+        raise ValueError("Expected posterior samples with shape (n_samples, 3).")
+
+    x_grid, median_mean, predictive_q16, predictive_q84 = _predictive_summary(
+        ctx,
+        values,
+        seed=42,
+        n_grid=n_grid,
+    )
+    q16, q50, q84 = np.percentile(values, [16, 50, 84], axis=0)
+    return OpticalPLComparisonData(
+        rr_class=rr_class,
+        x_obs=x_obs,
+        y_obs=y_obs,
+        sigma_obs=sigma_obs,
+        x_grid=x_grid,
+        median_mean=median_mean,
+        predictive_q16=predictive_q16,
+        predictive_q84=predictive_q84,
+        slope_q16=float(q16[0]),
+        slope_q50=float(q50[0]),
+        slope_q84=float(q84[0]),
+        intercept_q16=float(q16[1]),
+        intercept_q50=float(q50[1]),
+        intercept_q84=float(q84[1]),
+        sigma_scatter_q16=float(q16[2]),
+        sigma_scatter_q50=float(q50[2]),
+        sigma_scatter_q84=float(q84[2]),
+    )
+
+
+def build_infrared_pl_comparison_data(
+    ctx: Any,
+    samples: np.ndarray,
+    *,
+    n_grid: int = 300,
+) -> OpticalPLComparisonData:
+    """Alias for the WISE `W2` period-luminosity handoff artifact."""
+    return build_optical_pl_comparison_data(ctx, samples, n_grid=n_grid)
+
+
+def build_optical_pc_comparison_data(
+    ctx: Any,
+    samples: np.ndarray,
+    *,
+    n_grid: int = 300,
+) -> OpticalPCComparisonData:
+    """Summarize centered `[slope, intercept, log10_sigma]` PC samples for plotting and dust analysis."""
+    rr_class = getattr(ctx, "class_label", None)
+    if rr_class not in {"RRab", "RRc"}:
+        raise ValueError("Expected `ctx.class_label` to be `RRab` or `RRc`.")
+
+    x_obs = _as_float_array(ctx.x_raw)
+    y_obs = _as_float_array(ctx.y)
+    sigma_obs = _as_float_array(ctx.sigma)
+    values = np.asarray(samples, dtype=float)
+    if values.ndim != 2 or values.shape[1] != 3:
+        raise ValueError("Expected posterior samples with shape (n_samples, 3).")
+
+    x_grid, median_mean, predictive_q16, predictive_q84 = _predictive_summary(
+        ctx,
+        values,
+        sigma_transform=lambda arr: 10.0 ** arr,
+        seed=42,
+        n_grid=n_grid,
+    )
+    q16, q50, q84 = np.percentile(values, [16, 50, 84], axis=0)
+    raw_intercepts = values[:, 1] - values[:, 0] * float(ctx.x_mean)
+    intercept_q16, intercept_q50, intercept_q84 = np.percentile(raw_intercepts, [16, 50, 84])
+    sigma_q16, sigma_q50, sigma_q84 = 10.0 ** q16[2], 10.0 ** q50[2], 10.0 ** q84[2]
+    sigma_values = 10.0 ** values[:, 2]
+    return OpticalPCComparisonData(
+        rr_class=rr_class,
+        x_obs=x_obs,
+        y_obs=y_obs,
+        sigma_obs=sigma_obs,
+        x_grid=x_grid,
+        median_mean=median_mean,
+        predictive_q16=predictive_q16,
+        predictive_q84=predictive_q84,
+        slope_q16=float(q16[0]),
+        slope_q50=float(q50[0]),
+        slope_q84=float(q84[0]),
+        intercept_q16=float(intercept_q16),
+        intercept_q50=float(intercept_q50),
+        intercept_q84=float(intercept_q84),
+        sigma_scatter_q16=float(sigma_q16),
+        sigma_scatter_q50=float(sigma_q50),
+        sigma_scatter_q84=float(sigma_q84),
+        slope_median=float(np.median(values[:, 0])),
+        slope_std=float(np.std(values[:, 0])),
+        intercept_median=float(np.median(raw_intercepts)),
+        intercept_std=float(np.std(raw_intercepts)),
+        intrinsic_sigma_median=float(10.0 ** np.median(values[:, 2])),
+        intrinsic_sigma_std=float(np.std(sigma_values)),
+    )
+
+
+def save_optical_pl_comparison_data(
+    path: str | Path,
+    comparison_map: Mapping[str, OpticalPLComparisonData],
+) -> Path:
+    """Save the Lab 1 optical PL comparison handoff artifact."""
+    payload: dict[str, np.ndarray | float] = {}
+    for rr_class, comparison in comparison_map.items():
+        prefix = rr_class.lower()
+        payload[f"{prefix}_x_obs"] = np.asarray(comparison.x_obs, dtype=float)
+        payload[f"{prefix}_y_obs"] = np.asarray(comparison.y_obs, dtype=float)
+        payload[f"{prefix}_sigma_obs"] = np.asarray(comparison.sigma_obs, dtype=float)
+        payload[f"{prefix}_x_grid"] = np.asarray(comparison.x_grid, dtype=float)
+        payload[f"{prefix}_median_mean"] = np.asarray(comparison.median_mean, dtype=float)
+        payload[f"{prefix}_predictive_q16"] = np.asarray(comparison.predictive_q16, dtype=float)
+        payload[f"{prefix}_predictive_q84"] = np.asarray(comparison.predictive_q84, dtype=float)
+        payload[f"{prefix}_slope_q16"] = float(comparison.slope_q16)
+        payload[f"{prefix}_slope_q50"] = float(comparison.slope_q50)
+        payload[f"{prefix}_slope_q84"] = float(comparison.slope_q84)
+        payload[f"{prefix}_intercept_q16"] = float(comparison.intercept_q16)
+        payload[f"{prefix}_intercept_q50"] = float(comparison.intercept_q50)
+        payload[f"{prefix}_intercept_q84"] = float(comparison.intercept_q84)
+        payload[f"{prefix}_sigma_scatter_q16"] = float(comparison.sigma_scatter_q16)
+        payload[f"{prefix}_sigma_scatter_q50"] = float(comparison.sigma_scatter_q50)
+        payload[f"{prefix}_sigma_scatter_q84"] = float(comparison.sigma_scatter_q84)
+
+    output_path = Path(path)
+    np.savez(output_path, **payload)
+    return output_path
+
+
+def save_infrared_pl_comparison_data(
+    path: str | Path,
+    comparison_map: Mapping[str, OpticalPLComparisonData],
+) -> Path:
+    """Save the Lab 1 infrared PL comparison handoff artifact."""
+    return save_optical_pl_comparison_data(path, comparison_map)
+
+
+def save_optical_pc_comparison_data(
+    path: str | Path,
+    comparison_map: Mapping[str, OpticalPCComparisonData],
+) -> Path:
+    """Save the Lab 1 optical PC comparison handoff artifact."""
+    payload: dict[str, np.ndarray | float] = {}
+    for rr_class, comparison in comparison_map.items():
+        prefix = rr_class.lower()
+        payload[f"{prefix}_x_obs"] = np.asarray(comparison.x_obs, dtype=float)
+        payload[f"{prefix}_y_obs"] = np.asarray(comparison.y_obs, dtype=float)
+        payload[f"{prefix}_sigma_obs"] = np.asarray(comparison.sigma_obs, dtype=float)
+        payload[f"{prefix}_x_grid"] = np.asarray(comparison.x_grid, dtype=float)
+        payload[f"{prefix}_median_mean"] = np.asarray(comparison.median_mean, dtype=float)
+        payload[f"{prefix}_predictive_q16"] = np.asarray(comparison.predictive_q16, dtype=float)
+        payload[f"{prefix}_predictive_q84"] = np.asarray(comparison.predictive_q84, dtype=float)
+        payload[f"{prefix}_slope_q16"] = float(comparison.slope_q16)
+        payload[f"{prefix}_slope_q50"] = float(comparison.slope_q50)
+        payload[f"{prefix}_slope_q84"] = float(comparison.slope_q84)
+        payload[f"{prefix}_intercept_q16"] = float(comparison.intercept_q16)
+        payload[f"{prefix}_intercept_q50"] = float(comparison.intercept_q50)
+        payload[f"{prefix}_intercept_q84"] = float(comparison.intercept_q84)
+        payload[f"{prefix}_sigma_scatter_q16"] = float(comparison.sigma_scatter_q16)
+        payload[f"{prefix}_sigma_scatter_q50"] = float(comparison.sigma_scatter_q50)
+        payload[f"{prefix}_sigma_scatter_q84"] = float(comparison.sigma_scatter_q84)
+        payload[f"{prefix}_slope_median"] = float(comparison.slope_median)
+        payload[f"{prefix}_slope_std"] = float(comparison.slope_std)
+        payload[f"{prefix}_intercept_median"] = float(comparison.intercept_median)
+        payload[f"{prefix}_intercept_std"] = float(comparison.intercept_std)
+        payload[f"{prefix}_intrinsic_sigma_median"] = float(comparison.intrinsic_sigma_median)
+        payload[f"{prefix}_intrinsic_sigma_std"] = float(comparison.intrinsic_sigma_std)
+
+    output_path = Path(path)
+    np.savez(output_path, **payload)
+    return output_path
+
+
+def load_optical_pl_comparison_data(
+    path: str | Path,
+) -> dict[str, OpticalPLComparisonData]:
+    """Load the summarized Lab 1 optical PL comparison handoff artifact."""
+    comparison_map: dict[str, OpticalPLComparisonData] = {}
+    with np.load(Path(path), allow_pickle=False) as archive:
+        for rr_class in ("RRab", "RRc"):
+            prefix = rr_class.lower()
+            comparison_map[rr_class] = OpticalPLComparisonData(
+                rr_class=rr_class,
+                x_obs=np.asarray(archive[f"{prefix}_x_obs"], dtype=float),
+                y_obs=np.asarray(archive[f"{prefix}_y_obs"], dtype=float),
+                sigma_obs=np.asarray(archive[f"{prefix}_sigma_obs"], dtype=float),
+                x_grid=np.asarray(archive[f"{prefix}_x_grid"], dtype=float),
+                median_mean=np.asarray(archive[f"{prefix}_median_mean"], dtype=float),
+                predictive_q16=np.asarray(archive[f"{prefix}_predictive_q16"], dtype=float),
+                predictive_q84=np.asarray(archive[f"{prefix}_predictive_q84"], dtype=float),
+                slope_q16=float(archive[f"{prefix}_slope_q16"]),
+                slope_q50=float(archive[f"{prefix}_slope_q50"]),
+                slope_q84=float(archive[f"{prefix}_slope_q84"]),
+                intercept_q16=float(archive[f"{prefix}_intercept_q16"]),
+                intercept_q50=float(archive[f"{prefix}_intercept_q50"]),
+                intercept_q84=float(archive[f"{prefix}_intercept_q84"]),
+                sigma_scatter_q16=float(archive[f"{prefix}_sigma_scatter_q16"]),
+                sigma_scatter_q50=float(archive[f"{prefix}_sigma_scatter_q50"]),
+                sigma_scatter_q84=float(archive[f"{prefix}_sigma_scatter_q84"]),
+            )
+    return comparison_map
+
+
+def load_infrared_pl_comparison_data(
+    path: str | Path,
+) -> dict[str, OpticalPLComparisonData]:
+    """Load the Lab 1 infrared PL comparison handoff artifact."""
+    return load_optical_pl_comparison_data(path)
+
+
+def load_optical_pc_comparison_data(
+    path: str | Path,
+) -> dict[str, OpticalPCComparisonData]:
+    """Load the summarized Lab 1 optical PC comparison handoff artifact."""
+    comparison_map: dict[str, OpticalPCComparisonData] = {}
+    with np.load(Path(path), allow_pickle=False) as archive:
+        for rr_class in ("RRab", "RRc"):
+            prefix = rr_class.lower()
+            comparison_map[rr_class] = OpticalPCComparisonData(
+                rr_class=rr_class,
+                x_obs=np.asarray(archive[f"{prefix}_x_obs"], dtype=float),
+                y_obs=np.asarray(archive[f"{prefix}_y_obs"], dtype=float),
+                sigma_obs=np.asarray(archive[f"{prefix}_sigma_obs"], dtype=float),
+                x_grid=np.asarray(archive[f"{prefix}_x_grid"], dtype=float),
+                median_mean=np.asarray(archive[f"{prefix}_median_mean"], dtype=float),
+                predictive_q16=np.asarray(archive[f"{prefix}_predictive_q16"], dtype=float),
+                predictive_q84=np.asarray(archive[f"{prefix}_predictive_q84"], dtype=float),
+                slope_q16=float(archive[f"{prefix}_slope_q16"]),
+                slope_q50=float(archive[f"{prefix}_slope_q50"]),
+                slope_q84=float(archive[f"{prefix}_slope_q84"]),
+                intercept_q16=float(archive[f"{prefix}_intercept_q16"]),
+                intercept_q50=float(archive[f"{prefix}_intercept_q50"]),
+                intercept_q84=float(archive[f"{prefix}_intercept_q84"]),
+                sigma_scatter_q16=float(archive[f"{prefix}_sigma_scatter_q16"]),
+                sigma_scatter_q50=float(archive[f"{prefix}_sigma_scatter_q50"]),
+                sigma_scatter_q84=float(archive[f"{prefix}_sigma_scatter_q84"]),
+                slope_median=float(archive[f"{prefix}_slope_median"]),
+                slope_std=float(archive[f"{prefix}_slope_std"]),
+                intercept_median=float(archive[f"{prefix}_intercept_median"]),
+                intercept_std=float(archive[f"{prefix}_intercept_std"]),
+                intrinsic_sigma_median=float(archive[f"{prefix}_intrinsic_sigma_median"]),
+                intrinsic_sigma_std=float(archive[f"{prefix}_intrinsic_sigma_std"]),
+            )
+    return comparison_map
 
 
 def prepare_relation_data(source, rr_class: str, relation_kind: str) -> RelationData:

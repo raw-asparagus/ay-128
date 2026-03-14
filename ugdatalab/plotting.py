@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import corner
@@ -11,6 +12,7 @@ import matplotlib.ticker as mticker
 import numpy as np
 from astropy.table import Table
 from matplotlib.figure import Figure
+from matplotlib.lines import Line2D
 
 from .lightcurves import (
     FourierFit,
@@ -152,8 +154,8 @@ def _plot_period_values(data: Table) -> np.ndarray:
     return rrlyrae_representative_period(data)
 
 
-def _plot_class_masks(data: Table) -> list[tuple[str, np.ndarray]]:
-    classifications = np.asarray(data["best_classification"], dtype=str)
+def _plot_class_masks(classifications) -> list[tuple[str, np.ndarray]]:
+    classifications = np.asarray(classifications, dtype=str)
     ordered = ["RRab", "RRc", "RRd"]
     labels = [label for label in ordered if np.any(classifications == label)]
     labels.extend(
@@ -307,19 +309,20 @@ def figure_names(result) -> list[str]:
     return sorted(result.figures)
 
 
-def plot_mollweide(source, ax=None, title=None, **scatter_kwargs):
-    data = _as_table(source)
-    l_wrap = np.where(data["l"] > 180, data["l"] - 360, data["l"])
+def _draw_mollweide(ax, l_deg, b_deg):
+    l_deg = np.asarray(l_deg, dtype=float)
+    b_deg = np.asarray(b_deg, dtype=float)
+    l_wrap = np.where(l_deg > 180, l_deg - 360, l_deg)
     l_rad = np.deg2rad(l_wrap)
-    b_rad = np.deg2rad(data["b"])
-
-    if ax is None:
-        fig = plt.figure(figsize=_textwidth_figsize(22 / 5))
-        ax = fig.add_subplot(111, projection="mollweide")
-
-    scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
-    scatter_kwargs.setdefault("color", PRIMARY_COLOR)
-    ax.scatter(l_rad, b_rad, **scatter_kwargs)
+    b_rad = np.deg2rad(b_deg)
+    ax.scatter(
+        l_rad,
+        b_rad,
+        s=SCATTER_S_FINE,
+        color=PRIMARY_COLOR,
+        alpha=ALPHA_DENSE,
+        rasterized=True,
+    )
 
     longs = np.linspace(-np.pi, np.pi, 1000)
     lat_lo = np.full_like(longs, np.deg2rad(-30))
@@ -335,13 +338,19 @@ def plot_mollweide(source, ax=None, title=None, **scatter_kwargs):
 
     ax.set_xlabel(r"Galactic longitude $l$")
     ax.set_ylabel(r"Galactic latitude $b$")
-    _set_title(ax, title)
     ax.legend(loc="lower right")
     _apply_grid(ax)
     return ax
 
 
-def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
+def plot_mollweide(l_deg, b_deg):
+    fig = plt.figure(figsize=_textwidth_figsize(22 / 5))
+    ax = fig.add_subplot(111, projection="mollweide")
+    _draw_mollweide(ax, l_deg, b_deg)
+    return ax
+
+
+def plot_mollweide_diff(source, subset, ax=None):
     data = _as_table(source)
     subset_data = _as_table(subset)
     diff_mask = ~np.isin(data["source_id"], subset_data["source_id"])
@@ -349,8 +358,6 @@ def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
     if ax is None:
         fig = plt.figure(figsize=_textwidth_figsize(22 / 5))
         ax = fig.add_subplot(111, projection="mollweide")
-
-    scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
 
     def to_rad(table):
         l_wrap = np.where(table["l"] > 180, table["l"] - 360, table["l"])
@@ -363,8 +370,10 @@ def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
         b_diff,
         color=SECONDARY_COLOR,
         label=f"Removed ($N$={len(diff_data)})",
+        s=SCATTER_S_FINE,
+        alpha=ALPHA_DENSE,
+        rasterized=True,
         zorder=1,
-        **scatter_kwargs,
     )
 
     l_sub, b_sub = to_rad(subset_data)
@@ -373,8 +382,10 @@ def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
         b_sub,
         color=PRIMARY_COLOR,
         label=f"Kept ($N$={len(subset_data)})",
+        s=SCATTER_S_FINE,
+        alpha=ALPHA_DENSE,
+        rasterized=True,
         zorder=2,
-        **scatter_kwargs,
     )
 
     longs = np.linspace(-np.pi, np.pi, 1000)
@@ -391,8 +402,7 @@ def plot_mollweide_diff(source, subset, ax=None, title=None, **scatter_kwargs):
 
     ax.set_xlabel(r"Galactic longitude $l$")
     ax.set_ylabel(r"Galactic latitude $b$")
-    _set_title(ax, title)
-    ax.legend(loc="lower right")
+    ax.legend(loc="upper right")
     _apply_grid(ax)
     return ax
 
@@ -435,37 +445,17 @@ def plot_lomb_scargle_periodogram(source_id: int, data: Table):
     return ax
 
 
-def plot_period_abs_mag(
-    source,
-    ax=None,
-    title=None,
-    *,
-    use_periodogram: bool = False,
-    period_column: str | None = None,
-    abs_mag_column: str | None = None,
-    abs_mag_err_column: str | None = None,
-    **scatter_kwargs,
+def _draw_period_abs_mag(
+    ax,
+    periods,
+    abs_mag,
+    abs_mag_err,
+    classifications,
 ):
-    data = _as_table(source)
-    if period_column is None:
-        period_column = "period_ls" if use_periodogram else None
-    if abs_mag_column is None:
-        abs_mag_column = "M_G_ls" if use_periodogram else "M_G"
-    if abs_mag_err_column is None:
-        abs_mag_err_column = "sigma_M_ls" if use_periodogram else "sigma_M"
-
-    if ax is None:
-        _, ax = _single_panel(_columnwidth_figsize(5 / 2))
-
-    scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
-
-    periods = (
-        np.asarray(data[period_column], dtype=float)
-        if period_column is not None
-        else _plot_period_values(data)
-    )
-    m_g = np.asarray(data[abs_mag_column], dtype=float)
-    sigma_m = np.asarray(data[abs_mag_err_column], dtype=float)
+    periods = np.asarray(periods, dtype=float)
+    m_g = np.asarray(abs_mag, dtype=float)
+    sigma_m = np.asarray(abs_mag_err, dtype=float)
+    classifications = np.asarray(classifications, dtype=str)
     ax.errorbar(
         periods,
         m_g,
@@ -475,7 +465,7 @@ def plot_period_abs_mag(
         alpha=ALPHA_LIGHT,
         zorder=1,
     )
-    class_masks = _plot_class_masks(data)
+    class_masks = _plot_class_masks(classifications)
     if class_masks:
         for i, (label, mask) in enumerate(class_masks):
             ax.scatter(
@@ -483,34 +473,121 @@ def plot_period_abs_mag(
                 m_g[mask],
                 color=_rrlyrae_class_color(label, i),
                 label=label,
+                s=SCATTER_S_FINE,
+                alpha=ALPHA_DENSE,
+                rasterized=True,
                 zorder=2,
-                **scatter_kwargs,
             )
     else:
-        ax.scatter(periods, m_g, color=PRIMARY_COLOR, label="RR Lyrae", zorder=2, **scatter_kwargs)
+        ax.scatter(
+            periods,
+            m_g,
+            color=PRIMARY_COLOR,
+            label="RR Lyrae",
+            s=SCATTER_S_FINE,
+            alpha=ALPHA_DENSE,
+            rasterized=True,
+            zorder=2,
+        )
 
     ax.set_xscale("log")
     _set_descending_magnitude_yaxis(ax)
-    if period_column == "period_ls":
-        ax.set_xlabel(r"L-S period $P_{\rm LS}$ [days]")
-    else:
-        ax.set_xlabel(r"Catalog period $P$ [days]")
-    ax.set_ylabel(r"$M_G$ [mag]")
-    _set_title(ax, title)
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     ax.legend()
     _apply_grid(ax)
     return ax
 
 
-def plot_period_luminosity_diff(source, subset, ax=None, title=None, **scatter_kwargs):
+def plot_period_abs_mag(
+    periods,
+    abs_mag,
+    abs_mag_err,
+    classifications,
+    *,
+    ax=None,
+):
+    if ax is None:
+        _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+    _draw_period_abs_mag(ax, periods, abs_mag, abs_mag_err, classifications)
+    ax.set_xlabel(r"Catalog period $P$ [days]")
+    return ax
+
+
+def plot_period_abs_mag_ls(
+    periods,
+    abs_mag,
+    abs_mag_err,
+    classifications,
+    *,
+    ax=None,
+):
+    if ax is None:
+        _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+    _draw_period_abs_mag(ax, periods, abs_mag, abs_mag_err, classifications)
+    ax.set_xlabel(r"L-S period $P_{\rm LS}$ [days]")
+    return ax
+
+
+def plot_period_abs_mag_comparison(
+    left_periods,
+    left_abs_mag,
+    left_abs_mag_err,
+    left_classifications,
+    right_periods,
+    right_abs_mag,
+    right_abs_mag_err,
+    right_classifications,
+):
+    fig, axes = _grid_1x2(
+        figsize=_textwidth_figsize(19 / 4),
+        sharex=True,
+        sharey=True,
+    )
+    plot_period_abs_mag(
+        left_periods,
+        left_abs_mag,
+        left_abs_mag_err,
+        left_classifications,
+        ax=axes[0],
+    )
+    plot_period_abs_mag(
+        right_periods,
+        right_abs_mag,
+        right_abs_mag_err,
+        right_classifications,
+        ax=axes[1],
+    )
+    if axes[1].legend_ is not None:
+        axes[1].legend_.remove()
+    _tight_layout(fig)
+    return axes
+
+
+def plot_mollweide_period_abs_mag_overview(
+    l_deg,
+    b_deg,
+    periods,
+    abs_mag,
+    abs_mag_err,
+    classifications,
+):
+    fig = plt.figure(figsize=_textwidth_figsize(19 / 4))
+    gs = fig.add_gridspec(1, 2)
+    ax_sky = fig.add_subplot(gs[0], projection="mollweide")
+    ax_pl = fig.add_subplot(gs[1])
+    _draw_mollweide(ax_sky, l_deg, b_deg)
+    plot_period_abs_mag(periods, abs_mag, abs_mag_err, classifications, ax=ax_pl)
+    _tight_layout(fig)
+    return np.array([ax_sky, ax_pl], dtype=object)
+
+
+def plot_period_luminosity_diff(source, subset, ax=None):
     data = _as_table(source)
     subset_data = _as_table(subset)
     diff_mask = ~np.isin(data["source_id"], subset_data["source_id"])
 
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(5 / 2))
-
-    scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
 
     diff_data = data[diff_mask]
     diff_period = _plot_period_values(diff_data)
@@ -520,26 +597,45 @@ def plot_period_luminosity_diff(source, subset, ax=None, title=None, **scatter_k
         np.asarray(diff_data["M_G"], dtype=float),
         color=SECONDARY_COLOR,
         label=f"Removed ($N$={len(diff_data)})",
+        s=SCATTER_S_FINE,
+        alpha=ALPHA_DENSE,
+        rasterized=True,
         zorder=1,
-        **scatter_kwargs,
     )
     ax.scatter(
         subset_period,
         np.asarray(subset_data["M_G"], dtype=float),
         color=PRIMARY_COLOR,
         label=f"Kept ($N$={len(subset_data)})",
+        s=SCATTER_S_FINE,
+        alpha=ALPHA_DENSE,
+        rasterized=True,
         zorder=2,
-        **scatter_kwargs,
     )
 
     ax.set_xscale("log")
     _set_descending_magnitude_yaxis(ax)
     ax.set_xlabel(r"$P$ [days]")
-    ax.set_ylabel(r"$M_G$ [mag]")
-    _set_title(ax, title)
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     ax.legend()
     _apply_grid(ax)
     return ax
+
+
+def plot_inlier_prob_period_luminosity_comparison(
+    prob_source,
+    period_source,
+    subset,
+):
+    fig, axes = _grid_1x2(
+        figsize=_textwidth_figsize(19 / 4),
+        sharex=True,
+        sharey=True,
+    )
+    plot_inlier_prob_map(prob_source, ax=axes[0])
+    plot_period_luminosity_diff(period_source, subset, ax=axes[1])
+    _tight_layout(fig)
+    return axes
 
 
 def plot_period_mean_g(data: Table):
@@ -728,13 +824,12 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
     return axes
 
 
-def plot_hr(source, ax=None, title=None, **scatter_kwargs):
+def plot_hr(source, ax=None):
     data = _as_table(source)
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(7 / 2))
 
-    scatter_kwargs = _default_scatter_kwargs(**scatter_kwargs)
-    class_masks = _plot_class_masks(data)
+    class_masks = _plot_class_masks(data["best_classification"])
     if class_masks:
         for i, (label, mask) in enumerate(class_masks):
             ax.scatter(
@@ -742,7 +837,9 @@ def plot_hr(source, ax=None, title=None, **scatter_kwargs):
                 np.asarray(data["M_G"], dtype=float)[mask],
                 color=_rrlyrae_class_color(label, i),
                 label=label,
-                **scatter_kwargs,
+                s=SCATTER_S_FINE,
+                alpha=ALPHA_DENSE,
+                rasterized=True,
             )
     else:
         ax.scatter(
@@ -750,13 +847,14 @@ def plot_hr(source, ax=None, title=None, **scatter_kwargs):
             np.asarray(data["M_G"], dtype=float),
             color=PRIMARY_COLOR,
             label="RR Lyrae",
-            **scatter_kwargs,
+            s=SCATTER_S_FINE,
+            alpha=ALPHA_DENSE,
+            rasterized=True,
         )
 
     ax.invert_yaxis()
     ax.set_xlabel(r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]")
-    ax.set_ylabel(r"$M_G$ [mag]")
-    _set_title(ax, title)
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     ax.legend()
     _apply_grid(ax)
     return ax
@@ -1224,9 +1322,6 @@ def plot_fourier_cv_normalized_residual_histograms(
         cv_norm_best,
         int(low_fit.K),
         int(best_fit.K),
-        source_id=int(best_fit.source_id),
-        classification=getattr(best_fit, "classification", None),
-        period=float(best_fit.period),
     )
 
 
@@ -1237,10 +1332,6 @@ def plot_fourier_normalized_residual_histograms(
     cv_norm_best: np.ndarray,
     low_K: int,
     best_K: int,
-    *,
-    source_id: int | None = None,
-    classification: str | None = None,
-    period: float | None = None,
 ):
     fig, axes = _grid_1x2(figsize=_textwidth_figsize(12 / 5))
     bins = np.linspace(-5.0, 5.0, 31)
@@ -1342,8 +1433,6 @@ def plot_fourier_cv_phase_comparison(
         int(high_fit.K),
         train_errs=train_errs,
         cv_errs=cv_errs,
-        best_panel_title=rf"Best $K = {int(best_fit.K)}$",
-        high_panel_title=rf"High $K = {int(high_fit.K)}$",
     )
 
 
@@ -1360,9 +1449,6 @@ def plot_fourier_train_cv_phase_comparison(
     *,
     train_errs: np.ndarray | None = None,
     cv_errs: np.ndarray | None = None,
-    show_panel_titles: bool = True,
-    best_panel_title: str | None = None,
-    high_panel_title: str | None = None,
 ):
     train_phase = np.asarray(train_phase, dtype=float)
     train_mags = np.asarray(train_mags, dtype=float)
@@ -1446,16 +1532,12 @@ def plot_fourier_train_cv_phase_comparison(
         ax.set_ylim(y_limits)
         ax.invert_yaxis()
         ax.set_xlabel("Phase")
-        if show_panel_titles:
-            if K == best_K:
-                detail = best_panel_title if best_panel_title is not None else rf"Best $K = {K}$"
-            else:
-                detail = high_panel_title if high_panel_title is not None else rf"High $K = {K}$"
-            _set_left_title(
-                ax,
-                None,
-                detail,
-            )
+        detail = rf"Best $K = {K}$" if K == best_K else rf"High $K = {K}$"
+        _set_left_title(
+            ax,
+            None,
+            detail,
+        )
         _apply_grid(ax)
 
     axes[0].set_ylabel(r"$G$ [mag]")
@@ -1739,7 +1821,7 @@ def plot_mean_g_catalog_comparison(
     return axes
 
 
-def plot_inlier_prob_map(source, ax=None, title=None):
+def plot_inlier_prob_map(source, ax=None):
     data = _as_table(source, attr="all_data")
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(5 / 2))
@@ -1760,24 +1842,572 @@ def plot_inlier_prob_map(source, ax=None, title=None):
     ax.set_xscale("log")
     _set_descending_magnitude_yaxis(ax)
     ax.set_xlabel(r"$P$ [days]")
-    ax.set_ylabel(r"$M_G$ [mag]")
-    _set_title(ax, title)
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     _apply_grid(ax)
     return ax
 
 
-def plot_posterior(source, ax=None, title=None, pdf_fn=None, param_idx=0, label=None):
-    if ax is None:
-        _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+def _relation_predictive_envelope(ctx: Any, samples: np.ndarray):
+    x_grid = np.linspace(float(np.min(ctx.x_centered)), float(np.max(ctx.x_centered)), 300)
+    order = np.argsort(ctx.x_centered)
+    sigma_obs_grid = np.interp(x_grid, ctx.x_centered[order], ctx.sigma[order])
+    sigma_logp = np.asarray(getattr(ctx, "sigma_logp", np.zeros_like(ctx.x_centered)), dtype=float)
+    sigma_x_grid = np.interp(x_grid, ctx.x_centered[order], sigma_logp[order])
 
-    n_burn = getattr(source, "n_burn", 0)
-    samples = source.samples[n_burn:, param_idx]
-    xlabel = label if label is not None else _labels(source)[param_idx]
-    ax.hist(samples, bins=50, density=True, alpha=ALPHA_LIGHT, color=PRIMARY_COLOR, label="MCMC samples")
+    rng = np.random.default_rng(42)
+    step = max(len(samples) // 400, 1)
+    sample_pool = np.asarray(samples[::step], dtype=float)
+    if len(sample_pool) > 400:
+        keep_idx = rng.choice(len(sample_pool), size=400, replace=False)
+        sample_pool = sample_pool[keep_idx]
+
+    mean_draws = np.empty((len(sample_pool), len(x_grid)), dtype=float)
+    predictive_draws = np.empty_like(mean_draws)
+    for i, (a_s, b_s, sigma_s) in enumerate(sample_pool):
+        mu_grid = a_s * x_grid + b_s
+        sigma_pred = np.sqrt(sigma_obs_grid**2 + sigma_s**2 + (a_s * sigma_x_grid) ** 2)
+        mean_draws[i] = mu_grid
+        predictive_draws[i] = rng.normal(mu_grid, sigma_pred)
+
+    return SimpleNamespace(
+        x_grid=x_grid,
+        median_mean=np.quantile(mean_draws, 0.50, axis=0),
+        q16=np.quantile(predictive_draws, 0.16, axis=0),
+        q84=np.quantile(predictive_draws, 0.84, axis=0),
+        q025=np.quantile(predictive_draws, 0.025, axis=0),
+        q975=np.quantile(predictive_draws, 0.975, axis=0),
+    )
+
+
+def _pl_predictive_envelope(ctx: Any, samples: np.ndarray):
+    return _relation_predictive_envelope(ctx, samples)
+
+
+def _draw_pl_posterior_predictive_layer(
+    ax: Any,
+    ctx: Any,
+    samples: np.ndarray,
+    color: str,
+    *,
+    data_label: str | None,
+    median_label: str | None,
+    show_interval_labels: bool,
+) -> None:
+    env = _pl_predictive_envelope(ctx, samples)
+
+    ax.errorbar(
+        np.asarray(ctx.x_centered, dtype=float),
+        np.asarray(ctx.y, dtype=float),
+        yerr=np.asarray(ctx.sigma, dtype=float),
+        fmt="none",
+        color=NEUTRAL_COLOR,
+        alpha=ALPHA_LIGHT,
+        lw=LW_FINE,
+        zorder=1,
+    )
+    ax.scatter(
+        np.asarray(ctx.x_centered, dtype=float),
+        np.asarray(ctx.y, dtype=float),
+        s=SCATTER_S_STANDARD,
+        color=color,
+        alpha=ALPHA_MUTED,
+        rasterized=True,
+        zorder=2,
+        label=data_label,
+    )
+    ax.fill_between(
+        env.x_grid,
+        env.q025,
+        env.q975,
+        color=color,
+        alpha=ALPHA_SHADE,
+        lw=LW_NONE,
+        zorder=3,
+        label="95% predictive envelope" if show_interval_labels else None,
+    )
+    ax.fill_between(
+        env.x_grid,
+        env.q16,
+        env.q84,
+        color=color,
+        alpha=ALPHA_EXTRA_LIGHT,
+        lw=LW_NONE,
+        zorder=4,
+        label="68% predictive envelope" if show_interval_labels else None,
+    )
+    ax.plot(
+        env.x_grid,
+        env.median_mean,
+        color=color,
+        lw=LW_EMPHASIS,
+        zorder=5,
+        label=median_label,
+    )
+
+
+def plot_pl_posterior_predictive(
+    ctx: Any,
+    samples: np.ndarray,
+):
+    _, ax = _single_panel(_textwidth_figsize(19 / 4))
+    color = _rrlyrae_class_color(getattr(ctx, "class_label", ""), 0)
+    _draw_pl_posterior_predictive_layer(
+        ax,
+        ctx,
+        samples,
+        color,
+        data_label=f"{ctx.class_label} data",
+        median_label="Posterior median",
+        show_interval_labels=True,
+    )
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$")
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
+    _set_descending_magnitude_yaxis(ax)
+    ax.legend(loc="best")
+    _apply_grid(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
+def plot_pl_posterior_predictive_comparison(
+    primary_ctx: Any,
+    primary_samples: np.ndarray,
+    secondary_ctx: Any,
+    secondary_samples: np.ndarray,
+):
+    _, ax = _single_panel(_textwidth_figsize(5))
+    primary_color = _rrlyrae_class_color(getattr(primary_ctx, "class_label", ""), 0)
+    secondary_color = _rrlyrae_class_color(getattr(secondary_ctx, "class_label", ""), 1)
+    _draw_pl_posterior_predictive_layer(
+        ax,
+        primary_ctx,
+        primary_samples,
+        primary_color,
+        data_label=f"{primary_ctx.class_label} data",
+        median_label=f"{primary_ctx.class_label} posterior median",
+        show_interval_labels=False,
+    )
+    _draw_pl_posterior_predictive_layer(
+        ax,
+        secondary_ctx,
+        secondary_samples,
+        secondary_color,
+        data_label=f"{secondary_ctx.class_label} data",
+        median_label=f"{secondary_ctx.class_label} posterior median",
+        show_interval_labels=False,
+    )
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$")
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
+    _set_descending_magnitude_yaxis(ax)
+    ax.legend(loc="best")
+    _apply_grid(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
+def _draw_pc_posterior_predictive_layer(
+    ax: Any,
+    ctx: Any,
+    samples: np.ndarray,
+    color: str,
+    *,
+    data_label: str | None,
+    median_label: str | None,
+    show_interval_labels: bool,
+) -> None:
+    env = _relation_predictive_envelope(ctx, samples)
+
+    ax.errorbar(
+        np.asarray(ctx.x_centered, dtype=float),
+        np.asarray(ctx.y, dtype=float),
+        yerr=np.asarray(ctx.sigma, dtype=float),
+        fmt="none",
+        color=NEUTRAL_COLOR,
+        alpha=ALPHA_LIGHT,
+        lw=LW_FINE,
+        zorder=1,
+    )
+    ax.scatter(
+        np.asarray(ctx.x_centered, dtype=float),
+        np.asarray(ctx.y, dtype=float),
+        s=SCATTER_S_STANDARD,
+        color=color,
+        alpha=ALPHA_MUTED,
+        rasterized=True,
+        zorder=2,
+        label=data_label,
+    )
+    ax.fill_between(
+        env.x_grid,
+        env.q025,
+        env.q975,
+        color=color,
+        alpha=ALPHA_SHADE,
+        lw=LW_NONE,
+        zorder=3,
+        label="95% predictive envelope" if show_interval_labels else None,
+    )
+    ax.fill_between(
+        env.x_grid,
+        env.q16,
+        env.q84,
+        color=color,
+        alpha=ALPHA_EXTRA_LIGHT,
+        lw=LW_NONE,
+        zorder=4,
+        label="68% predictive envelope" if show_interval_labels else None,
+    )
+    ax.plot(
+        env.x_grid,
+        env.median_mean,
+        color=color,
+        lw=LW_EMPHASIS,
+        zorder=5,
+        label=median_label,
+    )
+
+
+def plot_pc_posterior_predictive(
+    ctx: Any,
+    samples: np.ndarray,
+):
+    _, ax = _single_panel(_textwidth_figsize(19 / 4))
+    color = _rrlyrae_class_color(getattr(ctx, "class_label", ""), 0)
+    _draw_pc_posterior_predictive_layer(
+        ax,
+        ctx,
+        samples,
+        color,
+        data_label=f"{ctx.class_label} data",
+        median_label="Posterior median",
+        show_interval_labels=True,
+    )
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$")
+    ax.set_ylabel(getattr(ctx, "y_label", r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]"))
+    ax.legend(loc="best")
+    _apply_grid(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
+def plot_pc_posterior_predictive_comparison(
+    primary_ctx: Any,
+    primary_samples: np.ndarray,
+    secondary_ctx: Any,
+    secondary_samples: np.ndarray,
+):
+    _, ax = _single_panel(_textwidth_figsize(5))
+    primary_color = _rrlyrae_class_color(getattr(primary_ctx, "class_label", ""), 0)
+    secondary_color = _rrlyrae_class_color(getattr(secondary_ctx, "class_label", ""), 1)
+    _draw_pc_posterior_predictive_layer(
+        ax,
+        primary_ctx,
+        primary_samples,
+        primary_color,
+        data_label=f"{primary_ctx.class_label} data",
+        median_label=f"{primary_ctx.class_label} posterior median",
+        show_interval_labels=False,
+    )
+    _draw_pc_posterior_predictive_layer(
+        ax,
+        secondary_ctx,
+        secondary_samples,
+        secondary_color,
+        data_label=f"{secondary_ctx.class_label} data",
+        median_label=f"{secondary_ctx.class_label} posterior median",
+        show_interval_labels=False,
+    )
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$")
+    ax.set_ylabel(getattr(primary_ctx, "y_label", r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]"))
+    ax.legend(loc="best")
+    _apply_grid(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
+def _draw_optical_pl_literature_panel(
+    ax: Any,
+    comparison: Any,
+    *,
+    color: str,
+    show_legend: bool,
+) -> None:
+    ax.errorbar(
+        np.asarray(comparison.x_obs, dtype=float),
+        np.asarray(comparison.y_obs, dtype=float),
+        yerr=np.asarray(comparison.sigma_obs, dtype=float),
+        fmt="o",
+        ms=MARKER_MS_FINE,
+        alpha=ALPHA_DIM,
+        color=color,
+        ecolor="0.6",
+        elinewidth=LW_GRID,
+        capsize=0,
+        label=f"{comparison.rr_class} Gaia data",
+    )
+    ax.plot(
+        np.asarray(comparison.x_grid, dtype=float),
+        np.asarray(comparison.median_mean, dtype=float),
+        color="k",
+        lw=LW_MODEL,
+        label=r"This work: median $M_{\rm G}$ fit",
+    )
+    ax.fill_between(
+        np.asarray(comparison.x_grid, dtype=float),
+        np.asarray(comparison.predictive_q16, dtype=float),
+        np.asarray(comparison.predictive_q84, dtype=float),
+        color=color,
+        alpha=ALPHA_EXTRA_LIGHT,
+        lw=LW_NONE,
+        label="This work: 68% predictive band",
+    )
+    ax.text(
+        0.03,
+        0.97,
+        "Klein+Bloom 2014: optical PL is weak;\nIR PL is steeper and tighter.\n\nBeaton+2018: bandpass, reddening,\nmetallicity, and calibration choices matter.",
+        transform=ax.transAxes,
+        va="top",
+        ha="left",
+        fontsize=TITLE_SIZE,
+        bbox={
+            "boxstyle": "round,pad=0.35",
+            "facecolor": "white",
+            "edgecolor": LIGHT_NEUTRAL_COLOR,
+            "alpha": ALPHA_SHADE + 0.35,
+        },
+    )
+    ax.set_title(f"{comparison.rr_class}: Gaia $G$ fit in optical-literature context")
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day})$")
+    _apply_grid(ax)
+    _set_descending_magnitude_yaxis(ax)
+    if show_legend:
+        ax.legend(loc="best")
+
+
+def plot_optical_pl_literature_comparison(
+    rrab_comparison: Any,
+    rrc_comparison: Any,
+):
+    fig, axes = _grid_1x2(
+        figsize=_textwidth_figsize(19 / 4),
+        sharey=True,
+    )
+    _draw_optical_pl_literature_panel(
+        axes[0],
+        rrab_comparison,
+        color=PRIMARY_COLOR,
+        show_legend=True,
+    )
+    _draw_optical_pl_literature_panel(
+        axes[1],
+        rrc_comparison,
+        color=SECONDARY_COLOR,
+        show_legend=False,
+    )
+    axes[0].set_ylabel(r"Absolute magnitude [mag]")
+    _tight_layout(fig)
+    return fig
+
+
+def _draw_pc_posterior_draws_panel(
+    ax: Any,
+    data: Any,
+    samples: np.ndarray,
+    *,
+    rr_class: str,
+    color: str,
+    seed: int,
+) -> None:
+    x_values = np.asarray(data.x, dtype=float)
+    y_values = np.asarray(data.y, dtype=float)
+    sigma_values = np.asarray(data.sigma, dtype=float)
+    x_range = np.linspace(float(np.min(x_values)), float(np.max(x_values)), 300)
+    rng = np.random.default_rng(seed)
+    n_draws = min(50, len(samples))
+    draw_idx = rng.choice(len(samples), size=n_draws, replace=False)
+
+    ax.errorbar(
+        x_values,
+        y_values,
+        yerr=sigma_values,
+        fmt=".",
+        color="k",
+        alpha=ALPHA_FAINT,
+        ms=MARKER_MS_FINE,
+        lw=LW_GRID,
+        zorder=1,
+        label=f"{rr_class} data",
+    )
+    for slope, intercept, _ in np.asarray(samples, dtype=float)[draw_idx]:
+        ax.plot(x_range, slope * x_range + intercept, lw=LW_GRID, alpha=ALPHA_MUTED, color=color, zorder=2)
+    ax.plot([], [], color=color, lw=LW_FIT, label="50 posterior draws")
+    ax.set_title(f"{rr_class} period-color relation")
+    ax.set_xlabel(data.x_label)
+    _apply_grid(ax)
+    ax.legend(fontsize=LEGEND_SIZE)
+
+
+def plot_pc_posterior_draws_comparison(
+    rrab_data: Any,
+    rrab_samples: np.ndarray,
+    rrab_seed: int,
+    rrc_data: Any,
+    rrc_samples: np.ndarray,
+    rrc_seed: int,
+):
+    fig, axes = _grid_1x2(
+        figsize=_textwidth_figsize(19 / 4),
+        sharey=True,
+    )
+    _draw_pc_posterior_draws_panel(
+        axes[0],
+        rrab_data,
+        rrab_samples,
+        rr_class="RRab",
+        color=PRIMARY_COLOR,
+        seed=rrab_seed,
+    )
+    _draw_pc_posterior_draws_panel(
+        axes[1],
+        rrc_data,
+        rrc_samples,
+        rr_class="RRc",
+        color=SECONDARY_COLOR,
+        seed=rrc_seed,
+    )
+    axes[0].set_ylabel(rrab_data.y_label)
+    _tight_layout(fig)
+    return fig
+
+
+def plot_empirical_vs_catalog_extinction_comparison(
+    catalog_ag: np.ndarray,
+    empirical_ag: np.ndarray,
+    residuals: np.ndarray,
+):
+    fig, axes = _grid_1x2(
+        figsize=_textwidth_figsize(17 / 5),
+        sharey=False,
+    )
+
+    x_values = np.asarray(catalog_ag, dtype=float)
+    y_values = np.asarray(empirical_ag, dtype=float)
+    delta_values = np.asarray(residuals, dtype=float)
+
+    finite_scatter = np.isfinite(x_values) & np.isfinite(y_values)
+    if not np.any(finite_scatter):
+        raise ValueError("catalog_ag and empirical_ag must contain at least one finite pair.")
+
+    x_plot = x_values[finite_scatter]
+    y_plot = y_values[finite_scatter]
+    line_min = float(min(np.min(x_plot), np.min(y_plot)))
+    line_max = float(max(np.max(x_plot), np.max(y_plot)))
+    if not np.isfinite(line_min) or not np.isfinite(line_max):
+        raise ValueError("catalog_ag and empirical_ag must contain finite values.")
+
+    axes[0].scatter(
+        x_plot,
+        y_plot,
+        s=SCATTER_S_FINE,
+        alpha=ALPHA_FAINT,
+        color=PRIMARY_COLOR,
+        rasterized=True,
+        label="RR Lyrae sample",
+    )
+    axes[0].plot(
+        [line_min, line_max],
+        [line_min, line_max],
+        linestyle="--",
+        color=NEUTRAL_COLOR,
+        lw=LW_MEDIUM,
+        label="1:1 line",
+    )
+    axes[0].set_title("Catalog vs. empirical $A_G$")
+    axes[0].set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
+    axes[0].set_ylabel(r"Empirical $A_G$ [mag]")
+    axes[0].legend(loc="best")
+    _apply_grid(axes[0])
+
+    finite_residuals = delta_values[np.isfinite(delta_values)]
+    if finite_residuals.size == 0:
+        raise ValueError("residuals must contain at least one finite value.")
+
+    residual_min = float(np.min(finite_residuals))
+    residual_max = float(np.max(finite_residuals))
+    if residual_min == residual_max:
+        residual_min -= 0.5
+        residual_max += 0.5
+
+    axes[1].hist(
+        finite_residuals,
+        bins=80,
+        range=(residual_min, residual_max),
+        density=True,
+        color=SECONDARY_COLOR,
+        alpha=ALPHA_LIGHT,
+        label="Residual density",
+    )
+    residual_median = float(np.median(finite_residuals))
+    axes[1].axvline(
+        residual_median,
+        linestyle="--",
+        color=QUATERNARY_COLOR,
+        lw=LW_MEDIUM,
+        label=rf"Median = {residual_median:.3f} mag",
+    )
+    axes[1].set_title(r"$A_G^{\mathrm{calc}} - g_{\mathrm{absorption}}$")
+    axes[1].set_xlabel(r"Residual [mag]")
+    axes[1].set_ylabel("Density")
+    axes[1].legend(loc="best")
+    _apply_grid(axes[1])
+
+    _tight_layout(fig)
+    return fig, axes
+
+
+def plot_pl_sampler_comparison_corner(
+    sample_map: dict[str, np.ndarray],
+):
+    from .relations import relation_parameter_labels
+
+    fig = None
+    colors = [PRIMARY_COLOR, SECONDARY_COLOR, TERTIARY_COLOR]
+    legend_handles = []
+    labels = relation_parameter_labels("pl")
+    for (label, samples), color in zip(sample_map.items(), colors):
+        fig = corner.corner(
+            np.asarray(samples, dtype=float),
+            fig=fig,
+            labels=list(labels),
+            color=color,
+            plot_datapoints=False,
+            fill_contours=False,
+            hist_kwargs={"density": True, "alpha": ALPHA_DIM},
+        )
+        legend_handles.append(Line2D([0], [0], color=color, lw=LW_EMPHASIS, label=label))
+    if fig is None:
+        raise ValueError("sample_map must contain at least one sampler.")
+    fig.legend(handles=legend_handles, loc="upper right", bbox_to_anchor=(0.98, 0.98))
+    return fig
+
+
+def plot_posterior(
+    samples: np.ndarray,
+    labels: list[str] | tuple[str, ...],
+    n_burn: int,
+    *,
+    param_idx: int,
+    pdf_fn=None,
+):
+    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+
+    post_burn = np.asarray(samples, dtype=float)[n_burn:, param_idx]
+    xlabel = list(labels)[param_idx]
+    ax.hist(post_burn, bins=50, density=True, alpha=ALPHA_LIGHT, color=PRIMARY_COLOR, label="MCMC samples")
 
     if pdf_fn is not None:
-        margin = 0.5 * (samples.max() - samples.min())
-        grid = np.linspace(samples.min() - margin, samples.max() + margin, 500)
+        margin = 0.5 * (post_burn.max() - post_burn.min())
+        grid = np.linspace(post_burn.min() - margin, post_burn.max() + margin, 500)
         legend_param = xlabel
         if legend_param.startswith("$") and legend_param.endswith("$"):
             legend_param = legend_param[1:-1]
@@ -1791,42 +2421,43 @@ def plot_posterior(source, ax=None, title=None, pdf_fn=None, param_idx=0, label=
 
     ax.set_xlabel(xlabel)
     ax.set_ylabel("Probability density")
-    _set_title(ax, title)
     ax.legend()
     _apply_grid(ax)
     return ax
 
 
-def plot_trace(source, axes=None, title=None, labels=None):
-    n_burn = getattr(source, "n_burn", 0)
-    steps = np.arange(len(source.samples[n_burn:]))
-    ndim = source.samples.shape[1]
-    lbls = _labels(source, labels)
+def plot_trace(
+    samples: np.ndarray,
+    log_probs: np.ndarray,
+    labels: list[str] | tuple[str, ...],
+    n_burn: int,
+):
+    post_burn_samples = np.asarray(samples, dtype=float)[n_burn:]
+    post_burn_log_probs = np.asarray(log_probs, dtype=float)[n_burn:]
+    steps = np.arange(len(post_burn_samples))
+    ndim = post_burn_samples.shape[1]
+    lbls = list(labels)
 
-    if axes is None:
-        trace_height_out_of_8 = 8 * (31 / 20) * (ndim + 1) / TEXTWIDTH_IN
-        _, axes = _stacked_panels(
-            ndim + 1,
-            figsize=_textwidth_figsize(trace_height_out_of_8),
-            height_ratios=[1] * (ndim + 1),
-        )
+    trace_height_out_of_8 = 8 * (31 / 20) * (ndim + 1) / TEXTWIDTH_IN
+    _, axes = _stacked_panels(
+        ndim + 1,
+        figsize=_textwidth_figsize(trace_height_out_of_8),
+        height_ratios=[1] * (ndim + 1),
+    )
 
     for i, lbl in enumerate(lbls):
-        axes[i].plot(steps, source.samples[n_burn:, i], lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=PRIMARY_COLOR)
+        axes[i].plot(steps, post_burn_samples[:, i], lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=PRIMARY_COLOR)
         axes[i].set_ylabel(lbl)
         _apply_grid(axes[i])
 
-    if title is not None:
-        axes[0].set_title(title, fontsize=EMPHASIS_SIZE)
-
-    axes[-1].plot(steps, source.log_probs[n_burn:], lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=SECONDARY_COLOR)
+    axes[-1].plot(steps, post_burn_log_probs, lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=SECONDARY_COLOR)
     axes[-1].set_ylabel(r"$\ln P$")
     axes[-1].set_xlabel("Step")
     _apply_grid(axes[-1])
     return axes
 
 
-def plot_corner(source, fig=None, title=None, labels=None):
+def plot_corner(source, labels=None):
     n_burn = getattr(source, "n_burn", 0)
     samples = source.samples[n_burn:]
     lbls = _labels(source, labels)
@@ -1834,12 +2465,9 @@ def plot_corner(source, fig=None, title=None, labels=None):
     fig = corner.corner(
         samples,
         labels=lbls,
-        fig=fig,
         show_titles=True,
         title_fmt=".3f",
         quantiles=[0.16, 0.5, 0.84],
         color=PRIMARY_COLOR,
     )
-    if title is not None:
-        fig.suptitle(_escape_latex_text(title), fontsize=EMPHASIS_SIZE)
     return fig

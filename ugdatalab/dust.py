@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import ast
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import joblib
 import astropy.units as u
 import numpy as np
 from astropy import table
 from astropy.coordinates import SkyCoord
 
+from ugdatalab.artifacts import load_table_npz, save_table_npz
 from ugdatalab.models.gaia import (
+    _sanitize_vari_rrlyrae_table,
+    get_gaia,
     rrlyrae_class_mask,
     rrlyrae_representative_period,
 )
@@ -22,7 +28,6 @@ FROM gaiadr3.vari_rrlyrae AS vr
 JOIN gaiadr3.gaia_source AS gs
     ON vr.source_id = gs.source_id
 """.strip()
-
 
 def _as_float_array(column: Any) -> np.ndarray:
     values = np.asarray(column)
@@ -75,6 +80,67 @@ def build_rrlyrae_gaia_source_query(
     if order_by is not None:
         query_lines.append(f"ORDER BY {order_by}")
     return "\n".join(query_lines)
+
+
+RRAB_RRC_GAIA_SOURCE_QUERY = build_rrlyrae_gaia_source_query(
+    where=["vr.best_classification IN ('RRab', 'RRc')"],
+)
+
+
+def _normalize_query(query: str) -> str:
+    return " ".join(str(query).split())
+
+
+def load_cached_gaia_table(
+    query: str,
+    *,
+    cache_root: str | Path = Path(".joblib-cache"),
+) -> table.Table | None:
+    query_key = _normalize_query(query)
+    metadata_paths = sorted(
+        (Path(cache_root) / "joblib" / "ugdatalab" / "gaia" / "get_gaia").glob("*/metadata.json")
+    )
+    for metadata_path in metadata_paths:
+        metadata = json.loads(metadata_path.read_text())
+        raw_query = metadata.get("input_args", {}).get("query")
+        if raw_query is None:
+            continue
+        try:
+            cached_query = ast.literal_eval(raw_query)
+        except (SyntaxError, ValueError):
+            cached_query = str(raw_query).strip().strip("'")
+        if _normalize_query(cached_query) == query_key:
+            return _sanitize_vari_rrlyrae_table(joblib.load(metadata_path.with_name("output.pkl")))
+    return None
+
+
+def _rrab_rrc_only(data: table.Table) -> table.Table:
+    classes = np.asarray(data["best_classification"]).astype(str)
+    mask = np.isin(classes, ["RRab", "RRc"])
+    return data[mask].copy()
+
+
+def load_or_create_rrab_rrc_full_catalog(
+    path: str | Path,
+    *,
+    cache_root: str | Path = Path(".joblib-cache"),
+) -> tuple[table.Table, str]:
+    output_path = Path(path)
+    if output_path.exists():
+        return _rrab_rrc_only(load_table_npz(output_path)), "loaded"
+
+    data = load_cached_gaia_table(RRAB_RRC_GAIA_SOURCE_QUERY, cache_root=cache_root)
+    status = "created_from_rrab_rrc_cache"
+    if data is None:
+        data = load_cached_gaia_table(FULL_RRLYRAE_GAIA_SOURCE_QUERY, cache_root=cache_root)
+        status = "created_from_full_cache"
+    if data is None:
+        data = _sanitize_vari_rrlyrae_table(get_gaia(RRAB_RRC_GAIA_SOURCE_QUERY))
+        status = "created_from_query"
+
+    rrab_rrc = _rrab_rrc_only(data)
+    save_table_npz(output_path, rrab_rrc)
+    return rrab_rrc, status
 
 def summarize_relation_samples(samples: np.ndarray) -> RelationPosteriorSummary:
     """Summarize `[slope, intercept, log10_sigma]` posterior samples."""
@@ -225,6 +291,9 @@ def build_reddening_quality_mask(
     apply_bp_rp_excess_cut: bool = True,
     max_sigma_E: float | None = None,
     max_abs_E: float | None = None,
+    min_ebprp: float | None = None,
+    max_ebprp: float | None = None,
+    min_reddening_snr: float | None = None,
 ) -> np.ndarray:
     """Construct a practical quality mask for the empirical reddening map."""
     mask = (
@@ -244,6 +313,16 @@ def build_reddening_quality_mask(
         mask &= _as_float_array(data["sigma_E"]) <= float(max_sigma_E)
     if max_abs_E is not None:
         mask &= np.abs(_as_float_array(data["E_bprp"])) <= float(max_abs_E)
+    if min_ebprp is not None:
+        mask &= _as_float_array(data["E_bprp"]) >= float(min_ebprp)
+    if max_ebprp is not None:
+        mask &= _as_float_array(data["E_bprp"]) <= float(max_ebprp)
+    if min_reddening_snr is not None:
+        sigma_e = _as_float_array(data["sigma_E"])
+        e_bprp = _as_float_array(data["E_bprp"])
+        with np.errstate(divide="ignore", invalid="ignore"):
+            snr = np.where(sigma_e > 0, e_bprp / sigma_e, -np.inf)
+        mask &= snr >= float(min_reddening_snr)
     return mask
 
 

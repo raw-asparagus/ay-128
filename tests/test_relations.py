@@ -1,10 +1,21 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import numpy as np
 from astropy.table import Table
 
-from ugdatalab import estimate_initial_theta0, prepare_relation_data
+from ugdatalab import (
+    build_infrared_pl_comparison_data,
+    build_optical_pc_comparison_data,
+    estimate_initial_theta0,
+    load_infrared_pl_comparison_data,
+    load_optical_pc_comparison_data,
+    prepare_relation_data,
+    save_infrared_pl_comparison_data,
+    save_optical_pc_comparison_data,
+)
 
 
 class RelationHelperTests(unittest.TestCase):
@@ -85,6 +96,105 @@ class RelationHelperTests(unittest.TestCase):
         )
 
         np.testing.assert_allclose(theta0, [-2.10, 0.42, np.log10(0.18)])
+
+    def test_infrared_pl_comparison_round_trip_uses_shared_shape(self):
+        ctx = SimpleNamespace(
+            class_label="RRab",
+            x_raw=np.array([-0.20, -0.10, 0.00], dtype=float),
+            x_mean=-0.10,
+            y=np.array([0.5, 0.4, 0.3], dtype=float),
+            sigma=np.array([0.05, 0.06, 0.07], dtype=float),
+            sigma_logp=np.array([0.01, 0.01, 0.02], dtype=float),
+        )
+        samples = np.array(
+            [
+                [-2.30, -0.50, 0.10],
+                [-2.10, -0.45, 0.12],
+                [-2.20, -0.48, 0.11],
+            ]
+        )
+
+        comparison = build_infrared_pl_comparison_data(ctx, samples, n_grid=16)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "infrared_pl.npz"
+            save_infrared_pl_comparison_data(path, {"RRab": comparison, "RRc": comparison})
+            loaded = load_infrared_pl_comparison_data(path)
+
+        self.assertEqual(set(loaded), {"RRab", "RRc"})
+        np.testing.assert_allclose(loaded["RRab"].x_grid.shape, (16,))
+        self.assertAlmostEqual(loaded["RRab"].slope_q50, comparison.slope_q50, places=10)
+
+    def test_optical_pc_comparison_round_trip_preserves_dust_summary_fields(self):
+        ctx = SimpleNamespace(
+            class_label="RRc",
+            x_raw=np.array([-0.5, -0.4, -0.3], dtype=float),
+            x_mean=-0.4,
+            y=np.array([0.35, 0.38, 0.41], dtype=float),
+            sigma=np.array([0.02, 0.02, 0.03], dtype=float),
+            sigma_logp=np.array([0.01, 0.01, 0.01], dtype=float),
+        )
+        samples = np.array(
+            [
+                [0.10, 0.45, np.log10(0.04)],
+                [0.12, 0.47, np.log10(0.05)],
+                [0.08, 0.44, np.log10(0.03)],
+            ]
+        )
+
+        comparison = build_optical_pc_comparison_data(ctx, samples, n_grid=12)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "optical_pc.npz"
+            save_optical_pc_comparison_data(path, {"RRab": comparison, "RRc": comparison})
+            loaded = load_optical_pc_comparison_data(path)
+
+        self.assertEqual(set(loaded), {"RRab", "RRc"})
+        self.assertGreater(loaded["RRc"].intrinsic_sigma_median, 0.0)
+        self.assertAlmostEqual(loaded["RRc"].slope_std, comparison.slope_std, places=10)
+        expected_raw_intercepts = samples[:, 1] - samples[:, 0] * ctx.x_mean
+        self.assertAlmostEqual(
+            loaded["RRc"].intercept_median,
+            float(np.median(expected_raw_intercepts)),
+            places=10,
+        )
+        self.assertAlmostEqual(
+            loaded["RRc"].intrinsic_sigma_median,
+            comparison.intrinsic_sigma_median,
+            places=10,
+        )
+
+    def test_optical_pc_comparison_predictive_width_uses_sigma_logp_when_present(self):
+        base_ctx = SimpleNamespace(
+            class_label="RRab",
+            x_raw=np.array([-0.35, -0.20, -0.05], dtype=float),
+            x_mean=-0.20,
+            y=np.array([0.72, 0.69, 0.66], dtype=float),
+            sigma=np.array([0.02, 0.02, 0.02], dtype=float),
+            sigma_logp=np.zeros(3, dtype=float),
+        )
+        wide_ctx = SimpleNamespace(
+            class_label="RRab",
+            x_raw=base_ctx.x_raw,
+            x_mean=base_ctx.x_mean,
+            y=base_ctx.y,
+            sigma=base_ctx.sigma,
+            sigma_logp=np.full(3, 0.03, dtype=float),
+        )
+        samples = np.array(
+            [
+                [-0.25, 0.68, np.log10(0.04)],
+                [-0.22, 0.69, np.log10(0.05)],
+                [-0.28, 0.67, np.log10(0.04)],
+            ]
+        )
+
+        base = build_optical_pc_comparison_data(base_ctx, samples, n_grid=24)
+        wide = build_optical_pc_comparison_data(wide_ctx, samples, n_grid=24)
+
+        base_width = float(np.mean(base.predictive_q84 - base.predictive_q16))
+        wide_width = float(np.mean(wide.predictive_q84 - wide.predictive_q16))
+        self.assertGreater(wide_width, base_width)
 
 
 if __name__ == "__main__":
