@@ -15,6 +15,7 @@ from astropy.coordinates import SkyCoord
 
 from ugdatalab.artifacts import load_table_npz, save_table_npz
 from ugdatalab.models.gaia import (
+    _as_float_array,
     _sanitize_vari_rrlyrae_table,
     get_gaia,
     rrlyrae_class_mask,
@@ -28,12 +29,6 @@ FROM gaiadr3.vari_rrlyrae AS vr
 JOIN gaiadr3.gaia_source AS gs
     ON vr.source_id = gs.source_id
 """.strip()
-
-def _as_float_array(column: Any) -> np.ndarray:
-    values = np.asarray(column)
-    if hasattr(values, "filled"):
-        values = values.filled(np.nan)
-    return np.asarray(values, dtype=float)
 
 
 @dataclass(frozen=True)
@@ -370,3 +365,184 @@ def attach_sfd_ebv(
     out = data.copy(copy_data=True) if copy else data
     out[column_name] = sample_sfd_ebv(out, query=query)
     return out
+
+
+# ---------------------------------------------------------------------------
+# Quality component builders (Lab 1 notebook 07)
+# ---------------------------------------------------------------------------
+
+def build_quality_components(
+    data: table.Table,
+    *,
+    min_bp_snr: float = 5.0,
+    min_rp_snr: float = 5.0,
+    max_sigma_e: float = 0.15,
+    min_ebprp: float = 0.0,
+    max_ebprp: float | None = None,
+) -> dict[str, np.ndarray]:
+    """Build named component masks for diagnostic decomposition.
+
+    Keys: 'finite', 'bp_snr', 'rp_snr', 'bp_rp_excess', 'sigma_e', 'physical_e', 'adopted'.
+    """
+    e_bprp = _as_float_array(data["E_bprp"])
+    a_g = _as_float_array(data["A_G_calc"])
+    bp_rp = _as_float_array(data["bp_rp"])
+    snr_bp = _as_float_array(data["phot_bp_mean_flux_over_error"])
+    snr_rp = _as_float_array(data["phot_rp_mean_flux_over_error"])
+    excess = _as_float_array(data["phot_bp_rp_excess_factor"])
+    sigma_e = _as_float_array(data["sigma_E"])
+
+    finite = np.isfinite(e_bprp) & np.isfinite(a_g) & np.isfinite(bp_rp)
+    bp_snr = np.isfinite(snr_bp) & (snr_bp > float(min_bp_snr))
+    rp_snr = np.isfinite(snr_rp) & (snr_rp > float(min_rp_snr))
+    bp_rp_excess = (
+        np.isfinite(excess)
+        & (excess > 1.0 + 0.015 * bp_rp ** 2)
+        & (excess < 1.3 + 0.06 * bp_rp ** 2)
+    )
+    sigma_mask = np.isfinite(sigma_e) & (sigma_e <= float(max_sigma_e))
+
+    physical_lower = np.isfinite(e_bprp) & (e_bprp >= float(min_ebprp))
+    physical_upper = np.ones(len(data), dtype=bool)
+    if max_ebprp is not None:
+        physical_upper = e_bprp <= float(max_ebprp)
+    physical_e = physical_lower & physical_upper
+
+    return {
+        "finite": finite,
+        "bp_snr": bp_snr,
+        "rp_snr": rp_snr,
+        "bp_rp_excess": bp_rp_excess,
+        "sigma_e": sigma_mask,
+        "physical_e": physical_e,
+        "adopted": finite & bp_snr & rp_snr & bp_rp_excess & sigma_mask & physical_e,
+    }
+
+
+def build_stage_summary(data: table.Table, components: dict) -> table.Table:
+    """Build a table summarizing how many stars survive each quality stage."""
+    rrab_mask = rrlyrae_class_mask(data, "RRab")
+    rrc_mask = rrlyrae_class_mask(data, "RRc")
+    total = len(data)
+
+    stages = [
+        ("finite_empirical", components["finite"]),
+        ("+ BP S/N > 5", components["finite"] & components["bp_snr"]),
+        ("+ RP S/N > 5", components["finite"] & components["bp_snr"] & components["rp_snr"]),
+        (
+            "+ BP/RP excess envelope",
+            components["finite"] & components["bp_snr"] & components["rp_snr"] & components["bp_rp_excess"],
+        ),
+        (
+            r"+ sigma_E <= 0.15",
+            components["finite"] & components["bp_snr"] & components["rp_snr"] & components["bp_rp_excess"] & components["sigma_e"],
+        ),
+        (r"+ E(BP-RP) in [0, 3.0]", components["adopted"]),
+    ]
+
+    rows = []
+    previous_count = total
+    for label, mask in stages:
+        count = int(mask.sum())
+        rows.append({
+            "stage": label,
+            "N_kept": count,
+            "removed_this_stage": previous_count - count,
+            "fraction_of_full": round(count / total, 4),
+            "RRab_kept": int(np.count_nonzero(mask & rrab_mask)),
+            "RRc_kept": int(np.count_nonzero(mask & rrc_mask)),
+        })
+        previous_count = count
+    return table.Table(rows=rows)
+
+
+def build_criterion_failure_table(data: table.Table, components: dict) -> table.Table:
+    """Build a table of how many stars fail each quality criterion independently."""
+    rrab_mask = rrlyrae_class_mask(data, "RRab")
+    rrc_mask = rrlyrae_class_mask(data, "RRc")
+    finite = components["finite"]
+    finite_count = int(finite.sum())
+
+    rows = []
+    for key, label in [
+        ("bp_snr", "Fails BP S/N > 5"),
+        ("rp_snr", "Fails RP S/N > 5"),
+        ("bp_rp_excess", "Fails BP/RP excess envelope"),
+        ("sigma_e", r"Fails sigma_E <= 0.15"),
+        ("physical_e", r"Fails E(BP-RP) in [0, 3.0]"),
+    ]:
+        failed = finite & ~components[key]
+        count = int(failed.sum())
+        rows.append({
+            "criterion": label,
+            "N_failed": count,
+            "fraction_of_finite": round(count / finite_count, 4) if finite_count > 0 else 0.0,
+            "RRab_failed": int(np.count_nonzero(failed & rrab_mask)),
+            "RRc_failed": int(np.count_nonzero(failed & rrc_mask)),
+        })
+    return table.Table(rows=rows)
+
+
+# ---------------------------------------------------------------------------
+# SFD comparison statistics (Lab 1 notebook 08)
+# ---------------------------------------------------------------------------
+
+def rank_spearman(x: np.ndarray, y: np.ndarray) -> float:
+    """Compute Spearman rank correlation coefficient."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    n = int(np.count_nonzero(mask))
+    if n < 2:
+        return np.nan
+    x_sub = x[mask]
+    y_sub = y[mask]
+    x_rank = np.empty(n, dtype=float)
+    y_rank = np.empty(n, dtype=float)
+    x_rank[np.argsort(x_sub)] = np.arange(n, dtype=float)
+    y_rank[np.argsort(y_sub)] = np.arange(n, dtype=float)
+    return float(np.corrcoef(x_rank, y_rank)[0, 1])
+
+
+def binned_median_trend(
+    x: np.ndarray, y: np.ndarray, *, bins: int = 30
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute binned median trend of y as a function of x."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
+    if len(x) == 0:
+        return np.asarray([]), np.asarray([])
+
+    edges = np.linspace(np.nanmin(x), np.nanmax(x), bins + 1)
+    if np.allclose(edges[0], edges[-1]):
+        return np.asarray([edges[0]]), np.asarray([np.nanmedian(y)])
+
+    centers = []
+    medians = []
+    which = np.digitize(x, edges[1:-1], right=False)
+    for idx in range(bins):
+        in_bin = which == idx
+        if np.count_nonzero(in_bin) == 0:
+            continue
+        centers.append(float(np.nanmedian(x[in_bin])))
+        medians.append(float(np.nanmedian(y[in_bin])))
+    return np.asarray(centers, dtype=float), np.asarray(medians, dtype=float)
+
+
+def subset_row(label: str, data: table.Table, mask: np.ndarray) -> dict:
+    """Statistical summary for a subset of the reddening catalog.
+
+    Keys: subset, N, median_E_bprp, median_SFD_EBV, spearman_rho.
+    """
+    values_empirical = _as_float_array(data["E_bprp"])[mask]
+    values_sfd = _as_float_array(data["sfd_ebv"])[mask]
+    return {
+        "subset": label,
+        "N": int(np.count_nonzero(mask)),
+        "median_E_bprp": round(float(np.nanmedian(values_empirical)), 4),
+        "median_SFD_EBV": round(float(np.nanmedian(values_sfd)), 4),
+        "spearman_rho": round(rank_spearman(values_sfd, values_empirical), 4),
+    }

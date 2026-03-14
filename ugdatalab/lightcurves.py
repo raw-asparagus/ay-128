@@ -9,7 +9,7 @@ from astropy import table
 from astropy.timeseries import LombScargle
 
 from ugdatalab.models.cache import _cache_stable
-from ugdatalab.models.gaia import ZP_ERR_G, ZP_G
+from ugdatalab.models.gaia import ZP_ERR_G, ZP_G, _as_float_array
 
 DEFAULT_PERIOD_MIN = 0.2
 DEFAULT_PERIOD_MAX = 1.2
@@ -22,11 +22,6 @@ _EPOCH_FLOAT_COLUMNS = (
     "g_transit_flux_error",
 )
 _MIN_PERIOD = np.finfo(float).tiny
-
-
-def _as_float_array(column) -> np.ndarray:
-    values = np.ma.asarray(column, dtype=float)
-    return np.asarray(np.ma.filled(values, np.nan), dtype=float)
 
 
 # Data loading and photometric preprocessing

@@ -8,6 +8,7 @@ from astroquery.sdss import SDSS
 import numpy as np
 
 from ugdatalab.models.cache import _cache_stable
+from ugdatalab.models.gaia import _as_float_array
 
 
 ALLSTAR_DR17_QUERY_TEMPLATE = """
@@ -91,14 +92,6 @@ def _query_sdss_allstar() -> Table:
             )
         )
     return vstack(tables, metadata_conflicts="silent")
-
-
-def _as_float_array(column) -> np.ndarray:
-    """Convert masked/FITS columns to float arrays and normalize SDSS sentinels."""
-    values = np.ma.asarray(column, dtype=float)
-    data = np.asarray(np.ma.filled(values, np.nan), dtype=float)
-    data[data <= -9990] = np.nan
-    return data
 
 
 def _metallicity_column_name(data: Table) -> str:

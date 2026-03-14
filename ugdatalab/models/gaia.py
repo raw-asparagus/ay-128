@@ -210,3 +210,49 @@ class Cut2(GaiaQuality):
         )
         self.data = source.data[mask]
         self.lightcurves = None
+
+
+class DR3Astrometric:
+    """DR3 astrometric refinement: RUWE < 1.4, GOF < 12.5, with parallax
+    error inflation (×1.10 uniformly, plus 0.01 mas in quadrature for stars
+    within 0.2 mag of the G=11 and G=12 CCD-boundary transition windows).
+    Recomputes sigma_mu and sigma_M from the updated parallax_error.
+    """
+
+    def __init__(self, source, *, ruwe_max: float = 1.4, gof_max: float = 12.5):
+        data = source.data if hasattr(source, "data") else source
+
+        ruwe = _as_float_array(data["ruwe"])
+        gof = _as_float_array(data["astrometric_gof_al"])
+
+        mask = (
+            np.isfinite(ruwe)
+            & np.isfinite(gof)
+            & (ruwe < ruwe_max)
+            & (gof < gof_max)
+        )
+
+        refined = data[mask].copy()
+
+        phot_g = _as_float_array(refined["phot_g_mean_mag"])
+        transition_window = (
+            (np.abs(phot_g - 11.0) <= 0.2) | (np.abs(phot_g - 12.0) <= 0.2)
+        )
+
+        parallax_error_new = 1.10 * _as_float_array(refined["parallax_error"])
+        parallax_error_new[transition_window] = np.sqrt(
+            parallax_error_new[transition_window] ** 2 + 0.01 ** 2
+        )
+        refined["parallax_error"] = parallax_error_new
+
+        omega = _as_float_array(refined["parallax"])
+        refined["sigma_mu"] = (
+            5.0 * refined["parallax_error"] / (omega * np.log(10.0))
+        )
+        refined["sigma_M"] = np.sqrt(
+            _as_float_array(refined["sigma_G"]) ** 2
+            + _as_float_array(refined["sigma_mu"]) ** 2
+        )
+
+        self.data: table.Table = refined
+        self.n_transition_window: int = int(np.count_nonzero(transition_window))

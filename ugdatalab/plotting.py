@@ -93,6 +93,24 @@ LIGHT_NEUTRAL_COLOR = "C8"
 NONARY_COLOR = "C9"
 COMPONENT_COLORS = (QUINARY_COLOR, SENARY_COLOR, SEPTENARY_COLOR, LIGHT_NEUTRAL_COLOR, NONARY_COLOR)
 
+MCMC_SAMPLER_COLORS = {
+    "native_nuts": {"RRab": PRIMARY_COLOR, "RRc": SECONDARY_COLOR},
+    "metropolis_hastings": {"RRab": TERTIARY_COLOR, "RRc": QUATERNARY_COLOR},
+    "nuts_potential": {"RRab": QUINARY_COLOR, "RRc": SENARY_COLOR},
+}
+_MCMC_SAMPLER_ALIASES = {
+    "native": "native_nuts",
+    "nuts": "native_nuts",
+    "native_pymc_nuts": "native_nuts",
+    "metropolis_hastings": "metropolis_hastings",
+    "metropolis_hastings_sampler": "metropolis_hastings",
+    "metropolis_hastings_fit": "metropolis_hastings",
+    "mh": "metropolis_hastings",
+    "nuts_potential": "nuts_potential",
+    "nuts_with_potential": "nuts_potential",
+    "potential": "nuts_potential",
+}
+
 mpl.rcParams.update(
     {
         "text.usetex": True,
@@ -301,6 +319,20 @@ def _rrlyrae_class_color(label: str, fallback_index: int = 0) -> str:
     return COMPONENT_COLORS[fallback_index % len(COMPONENT_COLORS)]
 
 
+def mcmc_sampler_color(class_label: str, sampler_kind: str) -> str:
+    rr_class = str(class_label).strip()
+    sampler_key = re.sub(r"[^a-z0-9]+", "_", str(sampler_kind).strip().lower()).strip("_")
+    sampler_key = _MCMC_SAMPLER_ALIASES.get(sampler_key, sampler_key)
+
+    if sampler_key not in MCMC_SAMPLER_COLORS:
+        valid = ", ".join(sorted(MCMC_SAMPLER_COLORS))
+        raise ValueError(f"Unsupported sampler kind {sampler_kind!r}. Expected one of: {valid}.")
+    if rr_class not in MCMC_SAMPLER_COLORS[sampler_key]:
+        valid = ", ".join(sorted(MCMC_SAMPLER_COLORS[sampler_key]))
+        raise ValueError(f"Unsupported RR Lyrae class {class_label!r}. Expected one of: {valid}.")
+    return MCMC_SAMPLER_COLORS[sampler_key][rr_class]
+
+
 def figure(result, name: str):
     return result.figures[name]
 
@@ -451,6 +483,9 @@ def _draw_period_abs_mag(
     abs_mag,
     abs_mag_err,
     classifications,
+    *,
+    show_legend: bool = True,
+    legend_kwargs: dict[str, Any] | None = None,
 ):
     periods = np.asarray(periods, dtype=float)
     m_g = np.asarray(abs_mag, dtype=float)
@@ -493,7 +528,8 @@ def _draw_period_abs_mag(
     ax.set_xscale("log")
     _set_descending_magnitude_yaxis(ax)
     ax.set_ylabel(r"$M_{\rm G}$ [mag]")
-    ax.legend()
+    if show_legend:
+        ax.legend(**(legend_kwargs or {}))
     _apply_grid(ax)
     return ax
 
@@ -505,10 +541,20 @@ def plot_period_abs_mag(
     classifications,
     *,
     ax=None,
+    show_legend: bool = True,
+    legend_kwargs: dict[str, Any] | None = None,
 ):
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(5 / 2))
-    _draw_period_abs_mag(ax, periods, abs_mag, abs_mag_err, classifications)
+    _draw_period_abs_mag(
+        ax,
+        periods,
+        abs_mag,
+        abs_mag_err,
+        classifications,
+        show_legend=show_legend,
+        legend_kwargs=legend_kwargs,
+    )
     ax.set_xlabel(r"Catalog period $P$ [days]")
     return ax
 
@@ -520,12 +566,71 @@ def plot_period_abs_mag_ls(
     classifications,
     *,
     ax=None,
+    show_legend: bool = True,
+    legend_kwargs: dict[str, Any] | None = None,
 ):
     if ax is None:
         _, ax = _single_panel(_columnwidth_figsize(5 / 2))
-    _draw_period_abs_mag(ax, periods, abs_mag, abs_mag_err, classifications)
+    _draw_period_abs_mag(
+        ax,
+        periods,
+        abs_mag,
+        abs_mag_err,
+        classifications,
+        show_legend=show_legend,
+        legend_kwargs=legend_kwargs,
+    )
     ax.set_xlabel(r"L-S period $P_{\rm LS}$ [days]")
     return ax
+
+
+def _class_count_map(classifications) -> dict[str, int]:
+    return {
+        label: int(np.count_nonzero(mask))
+        for label, mask in _plot_class_masks(classifications)
+    }
+
+
+def _class_cut_label_map(reference_classifications, current_classifications) -> dict[str, str]:
+    reference_counts = _class_count_map(reference_classifications)
+    current_counts = _class_count_map(current_classifications)
+    labels = list(reference_counts)
+    labels.extend(label for label in current_counts if label not in reference_counts)
+    return {
+        label: f"{label} ({max(reference_counts.get(label, 0) - current_counts.get(label, 0), 0)} cut)"
+        for label in labels
+    }
+
+
+def _period_abs_mag_legend_handles(
+    labels,
+    *,
+    label_map: dict[str, str] | None = None,
+) -> list[Line2D]:
+    handles = []
+    for i, label in enumerate(labels):
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                linestyle="none",
+                markerfacecolor=_rrlyrae_class_color(label, i),
+                markeredgecolor="none",
+                markersize=MARKER_MS_STANDARD * 0.7,
+                alpha=ALPHA_DENSE,
+                label=label_map.get(label, label) if label_map is not None else label,
+            )
+        )
+    return handles
+
+
+def _period_abs_mag_comparison_figure(*, height_out_of_8: float = 16 / 5):
+    return _grid_1x2(
+        figsize=_textwidth_figsize(height_out_of_8),
+        sharex=False,
+        sharey=True,
+    )
 
 
 def plot_period_abs_mag_comparison(
@@ -559,6 +664,93 @@ def plot_period_abs_mag_comparison(
     )
     if axes[1].legend_ is not None:
         axes[1].legend_.remove()
+    _tight_layout(fig)
+    return axes
+
+
+def plot_period_abs_mag_c12_comparison(pre_c12_source, post_c12_source):
+    pre_c12_data = _as_table(pre_c12_source)
+    post_c12_data = _as_table(post_c12_source)
+
+    pre_c12_classes = np.asarray(pre_c12_data["best_classification"], dtype=str)
+    post_c12_classes = np.asarray(post_c12_data["best_classification"], dtype=str)
+    reference_labels = list(_class_count_map(pre_c12_classes))
+
+    fig, axes = _period_abs_mag_comparison_figure()
+    plot_period_abs_mag(
+        _plot_period_values(pre_c12_data),
+        np.asarray(pre_c12_data["M_G"], dtype=float),
+        np.asarray(pre_c12_data["sigma_M"], dtype=float),
+        pre_c12_classes,
+        ax=axes[0],
+        show_legend=False,
+    )
+    axes[0].legend(handles=_period_abs_mag_legend_handles(reference_labels))
+
+    plot_period_abs_mag(
+        _plot_period_values(post_c12_data),
+        np.asarray(post_c12_data["M_G"], dtype=float),
+        np.asarray(post_c12_data["sigma_M"], dtype=float),
+        post_c12_classes,
+        ax=axes[1],
+        show_legend=False,
+    )
+    axes[1].legend(
+        handles=_period_abs_mag_legend_handles(
+            reference_labels,
+            label_map=_class_cut_label_map(pre_c12_classes, post_c12_classes),
+        )
+    )
+    axes[1].set_ylabel("")
+    _tight_layout(fig)
+    return axes
+
+
+def plot_period_abs_mag_clean_vs_astrometric_comparison(
+    reference_source,
+    clean_source,
+    refined_source,
+):
+    reference_data = _as_table(reference_source)
+    clean_data = _as_table(clean_source)
+    refined_data = _as_table(refined_source)
+
+    reference_classes = np.asarray(reference_data["best_classification"], dtype=str)
+    clean_classes = np.asarray(clean_data["best_classification"], dtype=str)
+    refined_classes = np.asarray(refined_data["best_classification"], dtype=str)
+    reference_labels = list(_class_count_map(reference_classes))
+
+    fig, axes = _period_abs_mag_comparison_figure()
+    plot_period_abs_mag(
+        _plot_period_values(clean_data),
+        np.asarray(clean_data["M_G"], dtype=float),
+        np.asarray(clean_data["sigma_M"], dtype=float),
+        clean_classes,
+        ax=axes[0],
+        show_legend=False,
+    )
+    axes[0].legend(
+        handles=_period_abs_mag_legend_handles(
+            reference_labels,
+            label_map=_class_cut_label_map(reference_classes, clean_classes),
+        )
+    )
+
+    plot_period_abs_mag(
+        _plot_period_values(refined_data),
+        np.asarray(refined_data["M_G"], dtype=float),
+        np.asarray(refined_data["sigma_M"], dtype=float),
+        refined_classes,
+        ax=axes[1],
+        show_legend=False,
+    )
+    axes[1].legend(
+        handles=_period_abs_mag_legend_handles(
+            reference_labels,
+            label_map=_class_cut_label_map(reference_classes, refined_classes),
+        )
+    )
+    axes[1].set_ylabel("")
     _tight_layout(fig)
     return axes
 
@@ -2342,10 +2534,9 @@ def plot_empirical_vs_catalog_extinction_comparison(
         finite_residuals,
         bins=80,
         range=(residual_min, residual_max),
-        density=True,
         color=SECONDARY_COLOR,
         alpha=ALPHA_LIGHT,
-        label="Residual density",
+        label="Residual count",
     )
     residual_median = float(np.median(finite_residuals))
     axes[1].axvline(
@@ -2357,38 +2548,12 @@ def plot_empirical_vs_catalog_extinction_comparison(
     )
     axes[1].set_title(r"$A_G^{\mathrm{calc}} - g_{\mathrm{absorption}}$")
     axes[1].set_xlabel(r"Residual [mag]")
-    axes[1].set_ylabel("Density")
+    axes[1].set_ylabel("Count")
     axes[1].legend(loc="best")
     _apply_grid(axes[1])
 
     _tight_layout(fig)
     return fig, axes
-
-
-def plot_pl_sampler_comparison_corner(
-    sample_map: dict[str, np.ndarray],
-):
-    from .relations import relation_parameter_labels
-
-    fig = None
-    colors = [PRIMARY_COLOR, SECONDARY_COLOR, TERTIARY_COLOR]
-    legend_handles = []
-    labels = relation_parameter_labels("pl")
-    for (label, samples), color in zip(sample_map.items(), colors):
-        fig = corner.corner(
-            np.asarray(samples, dtype=float),
-            fig=fig,
-            labels=list(labels),
-            color=color,
-            plot_datapoints=False,
-            fill_contours=False,
-            hist_kwargs={"density": True, "alpha": ALPHA_DIM},
-        )
-        legend_handles.append(Line2D([0], [0], color=color, lw=LW_EMPHASIS, label=label))
-    if fig is None:
-        raise ValueError("sample_map must contain at least one sampler.")
-    fig.legend(handles=legend_handles, loc="upper right", bbox_to_anchor=(0.98, 0.98))
-    return fig
 
 
 def plot_posterior(
@@ -2431,12 +2596,17 @@ def plot_trace(
     log_probs: np.ndarray,
     labels: list[str] | tuple[str, ...],
     n_burn: int,
+    *,
+    color: str = PRIMARY_COLOR,
+    log_prob_color: str | None = None,
 ):
     post_burn_samples = np.asarray(samples, dtype=float)[n_burn:]
     post_burn_log_probs = np.asarray(log_probs, dtype=float)[n_burn:]
     steps = np.arange(len(post_burn_samples))
     ndim = post_burn_samples.shape[1]
     lbls = list(labels)
+    trace_color = color
+    logp_color = trace_color if log_prob_color is None else log_prob_color
 
     trace_height_out_of_8 = 8 * (31 / 20) * (ndim + 1) / TEXTWIDTH_IN
     _, axes = _stacked_panels(
@@ -2446,18 +2616,18 @@ def plot_trace(
     )
 
     for i, lbl in enumerate(lbls):
-        axes[i].plot(steps, post_burn_samples[:, i], lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=PRIMARY_COLOR)
+        axes[i].plot(steps, post_burn_samples[:, i], lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=trace_color)
         axes[i].set_ylabel(lbl)
         _apply_grid(axes[i])
 
-    axes[-1].plot(steps, post_burn_log_probs, lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=SECONDARY_COLOR)
+    axes[-1].plot(steps, post_burn_log_probs, lw=LW_FINE, alpha=ALPHA_EMPHASIS, color=logp_color)
     axes[-1].set_ylabel(r"$\ln P$")
     axes[-1].set_xlabel("Step")
     _apply_grid(axes[-1])
     return axes
 
 
-def plot_corner(source, labels=None):
+def plot_corner(source, labels=None, *, color: str = PRIMARY_COLOR):
     n_burn = getattr(source, "n_burn", 0)
     samples = source.samples[n_burn:]
     lbls = _labels(source, labels)
@@ -2468,6 +2638,264 @@ def plot_corner(source, labels=None):
         show_titles=True,
         title_fmt=".3f",
         quantiles=[0.16, 0.5, 0.84],
-        color=PRIMARY_COLOR,
+        color=color,
     )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Aitoff projection maps (Lab 1 notebooks 07, 08)
+# ---------------------------------------------------------------------------
+
+def _wrap_longitude(l_deg: np.ndarray) -> np.ndarray:
+    """Wrap Galactic longitude to [-180, +180] degrees for Aitoff projection."""
+    l_deg = np.asarray(l_deg, dtype=float)
+    return ((l_deg + 180.0) % 360.0) - 180.0
+
+
+def plot_aitoff_reddening_map(
+    data: Table,
+    mask: np.ndarray,
+    *,
+    title: str,
+    vmin: float,
+    vmax: float,
+    cmap: str = "magma",
+    alpha: float = 0.22,
+    size: float = 2.0,
+) -> tuple:
+    """Aitoff projection scatter plot of empirical E(BP-RP) reddening."""
+    l_plot = _wrap_longitude(np.asarray(data["l"], dtype=float))
+    b_deg = np.asarray(data["b"], dtype=float)
+    e_bprp = np.asarray(data["E_bprp"], dtype=float)
+    mask = np.asarray(mask, dtype=bool)
+
+    fig = plt.figure(figsize=(12, 6), dpi=180)
+    ax = fig.add_subplot(111, projection="aitoff")
+    sc = ax.scatter(
+        np.deg2rad(l_plot[mask]),
+        np.deg2rad(b_deg[mask]),
+        c=e_bprp[mask],
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        s=size,
+        alpha=alpha,
+        linewidths=0,
+        rasterized=True,
+    )
+    ax.grid(True, alpha=0.35)
+    ax.set_title(f"{title}\nN = {int(mask.sum()):,}")
+    cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", pad=0.08, shrink=0.85)
+    cbar.set_label(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_aitoff_value_map(
+    ax,
+    l_deg: np.ndarray,
+    b_deg: np.ndarray,
+    values: np.ndarray,
+    *,
+    title: str,
+    vmin: float,
+    vmax: float,
+    colorbar_label: str,
+    cmap: str = "magma",
+    size: float = 2.0,
+    alpha: float = 0.24,
+) -> tuple:
+    """Lower-level per-panel Aitoff helper (takes a pre-created ax)."""
+    sc = ax.scatter(
+        np.deg2rad(_wrap_longitude(np.asarray(l_deg, dtype=float))),
+        np.deg2rad(np.asarray(b_deg, dtype=float)),
+        c=np.asarray(values, dtype=float),
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        s=size,
+        alpha=alpha,
+        linewidths=0,
+        rasterized=True,
+    )
+    ax.grid(True, alpha=0.35)
+    ax.set_title(title)
+    return sc, colorbar_label
+
+
+def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarray:
+    """Two-panel Gaia G vs WISE W2 PL comparison."""
+    band_colors = {"G": PRIMARY_COLOR, "W2": SECONDARY_COLOR}
+
+    fig, axes = plt.subplots(1, 2, figsize=(TEXTWIDTH_IN, 0.60 * TEXTWIDTH_IN), sharey=False)
+
+    for ax, class_label in zip(axes, ("RRab", "RRc")):
+        optical = optical_map[class_label]
+        wise = wise_map[class_label]
+
+        ax.errorbar(
+            optical.x_obs, optical.y_obs, yerr=optical.sigma_obs,
+            fmt="o", ms=3.0, alpha=0.12, color=band_colors["G"],
+            ecolor="0.7", elinewidth=0.4, capsize=0, label=r"Gaia $G$ data",
+        )
+        ax.fill_between(
+            optical.x_grid, optical.predictive_q16, optical.predictive_q84,
+            color=band_colors["G"], alpha=0.16, label=r"Gaia $G$ 68% predictive",
+        )
+        ax.plot(optical.x_grid, optical.median_mean, color=band_colors["G"], lw=LW_FIT, label=r"Gaia $G$ median")
+
+        ax.errorbar(
+            wise.x_obs, wise.y_obs, yerr=wise.sigma_obs,
+            fmt="s", ms=3.0, alpha=0.16, color=band_colors["W2"],
+            ecolor="0.55", elinewidth=0.4, capsize=0, label=r"WISE $W2$ data",
+        )
+        ax.fill_between(
+            wise.x_grid, wise.predictive_q16, wise.predictive_q84,
+            color=band_colors["W2"], alpha=0.18, label=r"WISE $W2$ 68% predictive",
+        )
+        ax.plot(wise.x_grid, wise.median_mean, color=band_colors["W2"], lw=LW_FIT, label=r"WISE $W2$ median")
+
+        y_all = np.concatenate([
+            np.asarray(optical.y_obs, dtype=float),
+            np.asarray(optical.predictive_q16, dtype=float),
+            np.asarray(optical.predictive_q84, dtype=float),
+            np.asarray(wise.y_obs, dtype=float),
+            np.asarray(wise.predictive_q16, dtype=float),
+            np.asarray(wise.predictive_q84, dtype=float),
+        ])
+        finite = np.isfinite(y_all)
+        if np.any(finite):
+            y_min = float(np.min(y_all[finite]))
+            y_max = float(np.max(y_all[finite]))
+            pad = 0.15 * max(y_max - y_min, 0.5)
+            ax.set_ylim(y_max + pad, y_min - pad)
+
+        ax.set_title(class_label)
+        ax.set_xlabel(r"$\log_{10}(P/\mathrm{day})$")
+        ax.grid(True, lw=LW_GRID, alpha=ALPHA_FAINT)
+
+    axes[0].set_ylabel("Absolute magnitude [mag]")
+    axes[0].legend(loc="best", fontsize=LEGEND_SIZE)
+    fig.tight_layout()
+    return axes
+
+
+def plot_w2_posterior_predictive(ctx, samples: np.ndarray):
+    """Thin wrapper around plot_pl_posterior_predictive with W2 axis labels."""
+    ax = plot_pl_posterior_predictive(ctx, samples)
+    ax.set_ylabel(r"$M_{W2}$ [mag]")
+    ax.set_title(rf"{ctx.class_label}: posterior predictive fit in WISE $W2$")
+    return ax
+
+
+def plot_quality_diagnostics(
+    data: Table,
+    components: dict,
+    *,
+    sample_size: int = 25000,
+    seed: int = 7,
+    max_sigma_e: float = 0.15,
+) -> tuple:
+    """BP/RP excess scatter + sigma_E histogram diagnostic panels."""
+    rng = np.random.default_rng(seed)
+    finite = components["finite"]
+    sigma_e = np.asarray(data["sigma_E"], dtype=float)
+    bp_rp = np.asarray(data["bp_rp"], dtype=float)
+    excess = np.asarray(data["phot_bp_rp_excess_factor"], dtype=float)
+    bad_excess = finite & ~components["bp_rp_excess"]
+    good_excess = finite & components["bp_rp_excess"]
+
+    good_idx = np.flatnonzero(good_excess)
+    bad_idx = np.flatnonzero(bad_excess)
+    if len(good_idx) > sample_size:
+        good_idx = rng.choice(good_idx, size=sample_size, replace=False)
+    if len(bad_idx) > sample_size:
+        bad_idx = rng.choice(bad_idx, size=sample_size, replace=False)
+
+    x_grid = np.linspace(
+        np.nanpercentile(bp_rp[finite], 0.5),
+        np.nanpercentile(bp_rp[finite], 99.5),
+        300,
+    )
+    lower = 1.0 + 0.015 * x_grid ** 2
+    upper = 1.3 + 0.06 * x_grid ** 2
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), dpi=180)
+
+    axes[0].hist(sigma_e[finite], bins=80, color="0.45", alpha=0.8)
+    axes[0].axvline(
+        max_sigma_e, color="C3", linestyle="--", linewidth=2,
+        label=rf"$\sigma_E = {max_sigma_e:.2f}$ mag",
+    )
+    axes[0].set_xlabel(r"$\sigma_E$ [mag]")
+    axes[0].set_ylabel("Number of stars")
+    axes[0].set_title("Propagated reddening uncertainty")
+    axes[0].legend()
+
+    axes[1].scatter(
+        bp_rp[good_idx], excess[good_idx], s=4, alpha=0.08, color="0.25",
+        rasterized=True, label="inside envelope",
+    )
+    axes[1].scatter(
+        bp_rp[bad_idx], excess[bad_idx], s=6, alpha=0.35, color="C3",
+        rasterized=True, label="rejected by excess cut",
+    )
+    axes[1].plot(x_grid, lower, color="C0", linestyle="--", linewidth=2)
+    axes[1].plot(x_grid, upper, color="C0", linestyle="--", linewidth=2, label="Gaia excess envelope")
+    axes[1].set_xlabel(r"$G_{\mathrm{BP}} - G_{\mathrm{RP}}$ [mag]")
+    axes[1].set_ylabel("phot\\_bp\\_rp\\_excess\\_factor")
+    axes[1].set_title("BP/RP excess diagnostic")
+    axes[1].legend(loc="upper left")
+
+    plt.tight_layout()
+    return fig, axes
+
+
+def plot_sfd_empirical_hexbin_comparison(
+    data: Table,
+    subset_specs: list,
+    *,
+    gridsize: int = 55,
+    cmap: str = "cividis",
+) -> tuple:
+    """Hexbin density plot of empirical E(BP-RP) vs SFD E(B-V) for latitude subsets.
+
+    subset_specs: list of (mask, label) tuples.
+    """
+    from ugdatalab.dust import binned_median_trend
+
+    n_panels = len(subset_specs)
+    fig, axes = plt.subplots(
+        1, n_panels, figsize=(13, 5), dpi=180,
+        sharex=True, sharey=True, constrained_layout=True,
+    )
+    if n_panels == 1:
+        axes = np.asarray([axes])
+
+    e_bprp = np.asarray(data["E_bprp"], dtype=float)
+    sfd_ebv = np.asarray(data["sfd_ebv"], dtype=float)
+
+    last_hb = None
+    for ax, (mask, label) in zip(axes, subset_specs):
+        x = sfd_ebv[mask]
+        y = e_bprp[mask]
+        last_hb = ax.hexbin(
+            x, y,
+            gridsize=gridsize,
+            mincnt=1,
+            bins="log",
+            cmap=cmap,
+            rasterized=True,
+        )
+        centers, medians = binned_median_trend(x, y)
+        ax.plot(centers, medians, color="white", linewidth=2.5)
+        ax.plot(centers, medians, color="C3", linewidth=1.25)
+        ax.set_title(f"{label}\nN = {int(np.count_nonzero(mask)):,}")
+        ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
+        ax.set_ylabel(r"RR Lyrae $E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ [mag]")
+
+    if last_hb is not None:
+        fig.colorbar(last_hb, ax=list(axes), label="log10(count)")
+
+    return fig, np.asarray(axes)
