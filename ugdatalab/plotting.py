@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,18 +57,11 @@ LW_EMPHASIS = 1.8
 LW_CALLOUT = 2.2
 LW_LEVEL = 2.6
 
-SCATTER_S_FINE = 6
-SCATTER_S_STANDARD = 14
-SCATTER_S_EMPHASIS = 30
-SCATTER_S_CALLOUT = 60
-
-MARKER_MS_FINE = 3.0
-MARKER_MS_STANDARD = 8.0
-MARKER_MS_MEDIUM = 10.5
-MARKER_MS_LARGE = 16.0
-
-RRLYRAE_SCATTER_S = 4
-RRLYRAE_MARKER_MS = 2.5
+MARKER_MS_FINE   = 2.5    # very fine  — dense scatter / many-point plots
+MARKER_MS_SMALL  = 3.5    # small      — RR Lyrae light-curve data
+MARKER_MS_MEDIUM = 5.0    # medium     — moderate emphasis
+MARKER_MS_LARGE  = 8.0    # large      — prominent markers
+MARKER_MS_BIG    = 12.0   # big        — callout / special annotation
 RRLYRAE_POINT_ALPHA = 0.55
 
 ALPHA_SHADE = 0.1
@@ -94,9 +88,9 @@ NONARY_COLOR = "C9"
 COMPONENT_COLORS = (QUINARY_COLOR, SENARY_COLOR, SEPTENARY_COLOR, LIGHT_NEUTRAL_COLOR, NONARY_COLOR)
 
 MCMC_SAMPLER_COLORS = {
-    "native_nuts": {"RRab": PRIMARY_COLOR, "RRc": SECONDARY_COLOR},
-    "metropolis_hastings": {"RRab": TERTIARY_COLOR, "RRc": QUATERNARY_COLOR},
-    "nuts_potential": {"RRab": QUINARY_COLOR, "RRc": SENARY_COLOR},
+    "native_nuts":         {"RRab": PRIMARY_COLOR,    "RRc": SECONDARY_COLOR},
+    "metropolis_hastings": {"RRab": QUATERNARY_COLOR, "RRc": QUINARY_COLOR},
+    "nuts_potential":      {"RRab": SENARY_COLOR,     "RRc": SEPTENARY_COLOR},
 }
 _MCMC_SAMPLER_ALIASES = {
     "native": "native_nuts",
@@ -109,6 +103,35 @@ _MCMC_SAMPLER_ALIASES = {
     "nuts_potential": "nuts_potential",
     "nuts_with_potential": "nuts_potential",
     "potential": "nuts_potential",
+}
+_REPORT_FIGURE_FILENAMES = {
+    "plot_raw_phase_folded_lightcurve": "fig_lc_raw_phased.pdf",
+    "plot_lomb_scargle_periodogram": "fig_periodogram.pdf",
+    "plot_fourier_harmonic_fits": "fig_fourier_harmonics.pdf",
+    "plot_fourier_cross_validation": "fig_crossval.pdf",
+    "plot_fourier_cv_normalized_residual_histograms": "fig_fourier_cv_residuals.pdf",
+    "plot_fourier_cv_phase_comparison": "fig_fourier_cv_phase.pdf",
+    "plot_vari_rrlyrae_period_comparison": "fig_period_comparison.pdf",
+    "plot_rrlyrae_shape_comparison": "fig_rrab_rrc.pdf",
+    "plot_mollweide": "fig_calibration_sky.pdf",
+    "plot_mollweide_diff": "fig_calibration_sky_c12.pdf",
+    "plot_calibration_sky_distribution": "fig_calibration_sky.pdf",
+    "plot_period_abs_mag_stage_comparison": "fig_pl_stages.pdf",
+    "plot_period_abs_mag_c12_comparison": "fig_period_abs_mag_c12_comparison.pdf",
+    "plot_inlier_prob_period_luminosity_comparison": "fig_inlier_prob_period_luminosity_comparison.pdf",
+    "plot_pl_posterior_predictive": "fig_pl_posterior.pdf",
+    "plot_pl_sampler_comparison_corner": "fig_methods_corner.pdf",
+    "plot_pc_posterior_predictive_comparison": "fig_period_color.pdf",
+    "plot_empirical_vs_catalog_extinction_comparison": "fig_extinction_comparison.pdf",
+    "plot_mean_g_catalog_comparison": "fig_mean_g_comparison.pdf",
+    "plot_period_mean_g": "fig_period_mean_g.pdf",
+    "plot_fourier_extrapolation": "fig_fourier_extrapolation.pdf",
+    "plot_aitoff_reddening_map": "fig_reddening_map.pdf",
+    "plot_sfd_empirical_hexbin_comparison": "fig_sfd_comparison.pdf",
+    "plot_sfd_all_sky_hexbin": "fig_sfd_all_sky_hexbin.pdf",
+    "plot_regime_decomposition": "fig_regime_decomposition.pdf",
+    "plot_reddening_distribution": "fig_reddening_distribution.pdf",
+    "plot_optical_vs_w2_comparison": "fig_optical_ir_comparison.pdf",
 }
 
 mpl.rcParams.update(
@@ -153,6 +176,15 @@ def _save_figure(fig: Figure, path: Path, **kwargs) -> None:
     fig.savefig(path, **kwargs)
 
 
+def _save_lab01_figure(fig: Figure, filename: str, **kwargs) -> None:
+    ensure_output_dirs()
+    _save_figure(fig, FIGURES_DIR / filename, **kwargs)
+
+
+# Backwards-compatible alias for older callers/tests.
+_save_lab02_figure = _save_lab01_figure
+
+
 def _as_table(source, attr: str = "data") -> Table:
     if isinstance(source, Table):
         return source
@@ -194,10 +226,50 @@ def _labels(source, override=None):
 def _apply_grid(ax: Any) -> None:
     ax.grid(True)
 
+def _figure_from_plot_result(result: Any) -> Figure:
+    if isinstance(result, Figure):
+        return result
+    figure = getattr(result, "figure", None)
+    if isinstance(figure, Figure):
+        return figure
+    if isinstance(result, tuple):
+        for item in result:
+            try:
+                return _figure_from_plot_result(item)
+            except TypeError:
+                continue
+    if isinstance(result, (list, np.ndarray)):
+        items = np.asarray(result, dtype=object)
+        if items.size:
+            return _figure_from_plot_result(items.flat[0])
+    raise TypeError("Could not resolve a matplotlib Figure from plot result.")
 
-def _save_lab02_figure(fig: Figure, filename: str, **kwargs) -> None:
-    ensure_output_dirs()
-    _save_figure(fig, FIGURES_DIR / filename, **kwargs)
+
+def _resolve_report_filename(function_name: str, *, save: bool | str, save_name: str | None) -> str | None:
+    if save_name is not None:
+        return save_name
+    if isinstance(save, str):
+        return save
+    if save:
+        if function_name not in _REPORT_FIGURE_FILENAMES:
+            raise ValueError(
+                f"No default report filename registered for {function_name!r}; "
+                "pass save_name='your-file.pdf' explicitly."
+            )
+        return _REPORT_FIGURE_FILENAMES[function_name]
+    return None
+
+
+def _wrap_public_plot(fn):
+    @functools.wraps(fn)
+    def wrapped(*args, save: bool | str = False, save_name: str | None = None, save_kwargs: dict[str, Any] | None = None, **kwargs):
+        result = fn(*args, **kwargs)
+        filename = _resolve_report_filename(fn.__name__, save=save, save_name=save_name)
+        if filename is not None:
+            _save_lab01_figure(_figure_from_plot_result(result), filename, **(save_kwargs or {}))
+        return result
+
+    return wrapped
 
 
 def _single_panel(figsize: tuple[float, float], *, constrained_layout: bool = False):
@@ -280,6 +352,13 @@ def _set_descending_magnitude_yaxis(ax) -> None:
     ax.set_ylim(max(y0, y1), min(y0, y1))
 
 
+def _set_log_period_xaxis(ax) -> None:
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+
+
 def _source_header(source_id: int, classification: str | None = None) -> str:
     if classification:
         return f"{classification}: Gaia DR3 {int(source_id)}"
@@ -302,7 +381,7 @@ def _set_title(ax: Any, title: str | None) -> None:
 
 
 def _default_scatter_kwargs(**kwargs):
-    kwargs.setdefault("s", SCATTER_S_FINE)
+    kwargs.setdefault("s", MARKER_MS_FINE**2)
     kwargs.setdefault("alpha", ALPHA_STANDARD)
     kwargs.setdefault("rasterized", True)
     return kwargs
@@ -311,8 +390,8 @@ def _default_scatter_kwargs(**kwargs):
 def _rrlyrae_class_color(label: str, fallback_index: int = 0) -> str:
     class_colors = {
         "RRab": PRIMARY_COLOR,
-        "RRd": SECONDARY_COLOR,
-        "RRc": TERTIARY_COLOR,
+        "RRc": SECONDARY_COLOR,
+        "RRd": TERTIARY_COLOR,
     }
     if label in class_colors:
         return class_colors[label]
@@ -333,12 +412,349 @@ def mcmc_sampler_color(class_label: str, sampler_kind: str) -> str:
     return MCMC_SAMPLER_COLORS[sampler_key][rr_class]
 
 
+def plot_calibration_sky_distribution(initial_source, cleaned_source):
+    initial_data = _as_table(initial_source)
+    cleaned_data = _as_table(cleaned_source)
+
+    fig = plt.figure(figsize=_textwidth_figsize(19 / 4))
+    ax = fig.add_subplot(111, projection="aitoff")
+
+    l_initial = np.deg2rad(_wrap_longitude(np.asarray(initial_data["l"], dtype=float)))
+    b_initial = np.deg2rad(np.asarray(initial_data["b"], dtype=float))
+    ax.scatter(
+        l_initial,
+        b_initial,
+        s=MARKER_MS_FINE**2,
+        color=LIGHT_NEUTRAL_COLOR,
+        alpha=ALPHA_LIGHT,
+        rasterized=True,
+        label=f"Initial sample ($N={len(initial_data)}$)",
+        zorder=1,
+    )
+
+    l_clean = np.deg2rad(_wrap_longitude(np.asarray(cleaned_data["l"], dtype=float)))
+    b_clean = np.deg2rad(np.asarray(cleaned_data["b"], dtype=float))
+    classifications = np.asarray(cleaned_data["best_classification"], dtype=str)
+    for i, (label, mask) in enumerate(_plot_class_masks(classifications)):
+        ax.scatter(
+            l_clean[mask],
+            b_clean[mask],
+            s=MARKER_MS_FINE**2,
+            color=_rrlyrae_class_color(label, i),
+            alpha=ALPHA_DENSE,
+            rasterized=True,
+            label=f"{label} cleaned",
+            zorder=2,
+        )
+
+    longs = np.linspace(-np.pi, np.pi, 512)
+    for latitude in (-30.0, 30.0):
+        ax.plot(
+            longs,
+            np.full_like(longs, np.deg2rad(latitude)),
+            color=QUATERNARY_COLOR,
+            lw=LW_LIGHT,
+            ls="--",
+            alpha=ALPHA_GUIDE,
+        )
+
+    ax.set_title("Calibration sample in Galactic coordinates")
+    ax.set_xlabel(r"Galactic longitude $l$")
+    ax.set_ylabel(r"Galactic latitude $b$")
+    ax.legend(loc="lower left", ncol=2)
+    _apply_grid(ax)
+    _tight_layout(fig)
+    return fig
+
+
+def plot_period_abs_mag_stage_comparison(raw_source, c12_source, clean_source):
+    stage_specs = (
+        ("Initial sample", _as_table(raw_source)),
+        ("After C1/C2", _as_table(c12_source)),
+        ("Mixture-cleaned", _as_table(clean_source)),
+    )
+
+    fig, axes = plt.subplots(
+        1,
+        len(stage_specs),
+        figsize=_textwidth_figsize(7 / 2),
+        sharex=True,
+        sharey=True,
+    )
+    axes = np.asarray(axes, dtype=object)
+
+    for index, (title, data) in enumerate(stage_specs):
+        periods = _plot_period_values(data)
+        abs_mag = np.asarray(data["M_G"], dtype=float)
+        abs_mag_err = _optional_float_array(data, "sigma_M")
+        classifications = np.asarray(data["best_classification"], dtype=str)
+        plot_period_abs_mag(
+            periods,
+            abs_mag,
+            abs_mag_err,
+            classifications,
+            ax=axes[index],
+            show_legend=index == 0,
+        )
+        _add_running_median_line(axes[index], periods, abs_mag)
+        if index > 0 and axes[index].legend_ is not None:
+            axes[index].legend_.remove()
+
+    axes[0].set_ylabel(r"$M_{\rm G}$ [mag]")
+    fig.tight_layout()
+    return axes
+
+
+def plot_pl_sampler_comparison_corner(
+    sample_map: dict[str, np.ndarray],
+    *,
+    class_label: str | None = None,
+    param_labels: list[str] | tuple[str, ...] | None = None,
+):
+    if not sample_map:
+        raise ValueError("sample_map must contain at least one sampler.")
+
+    first_samples = np.asarray(next(iter(sample_map.values())), dtype=float)
+    if first_samples.ndim != 2:
+        raise ValueError("Each sampler entry must be a two-dimensional sample array.")
+    labels = list(param_labels) if param_labels is not None else _labels(
+        SimpleNamespace(samples=first_samples, param_labels=[r"$a$", r"$b$", r"$\log_{10}\sigma_{\rm scatter}$"])
+    )
+
+    fig = None
+    handles = []
+    for label, samples in sample_map.items():
+        color = _sampler_overlay_color(label, class_label)
+        fig = corner.corner(
+            np.asarray(samples, dtype=float),
+            labels=labels,
+            fig=fig if fig is not None else plt.figure(figsize=_textwidth_figsize(7)),
+            color=color,
+            fill_contours=False,
+            plot_datapoints=False,
+            plot_density=False,
+            levels=(0.393, 0.865),
+            smooth=1.0,
+            hist_kwargs={"density": True, "histtype": "step", "linewidth": 1.6, "alpha": ALPHA_LIGHT},
+            contour_kwargs={"linewidths": 1.3, "alpha": ALPHA_LIGHT},
+        )
+        handles.append(Line2D([0], [0], color=color, lw=2.0, label=label))
+
+    fig.legend(handles=handles, loc="upper right", frameon=False)
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    return fig
+
+
+def _draw_relation_line_draws_layer(
+    ax: Any,
+    ctx: Any,
+    samples: np.ndarray,
+    *,
+    color: str,
+    data_label: str,
+    mean_label: str,
+    n_draws: int,
+    seed: int,
+    y_label: str,
+) -> None:
+    samples = np.asarray(samples, dtype=float)
+    if len(samples) == 0:
+        raise ValueError("No post-burn samples available for posterior-line plotting.")
+
+    rng = np.random.default_rng(seed)
+    draw_idx = rng.choice(len(samples), size=min(n_draws, len(samples)), replace=False)
+    x_obs = np.asarray(ctx.x_centered, dtype=float)
+    y_obs = np.asarray(ctx.y, dtype=float)
+    sigma = np.asarray(ctx.sigma, dtype=float)
+    x_grid = np.linspace(np.nanmin(x_obs), np.nanmax(x_obs), 256)
+
+    ax.errorbar(
+        x_obs,
+        y_obs,
+        yerr=sigma,
+        fmt="o",
+        ms=MARKER_MS_SMALL,
+        elinewidth=LW_FINE,
+        color=color,
+        alpha=ALPHA_FAINT,
+        label=data_label,
+        zorder=3,
+    )
+    for j, sample in enumerate(samples[draw_idx]):
+        slope, intercept, _ = sample
+        ax.plot(
+            x_grid,
+            slope * x_grid + intercept,
+            color=color,
+            alpha=ALPHA_SHADE + 0.02,
+            lw=LW_FINE,
+            label=f"{n_draws} posterior draws" if j == 0 else "_nolegend_",
+            zorder=2,
+        )
+
+    mean_params = np.mean(samples, axis=0)
+    ax.plot(
+        x_grid,
+        mean_params[0] * x_grid + mean_params[1],
+        color=SECONDARY_COLOR,
+        lw=LW_EMPHASIS,
+        label=mean_label,
+        zorder=4,
+    )
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$")
+    ax.set_ylabel(y_label)
+    ax.legend(loc="best")
+    _apply_grid(ax)
+
+
+def plot_pl_posterior_line_draws(
+    ctx: Any,
+    sampler_like: Any,
+    *,
+    color: str = PRIMARY_COLOR,
+    title: str | None = None,
+    n_draws: int = 50,
+    seed: int = 7,
+):
+    samples = _post_burn_samples(sampler_like)
+    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+    _draw_relation_line_draws_layer(
+        ax,
+        ctx,
+        samples,
+        color=color,
+        data_label=f"{ctx.class_label} data",
+        mean_label="Posterior mean",
+        n_draws=n_draws,
+        seed=seed,
+        y_label=r"$M_{\rm G}$ [mag]",
+    )
+    if title is not None:
+        ax.set_title(title)
+    _set_descending_magnitude_yaxis(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
+def plot_pl_posterior_line_draws_comparison(
+    primary_ctx: Any,
+    primary_sampler_like: Any,
+    secondary_ctx: Any,
+    secondary_sampler_like: Any,
+    *,
+    primary_color: str = PRIMARY_COLOR,
+    secondary_color: str = TERTIARY_COLOR,
+    y_label: str = r"$M_{\rm G}$ [mag]",
+    title: str | None = None,
+    n_draws: int = 50,
+    seed: int = 7,
+):
+    _, ax = _single_panel(_textwidth_figsize(19 / 4))
+    _draw_relation_line_draws_layer(
+        ax,
+        primary_ctx,
+        _post_burn_samples(primary_sampler_like),
+        color=primary_color,
+        data_label=f"{primary_ctx.class_label} data",
+        mean_label=f"{primary_ctx.class_label} posterior mean",
+        n_draws=n_draws,
+        seed=seed,
+        y_label=y_label,
+    )
+    _draw_relation_line_draws_layer(
+        ax,
+        secondary_ctx,
+        _post_burn_samples(secondary_sampler_like),
+        color=secondary_color,
+        data_label=f"{secondary_ctx.class_label} data",
+        mean_label=f"{secondary_ctx.class_label} posterior mean",
+        n_draws=n_draws,
+        seed=seed + 1,
+        y_label=y_label,
+    )
+    if title is not None:
+        ax.set_title(title)
+    _set_descending_magnitude_yaxis(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
+def plot_w2_posterior_line_draws(
+    ctx: Any,
+    sampler_like: Any,
+    *,
+    color: str = PRIMARY_COLOR,
+    title: str | None = None,
+    n_draws: int = 50,
+    seed: int = 11,
+):
+    samples = _post_burn_samples(sampler_like)
+    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+    _draw_relation_line_draws_layer(
+        ax,
+        ctx,
+        samples,
+        color=color,
+        data_label=f"{ctx.class_label} data",
+        mean_label="Posterior mean",
+        n_draws=n_draws,
+        seed=seed,
+        y_label=r"$M_{W2}$ [mag]",
+    )
+    if title is not None:
+        ax.set_title(title)
+    _set_descending_magnitude_yaxis(ax)
+    _tight_layout(ax.figure)
+    return ax
+
+
 def figure(result, name: str):
     return result.figures[name]
 
 
 def figure_names(result) -> list[str]:
     return sorted(result.figures)
+
+
+def _normalized_sampler_key(label: str) -> str:
+    sampler_key = re.sub(r"[^a-z0-9]+", "_", str(label).strip().lower()).strip("_")
+    return _MCMC_SAMPLER_ALIASES.get(sampler_key, sampler_key)
+
+
+def _sampler_overlay_color(label: str, class_label: str | None = None) -> str:
+    sampler_key = _normalized_sampler_key(label)
+    if class_label is not None:
+        return mcmc_sampler_color(class_label, sampler_key)
+    generic_colors = {
+        "metropolis_hastings": PRIMARY_COLOR,
+        "nuts_potential": SECONDARY_COLOR,
+        "native_nuts": TERTIARY_COLOR,
+    }
+    return generic_colors.get(sampler_key, NEUTRAL_COLOR)
+
+
+def _post_burn_samples(source: Any) -> np.ndarray:
+    if hasattr(source, "samples"):
+        n_burn = int(getattr(source, "n_burn", 0))
+        return np.asarray(source.samples[n_burn:], dtype=float)
+    return np.asarray(source, dtype=float)
+
+
+def _add_running_median_line(ax: Any, x_values: np.ndarray, y_values: np.ndarray, *, bins: int = 12) -> None:
+    finite = np.isfinite(x_values) & np.isfinite(y_values)
+    if np.count_nonzero(finite) < 3:
+        return
+    x = np.asarray(x_values[finite], dtype=float)
+    y = np.asarray(y_values[finite], dtype=float)
+    order = np.argsort(x)
+    x = x[order]
+    y = y[order]
+    x_chunks = np.array_split(x, min(bins, len(x)))
+    y_chunks = np.array_split(y, min(bins, len(y)))
+    centers = np.asarray([np.median(chunk) for chunk in x_chunks if len(chunk)], dtype=float)
+    medians = np.asarray([np.median(chunk) for chunk in y_chunks if len(chunk)], dtype=float)
+    if centers.size:
+        ax.plot(centers, medians, color=NEUTRAL_COLOR, lw=LW_MEDIUM, ls="--", label="Running median")
 
 
 def _draw_mollweide(ax, l_deg, b_deg):
@@ -350,7 +766,7 @@ def _draw_mollweide(ax, l_deg, b_deg):
     ax.scatter(
         l_rad,
         b_rad,
-        s=SCATTER_S_FINE,
+        s=MARKER_MS_FINE**2,
         color=PRIMARY_COLOR,
         alpha=ALPHA_DENSE,
         rasterized=True,
@@ -376,8 +792,8 @@ def _draw_mollweide(ax, l_deg, b_deg):
 
 
 def plot_mollweide(l_deg, b_deg):
-    fig = plt.figure(figsize=_textwidth_figsize(22 / 5))
-    ax = fig.add_subplot(111, projection="mollweide")
+    fig = plt.figure(figsize=_textwidth_figsize(9 / 2))
+    ax = fig.add_subplot(111, projection="aitoff")
     _draw_mollweide(ax, l_deg, b_deg)
     return ax
 
@@ -388,8 +804,8 @@ def plot_mollweide_diff(source, subset, ax=None):
     diff_mask = ~np.isin(data["source_id"], subset_data["source_id"])
 
     if ax is None:
-        fig = plt.figure(figsize=_textwidth_figsize(22 / 5))
-        ax = fig.add_subplot(111, projection="mollweide")
+        fig = plt.figure(figsize=_textwidth_figsize(9 / 2))
+        ax = fig.add_subplot(111, projection="aitoff")
 
     def to_rad(table):
         l_wrap = np.where(table["l"] > 180, table["l"] - 360, table["l"])
@@ -400,10 +816,12 @@ def plot_mollweide_diff(source, subset, ax=None):
     ax.scatter(
         l_diff,
         b_diff,
+        marker="x",
         color=SECONDARY_COLOR,
         label=f"Removed ($N$={len(diff_data)})",
-        s=SCATTER_S_FINE,
-        alpha=ALPHA_DENSE,
+        s=MARKER_MS_SMALL**2,
+        linewidths=LW_LIGHT,
+        alpha=ALPHA_EMPHASIS,
         rasterized=True,
         zorder=1,
     )
@@ -414,7 +832,7 @@ def plot_mollweide_diff(source, subset, ax=None):
         b_sub,
         color=PRIMARY_COLOR,
         label=f"Kept ($N$={len(subset_data)})",
-        s=SCATTER_S_FINE,
+        s=MARKER_MS_FINE**2,
         alpha=ALPHA_DENSE,
         rasterized=True,
         zorder=2,
@@ -458,7 +876,7 @@ def plot_lomb_scargle_periodogram(source_id: int, data: Table):
     period = float(data["period_ls"][0])
     classification = str(data["best_classification"][0])
 
-    _, ax = _single_panel(_columnwidth_figsize(35 / 16))
+    _, ax = _single_panel(_columnwidth_figsize(3 / 2))
 
     ax.plot(periods, power, color=PRIMARY_COLOR, lw=LW_MEDIUM)
     ax.axvline(
@@ -491,45 +909,55 @@ def _draw_period_abs_mag(
     m_g = np.asarray(abs_mag, dtype=float)
     sigma_m = np.asarray(abs_mag_err, dtype=float)
     classifications = np.asarray(classifications, dtype=str)
-    ax.errorbar(
-        periods,
-        m_g,
-        yerr=sigma_m,
-        fmt="none",
-        color=LIGHT_NEUTRAL_COLOR,
-        alpha=ALPHA_LIGHT,
-        zorder=1,
-    )
     class_masks = _plot_class_masks(classifications)
     if class_masks:
         for i, (label, mask) in enumerate(class_masks):
+            color = _rrlyrae_class_color(label, i)
+            ax.errorbar(
+                periods[mask],
+                m_g[mask],
+                yerr=sigma_m[mask],
+                fmt="none",
+                color=color,
+                alpha=ALPHA_LIGHT,
+                zorder=1,
+            )
             ax.scatter(
                 periods[mask],
                 m_g[mask],
-                color=_rrlyrae_class_color(label, i),
+                color=color,
                 label=label,
-                s=SCATTER_S_FINE,
+                s=MARKER_MS_FINE**2,
                 alpha=ALPHA_DENSE,
                 rasterized=True,
                 zorder=2,
             )
     else:
+        ax.errorbar(
+            periods,
+            m_g,
+            yerr=sigma_m,
+            fmt="none",
+            color=PRIMARY_COLOR,
+            alpha=ALPHA_LIGHT,
+            zorder=1,
+        )
         ax.scatter(
             periods,
             m_g,
             color=PRIMARY_COLOR,
             label="RR Lyrae",
-            s=SCATTER_S_FINE,
+            s=MARKER_MS_FINE**2,
             alpha=ALPHA_DENSE,
             rasterized=True,
             zorder=2,
         )
 
-    ax.set_xscale("log")
+    _set_log_period_xaxis(ax)
     _set_descending_magnitude_yaxis(ax)
     ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     if show_legend:
-        ax.legend(**(legend_kwargs or {}))
+        ax.legend(loc="lower right", **(legend_kwargs or {}))
     _apply_grid(ax)
     return ax
 
@@ -545,7 +973,7 @@ def plot_period_abs_mag(
     legend_kwargs: dict[str, Any] | None = None,
 ):
     if ax is None:
-        _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+        _, ax = _single_panel(_textwidth_figsize(7 / 2))
     _draw_period_abs_mag(
         ax,
         periods,
@@ -617,7 +1045,7 @@ def _period_abs_mag_legend_handles(
                 linestyle="none",
                 markerfacecolor=_rrlyrae_class_color(label, i),
                 markeredgecolor="none",
-                markersize=MARKER_MS_STANDARD * 0.7,
+                markersize=MARKER_MS_MEDIUM,
                 alpha=ALPHA_DENSE,
                 label=label_map.get(label, label) if label_map is not None else label,
             )
@@ -625,7 +1053,7 @@ def _period_abs_mag_legend_handles(
     return handles
 
 
-def _period_abs_mag_comparison_figure(*, height_out_of_8: float = 16 / 5):
+def _period_abs_mag_comparison_figure(*, height_out_of_8: float = 3):
     return _grid_1x2(
         figsize=_textwidth_figsize(height_out_of_8),
         sharex=False,
@@ -668,6 +1096,33 @@ def plot_period_abs_mag_comparison(
     return axes
 
 
+def _overlay_removed_x_markers(ax, full_data, kept_data, reference_labels) -> None:
+    """Overlay x markers on points in full_data that are absent from kept_data."""
+    kept_ids = set(np.asarray(kept_data["source_id"], dtype=int))
+    removed_mask = ~np.isin(np.asarray(full_data["source_id"], dtype=int), list(kept_ids))
+    removed = full_data[removed_mask]
+    if len(removed) == 0:
+        return
+    removed_classes = np.asarray(removed["best_classification"], dtype=str)
+    removed_periods = _plot_period_values(removed)
+    removed_m_g = np.asarray(removed["M_G"], dtype=float)
+    for idx, label in enumerate(reference_labels):
+        mask = removed_classes == label
+        if not mask.any():
+            continue
+        ax.scatter(
+            removed_periods[mask],
+            removed_m_g[mask],
+            marker="x",
+            s=MARKER_MS_SMALL**2,
+            linewidths=LW_FINE,
+            color=_rrlyrae_class_color(label, idx),
+            alpha=ALPHA_MUTED,
+            rasterized=True,
+            zorder=3,
+        )
+
+
 def plot_period_abs_mag_c12_comparison(pre_c12_source, post_c12_source):
     pre_c12_data = _as_table(pre_c12_source)
     post_c12_data = _as_table(post_c12_source)
@@ -676,34 +1131,35 @@ def plot_period_abs_mag_c12_comparison(pre_c12_source, post_c12_source):
     post_c12_classes = np.asarray(post_c12_data["best_classification"], dtype=str)
     reference_labels = list(_class_count_map(pre_c12_classes))
 
-    fig, axes = _period_abs_mag_comparison_figure()
-    plot_period_abs_mag(
-        _plot_period_values(pre_c12_data),
-        np.asarray(pre_c12_data["M_G"], dtype=float),
-        np.asarray(pre_c12_data["sigma_M"], dtype=float),
-        pre_c12_classes,
-        ax=axes[0],
-        show_legend=False,
-    )
-    axes[0].legend(handles=_period_abs_mag_legend_handles(reference_labels))
-
+    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
     plot_period_abs_mag(
         _plot_period_values(post_c12_data),
         np.asarray(post_c12_data["M_G"], dtype=float),
         np.asarray(post_c12_data["sigma_M"], dtype=float),
         post_c12_classes,
-        ax=axes[1],
+        ax=ax,
         show_legend=False,
     )
-    axes[1].legend(
-        handles=_period_abs_mag_legend_handles(
-            reference_labels,
-            label_map=_class_cut_label_map(pre_c12_classes, post_c12_classes),
+    _overlay_removed_x_markers(ax, pre_c12_data, post_c12_data, reference_labels)
+
+    label_map = _class_cut_label_map(pre_c12_classes, post_c12_classes)
+    handles = _period_abs_mag_legend_handles(reference_labels, label_map=label_map)
+    n_removed = len(pre_c12_data) - len(post_c12_data)
+    handles.append(
+        Line2D(
+            [0],
+            [0],
+            marker="x",
+            linestyle="none",
+            color="grey",
+            markersize=MARKER_MS_MEDIUM,
+            markeredgewidth=LW_FINE,
+            alpha=ALPHA_MUTED,
+            label=rf"Removed",
         )
     )
-    axes[1].set_ylabel("")
-    _tight_layout(fig)
-    return axes
+    ax.legend(handles=handles, loc="lower right")
+    return ax
 
 
 def plot_period_abs_mag_clean_vs_astrometric_comparison(
@@ -733,7 +1189,8 @@ def plot_period_abs_mag_clean_vs_astrometric_comparison(
         handles=_period_abs_mag_legend_handles(
             reference_labels,
             label_map=_class_cut_label_map(reference_classes, clean_classes),
-        )
+        ),
+        loc="lower right",
     )
 
     plot_period_abs_mag(
@@ -748,7 +1205,8 @@ def plot_period_abs_mag_clean_vs_astrometric_comparison(
         handles=_period_abs_mag_legend_handles(
             reference_labels,
             label_map=_class_cut_label_map(reference_classes, refined_classes),
-        )
+        ),
+        loc="lower right",
     )
     axes[1].set_ylabel("")
     _tight_layout(fig)
@@ -765,7 +1223,7 @@ def plot_mollweide_period_abs_mag_overview(
 ):
     fig = plt.figure(figsize=_textwidth_figsize(19 / 4))
     gs = fig.add_gridspec(1, 2)
-    ax_sky = fig.add_subplot(gs[0], projection="mollweide")
+    ax_sky = fig.add_subplot(gs[0], projection="aitoff")
     ax_pl = fig.add_subplot(gs[1])
     _draw_mollweide(ax_sky, l_deg, b_deg)
     plot_period_abs_mag(periods, abs_mag, abs_mag_err, classifications, ax=ax_pl)
@@ -789,7 +1247,7 @@ def plot_period_luminosity_diff(source, subset, ax=None):
         np.asarray(diff_data["M_G"], dtype=float),
         color=SECONDARY_COLOR,
         label=f"Removed ($N$={len(diff_data)})",
-        s=SCATTER_S_FINE,
+        s=MARKER_MS_FINE**2,
         alpha=ALPHA_DENSE,
         rasterized=True,
         zorder=1,
@@ -799,13 +1257,13 @@ def plot_period_luminosity_diff(source, subset, ax=None):
         np.asarray(subset_data["M_G"], dtype=float),
         color=PRIMARY_COLOR,
         label=f"Kept ($N$={len(subset_data)})",
-        s=SCATTER_S_FINE,
+        s=MARKER_MS_FINE**2,
         alpha=ALPHA_DENSE,
         rasterized=True,
         zorder=2,
     )
 
-    ax.set_xscale("log")
+    _set_log_period_xaxis(ax)
     _set_descending_magnitude_yaxis(ax)
     ax.set_xlabel(r"$P$ [days]")
     ax.set_ylabel(r"$M_{\rm G}$ [mag]")
@@ -819,19 +1277,56 @@ def plot_inlier_prob_period_luminosity_comparison(
     period_source,
     subset,
 ):
-    fig, axes = _grid_1x2(
-        figsize=_textwidth_figsize(19 / 4),
-        sharex=True,
-        sharey=True,
+    data = _as_table(prob_source, attr="all_data")
+    periods = _plot_period_values(data)
+    m_g = np.asarray(data["M_G"], dtype=float)
+    inlier_prob = np.asarray(data["inlier_prob"], dtype=float)
+
+    threshold = 0.95
+    kept = inlier_prob >= threshold
+    removed = ~kept
+
+    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+
+    sc = ax.scatter(
+        periods[kept],
+        m_g[kept],
+        c=inlier_prob[kept],
+        cmap="RdYlGn",
+        vmin=0.0,
+        vmax=1.0,
+        s=MARKER_MS_FINE**2,
+        alpha=ALPHA_DENSE,
+        rasterized=True,
+        zorder=2,
     )
-    plot_inlier_prob_map(prob_source, ax=axes[0])
-    plot_period_luminosity_diff(period_source, subset, ax=axes[1])
-    _tight_layout(fig)
-    return axes
+    ax.scatter(
+        periods[removed],
+        m_g[removed],
+        c=inlier_prob[removed],
+        cmap="RdYlGn",
+        vmin=0.0,
+        vmax=1.0,
+        marker="x",
+        s=MARKER_MS_SMALL**2,
+        linewidths=LW_LIGHT,
+        alpha=ALPHA_MUTED,
+        rasterized=True,
+        zorder=1,
+        label=rf"Removed ($p_{{\rm in}} < {threshold}$, $N={int(removed.sum())}$)",
+    )
+    plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
+    _set_log_period_xaxis(ax)
+    _set_descending_magnitude_yaxis(ax)
+    ax.set_xlabel(r"$P$ [days]")
+    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
+    ax.legend(loc="lower right")
+    _apply_grid(ax)
+    return ax
 
 
 def plot_period_mean_g(data: Table):
-    _, ax = _single_panel(_columnwidth_figsize(10 / 4))
+    _, ax = _single_panel(_columnwidth_figsize(3 / 2))
 
     classifications = np.asarray(data["best_classification"]).astype(str)
     periods = np.asarray(data["best_period"], dtype=float)
@@ -857,12 +1352,12 @@ def plot_period_mean_g(data: Table):
             color=_rrlyrae_class_color(label, i),
             label=label,
             zorder=2,
-            s=RRLYRAE_SCATTER_S,
+            s=MARKER_MS_SMALL**2,
             alpha=RRLYRAE_POINT_ALPHA,
             rasterized=True,
         )
 
-    ax.set_xscale("log")
+    _set_log_period_xaxis(ax)
     ax.invert_yaxis()
     ax.set_xlabel(r"L-S period $P_{\rm LS}$ [days]")
     ax.set_ylabel(r"$\langle G \rangle_{\rm epoch}$ [mag]")
@@ -892,7 +1387,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
     if not np.any(finite_fundamental):
         raise ValueError("No finite fundamental-period comparison points are available for plotting.")
 
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(4))
+    fig, axes = plt.subplots(1, 2, figsize=_textwidth_figsize(4))
 
     ax_fundamental, ax_first_overtone = axes
 
@@ -915,7 +1410,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
         ax_fundamental.scatter(
             fundamental_period[mask],
             best_period[mask],
-            s=RRLYRAE_SCATTER_S,
+            s=MARKER_MS_SMALL**2,
             alpha=RRLYRAE_POINT_ALPHA,
             color=color,
             label=label,
@@ -936,6 +1431,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
         color=NEUTRAL_COLOR,
         ls="--",
         lw=LW_STANDARD,
+        alpha=0.35,
         label=r"$P_{\rm LS}=P_{\rm F}$",
         zorder=1,
     )
@@ -983,7 +1479,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
         ax_first_overtone.scatter(
             first_overtone_period[finite_rrd],
             best_period[finite_rrd],
-            s=RRLYRAE_SCATTER_S,
+            s=MARKER_MS_SMALL**2,
             alpha=RRLYRAE_POINT_ALPHA,
             color=rr_d_color,
             zorder=2,
@@ -994,6 +1490,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
             color=NEUTRAL_COLOR,
             ls="--",
             lw=LW_STANDARD,
+            alpha=0.35,
             label=r"$P_{\rm LS}=P_{1\rm O}$",
             zorder=1,
         )
@@ -1029,7 +1526,7 @@ def plot_hr(source, ax=None):
                 np.asarray(data["M_G"], dtype=float)[mask],
                 color=_rrlyrae_class_color(label, i),
                 label=label,
-                s=SCATTER_S_FINE,
+                s=MARKER_MS_FINE**2,
                 alpha=ALPHA_DENSE,
                 rasterized=True,
             )
@@ -1039,7 +1536,7 @@ def plot_hr(source, ax=None):
             np.asarray(data["M_G"], dtype=float),
             color=PRIMARY_COLOR,
             label="RR Lyrae",
-            s=SCATTER_S_FINE,
+            s=MARKER_MS_FINE**2,
             alpha=ALPHA_DENSE,
             rasterized=True,
         )
@@ -1065,7 +1562,7 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     mag_err = np.asarray(data["g_transit_mag_err"], dtype=float)
     phase = (epoch % period) / period
 
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(84 / 25))
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(2))
 
     errorbar_alpha = RRLYRAE_POINT_ALPHA * (ALPHA_LIGHT / ALPHA_STANDARD)
     raw_errorbar_kwargs = {
@@ -1088,7 +1585,7 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     axes[0].scatter(
         epoch,
         mag,
-        s=RRLYRAE_SCATTER_S,
+        s=MARKER_MS_FINE**2,
         alpha=RRLYRAE_POINT_ALPHA,
         color=PRIMARY_COLOR,
         zorder=2,
@@ -1097,14 +1594,14 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     )
     axes[0].invert_yaxis()
     axes[0].set_xlabel("Time [days]")
-    axes[0].set_ylabel("G [mag]")
+    axes[0].set_ylabel(r"$G$ [mag]")
     axes[0].legend(loc="best")
     _apply_grid(axes[0])
 
     axes[1].scatter(
         phase,
         mag,
-        s=RRLYRAE_SCATTER_S,
+        s=MARKER_MS_FINE**2,
         alpha=RRLYRAE_POINT_ALPHA,
         color=SECONDARY_COLOR,
         zorder=2,
@@ -1113,7 +1610,7 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     )
     axes[1].invert_yaxis()
     axes[1].set_xlabel("Phase")
-    axes[1].set_ylabel("G [mag]")
+    axes[1].set_ylabel(r"$G$ [mag]")
     axes[1].legend(loc="best")
     _apply_grid(axes[1])
 
@@ -1151,7 +1648,7 @@ def plot_fourier_harmonic_fits(
 
     fig, outer_grid = _grid_nx1(
         len(K_values),
-        figsize=(A4_USABLE_WIDTH_IN, A4_USABLE_HEIGHT_IN),
+        figsize=(TEXTWIDTH_IN, A4_USABLE_HEIGHT_IN),
         hspace=0.24,
     )
     axes = np.empty((len(K_values), 2), dtype=object)
@@ -1185,7 +1682,7 @@ def plot_fourier_harmonic_fits(
             mag,
             yerr=mag_err,
             fmt="o",
-            ms=RRLYRAE_MARKER_MS,
+            ms=MARKER_MS_FINE,
             elinewidth=LW_FINE,
             color=PRIMARY_COLOR,
             alpha=ALPHA_MUTED,
@@ -1207,7 +1704,7 @@ def plot_fourier_harmonic_fits(
             residuals,
             yerr=mag_err,
             fmt="o",
-            ms=RRLYRAE_MARKER_MS,
+            ms=MARKER_MS_FINE,
             elinewidth=LW_FINE,
             color=PRIMARY_COLOR,
             alpha=ALPHA_MUTED,
@@ -1382,7 +1879,7 @@ def plot_rrlyrae_shape_comparison(rrab_source, rrc_source):
                 mag_centered,
                 yerr=mag_err,
                 fmt="o",
-                ms=RRLYRAE_MARKER_MS,
+                ms=MARKER_MS_SMALL,
                 elinewidth=LW_FINE,
                 color=point_color,
                 alpha=ALPHA_MUTED,
@@ -1414,7 +1911,7 @@ def plot_rrlyrae_shape_comparison(rrab_source, rrc_source):
                 residuals,
                 yerr=mag_err,
                 fmt="o",
-                ms=RRLYRAE_MARKER_MS,
+                ms=MARKER_MS_SMALL,
                 elinewidth=LW_FINE,
                 color=point_color,
                 alpha=ALPHA_MUTED,
@@ -1449,13 +1946,13 @@ def plot_fourier_cross_validation(result: HarmonicCrossValidationResult):
         raise ValueError("best_K must be present in Ks.")
     cv_best = float(chi2r_cv[best_mask][0])
 
-    _, ax = _single_panel(_columnwidth_figsize(9 / 4))
+    _, ax = _single_panel(_columnwidth_figsize(3 / 2))
     ax.plot(
         Ks[valid],
         chi2r_train[valid],
         marker="o",
         ls="none",
-        ms=RRLYRAE_MARKER_MS,
+        ms=MARKER_MS_FINE,
         alpha=ALPHA_DENSE,
         label=r"Training $\chi_r^2$",
     )
@@ -1464,7 +1961,7 @@ def plot_fourier_cross_validation(result: HarmonicCrossValidationResult):
         chi2r_cv[valid],
         marker="o",
         ls="none",
-        ms=RRLYRAE_MARKER_MS,
+        ms=MARKER_MS_FINE,
         alpha=ALPHA_DENSE,
         label=r"Cross-validation $\chi_r^2$",
     )
@@ -1525,7 +2022,7 @@ def plot_fourier_normalized_residual_histograms(
     low_K: int,
     best_K: int,
 ):
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(12 / 5))
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(3 / 2))
     bins = np.linspace(-5.0, 5.0, 31)
     x_gauss = np.linspace(-5.0, 5.0, 400)
     gaussian = np.exp(-0.5 * x_gauss**2) / np.sqrt(2.0 * np.pi)
@@ -1652,7 +2149,7 @@ def plot_fourier_train_cv_phase_comparison(
     model_mag_best = np.asarray(model_mag_best, dtype=float)
     model_mag_high = np.asarray(model_mag_high, dtype=float)
 
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(68 / 25))
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(3 / 2))
     all_mags = [train_mags[np.isfinite(train_mags)], cv_mags[np.isfinite(cv_mags)]]
     if train_errs is not None:
         train_errs_safe = np.where(np.isfinite(train_errs), train_errs, 0.0)
@@ -1683,7 +2180,7 @@ def plot_fourier_train_cv_phase_comparison(
         ax.scatter(
             train_phase,
             train_mags,
-            s=RRLYRAE_SCATTER_S,
+            s=MARKER_MS_SMALL**2,
             alpha=ALPHA_EXTRA_LIGHT,
             color=PRIMARY_COLOR,
             rasterized=True,
@@ -1692,7 +2189,7 @@ def plot_fourier_train_cv_phase_comparison(
         ax.scatter(
             cv_phase,
             cv_mags,
-            s=RRLYRAE_SCATTER_S,
+            s=MARKER_MS_SMALL**2,
             alpha=ALPHA_MUTED,
             color=SECONDARY_COLOR,
             rasterized=True,
@@ -1760,13 +2257,13 @@ def plot_fourier_extrapolation(
     observed_mask = epochs >= float(np.min(epoch_grid))
     model_observed = epoch_grid <= float(epoch_last)
 
-    _, ax = _single_panel(_textwidth_figsize(3))
+    _, ax = _single_panel(_textwidth_figsize(5 / 2))
     ax.errorbar(
         epochs[observed_mask],
         mags[observed_mask],
         yerr=mag_errs[observed_mask],
         fmt="o",
-        ms=RRLYRAE_MARKER_MS,
+        ms=MARKER_MS_SMALL,
         elinewidth=LW_FINE,
         color=PRIMARY_COLOR,
         alpha=RRLYRAE_POINT_ALPHA,
@@ -1802,7 +2299,7 @@ def plot_fourier_extrapolation(
         epoch_pred,
         mag_pred,
         marker="*",
-        ms=MARKER_MS_STANDARD,
+        ms=MARKER_MS_BIG,
         color="k",
         lw=LW_NONE,
         label=rf"10-day prediction: $G={mag_pred:.3f}\pm{mag_pred_err:.3f}$",
@@ -1811,7 +2308,7 @@ def plot_fourier_extrapolation(
     ax.set_xlim(float(np.min(epoch_grid)), float(np.max(epoch_grid)))
     ax.set_xlabel(time_label)
     ax.set_ylabel(r"$G$ [mag]")
-    ax.legend(loc="upper right")
+    ax.legend(ncols=2, loc="upper right")
     _apply_grid(ax)
     return ax
 
@@ -1844,171 +2341,89 @@ def plot_mean_g_catalog_comparison(
 
     simple_valid = np.isfinite(simple_mean_g) & np.isfinite(int_average_g) & np.isfinite(resid_simple)
     fourier_valid = np.isfinite(fourier_mean_g) & np.isfinite(int_average_g) & np.isfinite(resid_fourier)
-    all_values = [
-        simple_mean_g[simple_valid],
-        fourier_mean_g[fourier_valid],
-        int_average_g[simple_valid],
-        int_average_g[fourier_valid],
-    ]
-    if np.any(simple_valid):
-        simple_err_safe = np.where(np.isfinite(simple_mean_g_err), simple_mean_g_err, 0.0)
-        int_err_safe = np.where(np.isfinite(int_average_g_err), int_average_g_err, 0.0)
-        all_values.extend(
-            [
-                (simple_mean_g - simple_err_safe)[simple_valid],
-                (simple_mean_g + simple_err_safe)[simple_valid],
-                (int_average_g - int_err_safe)[simple_valid],
-                (int_average_g + int_err_safe)[simple_valid],
-            ]
-        )
-    if np.any(fourier_valid):
-        fourier_err_safe = np.where(np.isfinite(fourier_mean_g_err), fourier_mean_g_err, 0.0)
-        int_err_safe = np.where(np.isfinite(int_average_g_err), int_average_g_err, 0.0)
-        all_values.extend(
-            [
-                (fourier_mean_g - fourier_err_safe)[fourier_valid],
-                (fourier_mean_g + fourier_err_safe)[fourier_valid],
-                (int_average_g - int_err_safe)[fourier_valid],
-                (int_average_g + int_err_safe)[fourier_valid],
-            ]
-        )
-    all_values = np.concatenate(all_values)
-    pad = 0.05 * (np.max(all_values) - np.min(all_values))
-    lims = np.array([np.min(all_values) - pad, np.max(all_values) + pad])
-    resid_max = 1.1 * np.nanmax(
-        np.abs(
-            np.concatenate(
-                [
-                    resid_simple[simple_valid] - simple_resid_err[simple_valid],
-                    resid_simple[simple_valid] + simple_resid_err[simple_valid],
-                    resid_fourier[fourier_valid] - fourier_resid_err[fourier_valid],
-                    resid_fourier[fourier_valid] + fourier_resid_err[fourier_valid],
-                ]
-            )
-        )
-    )
 
-    fig, axes = plt.subplots(
-        2,
-        2,
-        figsize=_textwidth_figsize(111 / 25),
-        sharex="col",
-        gridspec_kw={"height_ratios": [4, 1], "hspace": 0.0},
-    )
-    (ax_simple, ax_fourier), (ax_simple_resid, ax_fourier_resid) = axes
+    int_err_safe    = np.where(np.isfinite(int_average_g_err),    int_average_g_err,    0.0)
+    simple_err_safe = np.where(np.isfinite(simple_mean_g_err),  simple_mean_g_err,  0.0)
+    fourier_err_safe = np.where(np.isfinite(fourier_mean_g_err), fourier_mean_g_err, 0.0)
 
-    simple_xerr = np.where(np.isfinite(int_average_g_err), int_average_g_err, 0.0)
-    simple_yerr = np.where(np.isfinite(simple_mean_g_err), simple_mean_g_err, 0.0)
-    if np.any(simple_valid):
-        ax_simple.errorbar(
-            int_average_g[simple_valid],
-            simple_mean_g[simple_valid],
-            xerr=simple_xerr[simple_valid],
-            yerr=simple_yerr[simple_valid],
-            fmt="none",
-            ecolor=PRIMARY_COLOR,
-            elinewidth=LW_FINE,
-            alpha=ALPHA_DIM,
-            zorder=1,
+    def _lims(y, y_err, valid):
+        vals = np.concatenate([
+            int_average_g[valid], y[valid],
+            (int_average_g - int_err_safe)[valid], (int_average_g + int_err_safe)[valid],
+            (y - y_err)[valid], (y + y_err)[valid],
+        ])
+        pad = 0.05 * (np.max(vals) - np.min(vals))
+        return np.array([np.min(vals) - pad, np.max(vals) + pad])
+
+    simple_lims  = _lims(simple_mean_g,  simple_err_safe,  simple_valid)
+    fourier_lims = _lims(fourier_mean_g, fourier_err_safe, fourier_valid)
+
+    simple_resid_max  = 1.1 * np.nanmax(np.abs(np.concatenate([
+        resid_simple[simple_valid]  - simple_resid_err[simple_valid],
+        resid_simple[simple_valid]  + simple_resid_err[simple_valid],
+    ])))
+    fourier_resid_max = 1.1 * np.nanmax(np.abs(np.concatenate([
+        resid_fourier[fourier_valid] - fourier_resid_err[fourier_valid],
+        resid_fourier[fourier_valid] + fourier_resid_err[fourier_valid],
+    ])))
+
+    # Two side-by-side columns at textwidth — simple (left) and Fourier (right) —
+    # each with a main panel and a touching residual panel via a nested GridSpec.
+    fig = plt.figure(figsize=_textwidth_figsize(4))
+    gs = fig.add_gridspec(1, 2, wspace=0.30)
+    gs_left  = gs[0].subgridspec(2, 1, height_ratios=[4, 1], hspace=0)
+    gs_right = gs[1].subgridspec(2, 1, height_ratios=[4, 1], hspace=0)
+    ax_simple        = fig.add_subplot(gs_left[0])
+    ax_simple_resid  = fig.add_subplot(gs_left[1],  sharex=ax_simple)
+    ax_fourier       = fig.add_subplot(gs_right[0])
+    ax_fourier_resid = fig.add_subplot(gs_right[1], sharex=ax_fourier)
+    axes = np.array([ax_simple, ax_simple_resid, ax_fourier, ax_fourier_resid])
+
+    xerr = np.where(np.isfinite(int_average_g_err), int_average_g_err, 0.0)
+
+    for ax_main, ax_resid, y, y_err, y_err_safe, resid, resid_err, lims, resid_max, color, ylabel in [
+        (ax_simple,  ax_simple_resid,  simple_mean_g,  simple_mean_g_err,  simple_err_safe,
+         resid_simple,  simple_resid_err,  simple_lims,  simple_resid_max,
+         PRIMARY_COLOR,   r"$\langle G \rangle_{\rm epoch}$ [mag]"),
+        (ax_fourier, ax_fourier_resid, fourier_mean_g, fourier_mean_g_err, fourier_err_safe,
+         resid_fourier, fourier_resid_err, fourier_lims, fourier_resid_max,
+         SECONDARY_COLOR, r"$\langle G \rangle_{\rm Fourier}$ [mag]"),
+    ]:
+        valid = np.isfinite(y) & np.isfinite(int_average_g) & np.isfinite(resid)
+        yerr_safe = np.where(np.isfinite(y_err), y_err, 0.0)
+
+        ax_main.errorbar(
+            int_average_g[valid], y[valid],
+            xerr=xerr[valid], yerr=yerr_safe[valid],
+            fmt="none", ecolor=color, elinewidth=LW_FINE, alpha=ALPHA_DIM, zorder=1,
         )
-
-    ax_simple.scatter(
-        int_average_g[simple_valid],
-        simple_mean_g[simple_valid],
-        s=RRLYRAE_SCATTER_S,
-        alpha=RRLYRAE_POINT_ALPHA,
-        color=PRIMARY_COLOR,
-        rasterized=True,
-    )
-    ax_simple.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
-    ax_simple.set_xlim(lims[1], lims[0])
-    ax_simple.set_ylim(lims)
-    ax_simple.invert_yaxis()
-    ax_simple.set_ylabel(r"$\langle G \rangle_{\rm epoch}$ [mag]")
-    _apply_grid(ax_simple)
-
-    if np.any(simple_valid):
-        ax_simple_resid.errorbar(
-            int_average_g[simple_valid],
-            resid_simple[simple_valid],
-            xerr=simple_xerr[simple_valid],
-            yerr=simple_resid_err[simple_valid],
-            fmt="none",
-            ecolor=PRIMARY_COLOR,
-            elinewidth=LW_FINE,
-            alpha=ALPHA_DIM,
-            zorder=1,
+        ax_main.scatter(
+            int_average_g[valid], y[valid],
+            s=MARKER_MS_SMALL**2, alpha=RRLYRAE_POINT_ALPHA, color=color, rasterized=True,
         )
-    ax_simple_resid.scatter(
-        int_average_g[simple_valid],
-        resid_simple[simple_valid],
-        s=RRLYRAE_SCATTER_S,
-        alpha=RRLYRAE_POINT_ALPHA,
-        color=PRIMARY_COLOR,
-        rasterized=True,
-    )
-    ax_simple_resid.axhline(0.0, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
-    ax_simple_resid.set_xlim(lims[1], lims[0])
-    ax_simple_resid.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
-    ax_simple_resid.set_ylabel("Res.")
-    ax_simple_resid.set_ylim(-resid_max, resid_max)
-    _apply_grid(ax_simple_resid)
+        ax_main.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
+        ax_main.set_xlim(lims[1], lims[0])
+        ax_main.set_ylim(lims)
+        ax_main.invert_yaxis()
+        ax_main.set_ylabel(ylabel)
+        plt.setp(ax_main.get_xticklabels(), visible=False)
+        _apply_grid(ax_main)
 
-    fourier_xerr = np.where(np.isfinite(int_average_g_err), int_average_g_err, 0.0)
-    fourier_yerr = np.where(np.isfinite(fourier_mean_g_err), fourier_mean_g_err, 0.0)
-    if np.any(fourier_valid):
-        ax_fourier.errorbar(
-            int_average_g[fourier_valid],
-            fourier_mean_g[fourier_valid],
-            xerr=fourier_xerr[fourier_valid],
-            yerr=fourier_yerr[fourier_valid],
-            fmt="none",
-            ecolor=SECONDARY_COLOR,
-            elinewidth=LW_FINE,
-            alpha=ALPHA_DIM,
-            zorder=1,
+        ax_resid.errorbar(
+            int_average_g[valid], resid[valid],
+            xerr=xerr[valid], yerr=resid_err[valid],
+            fmt="none", ecolor=color, elinewidth=LW_FINE, alpha=ALPHA_DIM, zorder=1,
         )
-    ax_fourier.scatter(
-        int_average_g[fourier_valid],
-        fourier_mean_g[fourier_valid],
-        s=RRLYRAE_SCATTER_S,
-        alpha=RRLYRAE_POINT_ALPHA,
-        color=SECONDARY_COLOR,
-        rasterized=True,
-    )
-    ax_fourier.plot(lims, lims, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
-    ax_fourier.set_xlim(lims[1], lims[0])
-    ax_fourier.set_ylim(lims)
-    ax_fourier.invert_yaxis()
-    ax_fourier.set_ylabel(r"$\langle G \rangle_{\rm Fourier}$ [mag]")
-    _apply_grid(ax_fourier)
-
-    if np.any(fourier_valid):
-        ax_fourier_resid.errorbar(
-            int_average_g[fourier_valid],
-            resid_fourier[fourier_valid],
-            xerr=fourier_xerr[fourier_valid],
-            yerr=fourier_resid_err[fourier_valid],
-            fmt="none",
-            ecolor=SECONDARY_COLOR,
-            elinewidth=LW_FINE,
-            alpha=ALPHA_DIM,
-            zorder=1,
+        ax_resid.scatter(
+            int_average_g[valid], resid[valid],
+            s=MARKER_MS_SMALL**2, alpha=RRLYRAE_POINT_ALPHA, color=color, rasterized=True,
         )
-    ax_fourier_resid.scatter(
-        int_average_g[fourier_valid],
-        resid_fourier[fourier_valid],
-        s=RRLYRAE_SCATTER_S,
-        alpha=RRLYRAE_POINT_ALPHA,
-        color=SECONDARY_COLOR,
-        rasterized=True,
-    )
-    ax_fourier_resid.axhline(0.0, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
-    ax_fourier_resid.set_xlim(lims[1], lims[0])
-    ax_fourier_resid.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
-    ax_fourier_resid.set_ylabel("Res.")
-    ax_fourier_resid.set_ylim(-resid_max, resid_max)
-    _apply_grid(ax_fourier_resid)
+        ax_resid.axhline(0.0, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD)
+        ax_resid.set_xlim(lims[1], lims[0])
+        ax_resid.set_ylim(-resid_max, resid_max)
+        ax_resid.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
+        ax_resid.set_ylabel("Res.")
+        _apply_grid(ax_resid)
 
     return axes
 
@@ -2026,12 +2441,12 @@ def plot_inlier_prob_map(source, ax=None):
         cmap="RdYlGn",
         vmin=0.0,
         vmax=1.0,
-        s=SCATTER_S_FINE,
+        s=MARKER_MS_FINE**2,
         alpha=ALPHA_DENSE,
         rasterized=True,
     )
     plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
-    ax.set_xscale("log")
+    _set_log_period_xaxis(ax)
     _set_descending_magnitude_yaxis(ax)
     ax.set_xlabel(r"$P$ [days]")
     ax.set_ylabel(r"$M_{\rm G}$ [mag]")
@@ -2100,7 +2515,7 @@ def _draw_pl_posterior_predictive_layer(
     ax.scatter(
         np.asarray(ctx.x_centered, dtype=float),
         np.asarray(ctx.y, dtype=float),
-        s=SCATTER_S_STANDARD,
+        s=MARKER_MS_SMALL**2,
         color=color,
         alpha=ALPHA_MUTED,
         rasterized=True,
@@ -2222,7 +2637,7 @@ def _draw_pc_posterior_predictive_layer(
     ax.scatter(
         np.asarray(ctx.x_centered, dtype=float),
         np.asarray(ctx.y, dtype=float),
-        s=SCATTER_S_STANDARD,
+        s=MARKER_MS_SMALL**2,
         color=color,
         alpha=ALPHA_MUTED,
         rasterized=True,
@@ -2332,7 +2747,6 @@ def _draw_optical_pl_literature_panel(
         ms=MARKER_MS_FINE,
         alpha=ALPHA_DIM,
         color=color,
-        ecolor="0.6",
         elinewidth=LW_GRID,
         capsize=0,
         label=f"{comparison.rr_class} Gaia data",
@@ -2478,7 +2892,7 @@ def plot_empirical_vs_catalog_extinction_comparison(
     residuals: np.ndarray,
 ):
     fig, axes = _grid_1x2(
-        figsize=_textwidth_figsize(17 / 5),
+        figsize=_textwidth_figsize(7 / 2),
         sharey=False,
     )
 
@@ -2500,7 +2914,7 @@ def plot_empirical_vs_catalog_extinction_comparison(
     axes[0].scatter(
         x_plot,
         y_plot,
-        s=SCATTER_S_FINE,
+        s=MARKER_MS_FINE**2,
         alpha=ALPHA_FAINT,
         color=PRIMARY_COLOR,
         rasterized=True,
@@ -2639,6 +3053,7 @@ def plot_corner(source, labels=None, *, color: str = PRIMARY_COLOR):
         title_fmt=".3f",
         quantiles=[0.16, 0.5, 0.84],
         color=color,
+        fig=plt.figure(figsize=_textwidth_figsize(7)),
     )
     return fig
 
@@ -2670,7 +3085,7 @@ def plot_aitoff_reddening_map(
     e_bprp = np.asarray(data["E_bprp"], dtype=float)
     mask = np.asarray(mask, dtype=bool)
 
-    fig = plt.figure(figsize=(12, 6), dpi=180)
+    fig = plt.figure(figsize=_textwidth_figsize(4), dpi=180)
     ax = fig.add_subplot(111, projection="aitoff")
     sc = ax.scatter(
         np.deg2rad(l_plot[mask]),
@@ -2725,34 +3140,34 @@ def plot_aitoff_value_map(
 
 
 def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarray:
-    """Two-panel Gaia G vs WISE W2 PL comparison."""
+    """Two-panel Gaia G vs WISE W2 PL comparison (RRab top, RRc bottom)."""
     band_colors = {"G": PRIMARY_COLOR, "W2": SECONDARY_COLOR}
 
-    fig, axes = plt.subplots(1, 2, figsize=(TEXTWIDTH_IN, 0.60 * TEXTWIDTH_IN), sharey=False)
+    fig, axes = plt.subplots(2, 1, figsize=(TEXTWIDTH_IN, 1.20 * TEXTWIDTH_IN), sharex=True)
 
-    for ax, class_label in zip(axes, ("RRab", "RRc")):
+    for i, (ax, class_label) in enumerate(zip(axes, ("RRab", "RRc"))):
         optical = optical_map[class_label]
         wise = wise_map[class_label]
 
         ax.errorbar(
             optical.x_obs, optical.y_obs, yerr=optical.sigma_obs,
-            fmt="o", ms=3.0, alpha=0.12, color=band_colors["G"],
-            ecolor="0.7", elinewidth=0.4, capsize=0, label=r"Gaia $G$ data",
+            fmt="o", ms=MARKER_MS_FINE, alpha=0.12, color=band_colors["G"],
+            elinewidth=0.4, capsize=0, label=r"Gaia $G$ data",
         )
         ax.fill_between(
             optical.x_grid, optical.predictive_q16, optical.predictive_q84,
-            color=band_colors["G"], alpha=0.16, label=r"Gaia $G$ 68% predictive",
+            color=band_colors["G"], alpha=0.16, label=r"Gaia $G$ 68\% predictive",
         )
         ax.plot(optical.x_grid, optical.median_mean, color=band_colors["G"], lw=LW_FIT, label=r"Gaia $G$ median")
 
         ax.errorbar(
             wise.x_obs, wise.y_obs, yerr=wise.sigma_obs,
-            fmt="s", ms=3.0, alpha=0.16, color=band_colors["W2"],
-            ecolor="0.55", elinewidth=0.4, capsize=0, label=r"WISE $W2$ data",
+            fmt="s", ms=MARKER_MS_FINE, alpha=0.16, color=band_colors["W2"],
+            elinewidth=0.4, capsize=0, label=r"WISE $W2$ data",
         )
         ax.fill_between(
             wise.x_grid, wise.predictive_q16, wise.predictive_q84,
-            color=band_colors["W2"], alpha=0.18, label=r"WISE $W2$ 68% predictive",
+            color=band_colors["W2"], alpha=0.18, label=r"WISE $W2$ 68\% predictive",
         )
         ax.plot(wise.x_grid, wise.median_mean, color=band_colors["W2"], lw=LW_FIT, label=r"WISE $W2$ median")
 
@@ -2772,11 +3187,11 @@ def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarr
             ax.set_ylim(y_max + pad, y_min - pad)
 
         ax.set_title(class_label)
-        ax.set_xlabel(r"$\log_{10}(P/\mathrm{day})$")
+        ax.set_ylabel("Absolute magnitude [mag]")
         ax.grid(True, lw=LW_GRID, alpha=ALPHA_FAINT)
 
-    axes[0].set_ylabel("Absolute magnitude [mag]")
     axes[0].legend(loc="best", fontsize=LEGEND_SIZE)
+    axes[1].set_xlabel(r"$\log_{10}(P/\mathrm{day})$")
     fig.tight_layout()
     return axes
 
@@ -2867,7 +3282,7 @@ def plot_sfd_empirical_hexbin_comparison(
 
     n_panels = len(subset_specs)
     fig, axes = plt.subplots(
-        1, n_panels, figsize=(13, 5), dpi=180,
+        1, n_panels, figsize=(TEXTWIDTH_IN, 0.40 * TEXTWIDTH_IN), dpi=180,
         sharex=True, sharey=True, constrained_layout=True,
     )
     if n_panels == 1:
@@ -2899,3 +3314,205 @@ def plot_sfd_empirical_hexbin_comparison(
         fig.colorbar(last_hb, ax=list(axes), label="log10(count)")
 
     return fig, np.asarray(axes)
+
+
+def plot_reddening_distribution(
+    e_bprp: np.ndarray,
+    *,
+    min_ebprp: float = 0.0,
+    max_ebprp: float = 3.0,
+) -> tuple:
+    """Histogram of E(BP-RP) distribution with lower-bound and upper-ceiling markers."""
+    e_bprp = np.asarray(e_bprp, dtype=float)
+    finite = np.isfinite(e_bprp)
+
+    fig, ax = plt.subplots(figsize=(9, 4), dpi=150)
+    ax.hist(e_bprp[finite], bins=120, color="0.4", alpha=0.8)
+    ax.axvline(
+        min_ebprp, color=QUATERNARY_COLOR, linestyle="--", linewidth=LW_FIT,
+        label=rf"Lower bound $E = {min_ebprp:.1f}$ mag",
+    )
+    ax.axvline(
+        max_ebprp, color=SECONDARY_COLOR, linestyle="--", linewidth=LW_FIT,
+        label=rf"Upper ceiling $E = {max_ebprp:.1f}$ mag",
+    )
+    ax.set_xlabel(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+    ax.set_ylabel("Number of stars")
+    ax.set_title(
+        r"$E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ distribution"
+        "\n(quality bounds highlighted)"
+    )
+    ax.legend()
+    ax.set_yscale("log")
+    _apply_grid(ax)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_sfd_all_sky_hexbin(
+    data: Table,
+    *,
+    gridsize: int = 70,
+    cmap: str = "viridis",
+) -> tuple:
+    """Single-panel hexbin of empirical E(BP-RP) vs SFD E(B-V) for the full cleaned sample."""
+    from ugdatalab.dust import binned_median_trend, rank_spearman
+
+    e_bprp = np.asarray(data["E_bprp"], dtype=float)
+    sfd_ebv = np.asarray(data["sfd_ebv"], dtype=float)
+    finite = np.isfinite(e_bprp) & np.isfinite(sfd_ebv)
+    x = sfd_ebv[finite]
+    y = e_bprp[finite]
+
+    centers, medians = binned_median_trend(x, y)
+    rho = rank_spearman(x, y)
+
+    fig, ax = plt.subplots(figsize=(7.5, 5.5), dpi=180)
+    hb = ax.hexbin(x, y, gridsize=gridsize, mincnt=1, bins="log", cmap=cmap, rasterized=True)
+    ax.plot(centers, medians, color="white", linewidth=2.5, label="Binned median trend")
+    ax.plot(centers, medians, color=QUATERNARY_COLOR, linewidth=LW_STANDARD)
+    ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
+    ax.set_ylabel(r"RR Lyrae $E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ [mag]")
+    ax.set_title(
+        rf"Matched-sightline density plot"
+        "\n"
+        rf"Spearman $\rho = {rho:.3f}$, $N = {int(finite.sum()):,}$"
+    )
+    ax.legend(loc="upper left")
+    fig.colorbar(hb, ax=ax, label="log10(count)")
+    _apply_grid(ax)
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_regime_decomposition(
+    sfd_ebv: np.ndarray,
+    empirical: np.ndarray,
+    *,
+    similar_mask: np.ndarray,
+    large_mask: np.ndarray,
+    slope: float,
+    intercept: float,
+    rho_sim: float,
+    similar_scale_max: float = 2.0,
+    large_sfd_min: float = 10.0,
+    quality_ceiling: float = 3.0,
+) -> tuple:
+    """Two-panel regime decomposition: similar-scale hexbin+fit (left) and large-SFD scatter (right)."""
+    from ugdatalab.dust import binned_median_trend
+
+    sfd_ebv = np.asarray(sfd_ebv, dtype=float)
+    empirical = np.asarray(empirical, dtype=float)
+    similar_mask = np.asarray(similar_mask, dtype=bool)
+    large_mask = np.asarray(large_mask, dtype=bool)
+
+    x_sim = sfd_ebv[similar_mask]
+    y_sim = empirical[similar_mask]
+    x_fit = np.linspace(0, similar_scale_max, 200)
+    y_fit = slope * x_fit + intercept
+    centers_sim, medians_sim = binned_median_trend(x_sim, y_sim)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5), dpi=150)
+
+    # Left: similar-scale hexbin with linear fit
+    ax = axes[0]
+    hb = ax.hexbin(x_sim, y_sim, gridsize=60, mincnt=1, bins="log", cmap="viridis", rasterized=True)
+    ax.plot(centers_sim, medians_sim, color="white", linewidth=2.5, label="Binned median")
+    ax.plot(centers_sim, medians_sim, color=QUATERNARY_COLOR, linewidth=LW_STANDARD)
+    ax.plot(
+        x_fit, y_fit, "--", color=SECONDARY_COLOR, linewidth=LW_FIT,
+        label=rf"Linear fit: slope $= {slope:.3f}$",
+    )
+    ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
+    ax.set_ylabel(r"RR Lyrae $E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ [mag]")
+    ax.set_title(
+        rf"Similar-scale regime ($\leq {similar_scale_max}$ mag)"
+        "\n"
+        rf"$N = {int(similar_mask.sum()):,}$, Spearman $\rho = {rho_sim:.3f}$"
+    )
+    ax.legend(loc="upper left", fontsize=LEGEND_SIZE)
+    fig.colorbar(hb, ax=ax, label="log10(count)")
+    _apply_grid(ax)
+
+    # Right: large-SFD scatter with quality ceiling
+    ax = axes[1]
+    x_large = sfd_ebv[large_mask]
+    y_large = empirical[large_mask]
+    ax.scatter(
+        x_large, y_large,
+        s=MARKER_MS_SMALL**2, alpha=ALPHA_LIGHT, color=PRIMARY_COLOR,
+        edgecolors="none", rasterized=True,
+    )
+    ax.axhline(
+        quality_ceiling, color=QUATERNARY_COLOR, linestyle="--", linewidth=LW_FIT,
+        label=rf"Quality ceiling $E = {quality_ceiling:.1f}$ mag",
+    )
+    ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
+    ax.set_ylabel(r"RR Lyrae $E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ [mag]")
+    ax.set_title(
+        rf"Large-SFD regime ($> {large_sfd_min}$ mag)"
+        "\n"
+        rf"$N = {int(large_mask.sum()):,}$"
+    )
+    ax.legend(loc="upper right", fontsize=LEGEND_SIZE)
+    _apply_grid(ax)
+
+    plt.tight_layout()
+    return fig, np.asarray(axes)
+
+
+_REPORT_SAVABLE_PLOTS = (
+    "plot_mollweide",
+    "plot_mollweide_diff",
+    "plot_w2_posterior_line_draws",
+    "plot_lomb_scargle_periodogram",
+    "plot_period_abs_mag",
+    "plot_period_abs_mag_ls",
+    "plot_period_abs_mag_comparison",
+    "plot_period_abs_mag_c12_comparison",
+    "plot_period_abs_mag_clean_vs_astrometric_comparison",
+    "plot_mollweide_period_abs_mag_overview",
+    "plot_period_luminosity_diff",
+    "plot_inlier_prob_period_luminosity_comparison",
+    "plot_period_mean_g",
+    "plot_vari_rrlyrae_period_comparison",
+    "plot_hr",
+    "plot_raw_phase_folded_lightcurve",
+    "plot_fourier_harmonic_fits",
+    "plot_rrlyrae_shape_comparison",
+    "plot_fourier_cross_validation",
+    "plot_fourier_cv_normalized_residual_histograms",
+    "plot_fourier_normalized_residual_histograms",
+    "plot_fourier_cv_phase_comparison",
+    "plot_fourier_train_cv_phase_comparison",
+    "plot_fourier_extrapolation",
+    "plot_mean_g_catalog_comparison",
+    "plot_inlier_prob_map",
+    "plot_pl_posterior_predictive",
+    "plot_pl_posterior_predictive_comparison",
+    "plot_pl_sampler_comparison_corner",
+    "plot_pl_posterior_line_draws",
+    "plot_pl_posterior_line_draws_comparison",
+    "plot_pc_posterior_predictive",
+    "plot_pc_posterior_predictive_comparison",
+    "plot_pc_posterior_draws_comparison",
+    "plot_optical_pl_literature_comparison",
+    "plot_empirical_vs_catalog_extinction_comparison",
+    "plot_posterior",
+    "plot_trace",
+    "plot_corner",
+    "plot_aitoff_reddening_map",
+    "plot_optical_vs_w2_comparison",
+    "plot_w2_posterior_predictive",
+    "plot_w2_posterior_line_draws",
+    "plot_quality_diagnostics",
+    "plot_sfd_empirical_hexbin_comparison",
+    "plot_sfd_all_sky_hexbin",
+    "plot_regime_decomposition",
+    "plot_reddening_distribution",
+    "plot_calibration_sky_distribution",
+    "plot_period_abs_mag_stage_comparison",
+)
+
+for _plot_name in _REPORT_SAVABLE_PLOTS:
+    globals()[_plot_name] = _wrap_public_plot(globals()[_plot_name])

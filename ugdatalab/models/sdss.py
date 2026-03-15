@@ -63,8 +63,9 @@ def _run_sdss_sql(query: str) -> Table:
     response.raise_for_status()
 
     text = response.text.lstrip()
-    first_line = text.splitlines()[0] if text else ""
-    if not text or first_line.startswith("<") or "," not in first_line:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    first_data_line = next((line for line in lines if not line.startswith("#")), "")
+    if not text or first_data_line.startswith("<") or "," not in first_data_line:
         snippet = shorten(" ".join(text.split()), width=240, placeholder="...")
         raise RuntimeError(f"SDSS SkyServer returned a non-CSV response: {snippet}")
 

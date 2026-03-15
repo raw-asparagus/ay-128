@@ -25,6 +25,7 @@ from ugdatalab.mcmc import (
 from ugdatalab.plotting import (
     figure,
     figure_names,
+    plot_calibration_sky_distribution,
     plot_mollweide,
     plot_mollweide_period_abs_mag_overview,
     plot_mollweide_diff,
@@ -34,6 +35,7 @@ from ugdatalab.plotting import (
     plot_period_abs_mag_comparison,
     plot_period_abs_mag_c12_comparison,
     plot_period_abs_mag_clean_vs_astrometric_comparison,
+    plot_period_abs_mag_stage_comparison,
     plot_period_mean_g,
     plot_vari_rrlyrae_period_comparison,
     plot_period_luminosity_diff,
@@ -52,6 +54,7 @@ from ugdatalab.plotting import (
     plot_inlier_prob_map,
     plot_pl_posterior_predictive,
     plot_pl_posterior_predictive_comparison,
+    plot_pl_sampler_comparison_corner,
     plot_pc_posterior_predictive,
     plot_pc_posterior_predictive_comparison,
     plot_pc_posterior_draws_comparison,
@@ -67,6 +70,9 @@ from ugdatalab.plotting import (
     plot_w2_posterior_predictive,
     plot_quality_diagnostics,
     plot_sfd_empirical_hexbin_comparison,
+    plot_sfd_all_sky_hexbin,
+    plot_regime_decomposition,
+    plot_reddening_distribution,
 )
 from ugdatalab.relations import (
     RelationData,

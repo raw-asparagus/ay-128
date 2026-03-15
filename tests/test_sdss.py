@@ -115,6 +115,17 @@ class SDSSCatalogTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "non-CSV response"):
                 sdss._run_sdss_sql("SELECT broken")
 
+    def test_run_sdss_sql_accepts_comment_prefixed_csv(self):
+        response = SimpleNamespace(
+            text="#Table1\nAPOGEE_ID,TEFF\nstar-1,4500.0\nstar-2,4800.0\n",
+            raise_for_status=lambda: None,
+        )
+
+        with patch.object(sdss.SDSS, "query_sql_async", return_value=response):
+            result = sdss._run_sdss_sql("SELECT ok")
+
+        self.assertEqual(list(result["APOGEE_ID"]), ["star-1", "star-2"])
+
 
 if __name__ == "__main__":
     unittest.main()

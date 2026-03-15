@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 import inspect
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -824,6 +825,25 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertIn("Native PyMC NUTS", legend_texts)
         plt.close(fig)
 
+    def test_plot_save_wrapper_writes_requested_pdf(self):
+        data = _period_abs_mag_table()
+        target_dir = Path(tempfile.mkdtemp())
+
+        with patch("ugdatalab.plotting.FIGURES_DIR", target_dir), patch(
+            "ugdatalab.plotting.ensure_output_dirs",
+            lambda: target_dir.mkdir(parents=True, exist_ok=True),
+        ):
+            ax = plot_period_abs_mag(
+                np.asarray(data["period_ls"], dtype=float),
+                np.asarray(data["M_G_ls"], dtype=float),
+                np.asarray(data["sigma_M_ls"], dtype=float),
+                np.asarray(data["best_classification"], dtype=str),
+                save_name="test-period-abs-mag.pdf",
+            )
+
+        self.assertTrue((target_dir / "test-period-abs-mag.pdf").exists())
+        plt.close(ax.figure)
+
     def test_plot_period_abs_mag_ls_uses_ls_label(self):
         data = _period_abs_mag_table()
         ax = plot_period_abs_mag_ls(
@@ -837,7 +857,7 @@ class PlottingHelperTests(unittest.TestCase):
         self.assertEqual(ax.get_xlabel(), r"L-S period $P_{\rm LS}$ [days]")
         self.assertTrue(ax.yaxis_inverted())
         scatter_collections = [
-            c for c in ax.collections if hasattr(c, "get_offsets") and len(c.get_offsets()) == 1
+            c for c in ax.collections if isinstance(c, mpl.collections.PathCollection)
         ]
         offsets = np.vstack([c.get_offsets() for c in scatter_collections[-2:]])
         np.testing.assert_allclose(np.sort(offsets[:, 0]), [0.81, 0.93])
