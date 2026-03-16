@@ -57,7 +57,8 @@ LW_EMPHASIS = 1.8
 LW_CALLOUT = 2.2
 LW_LEVEL = 2.6
 
-MARKER_MS_FINE   = 2.5    # very fine  — dense scatter / many-point plots
+MARKER_MS_MICRO  = 2.0    # micro      — extra-fine, reduced dense scatter
+MARKER_MS_FINE   = 2.5    # fine       — dense scatter / many-point plots
 MARKER_MS_SMALL  = 3.5    # small      — RR Lyrae light-curve data
 MARKER_MS_MEDIUM = 5.0    # medium     — moderate emphasis
 MARKER_MS_LARGE  = 8.0    # large      — prominent markers
@@ -129,9 +130,13 @@ _REPORT_FIGURE_FILENAMES = {
     "plot_aitoff_reddening_map": "fig_reddening_map.pdf",
     "plot_sfd_empirical_hexbin_comparison": "fig_sfd_comparison.pdf",
     "plot_sfd_all_sky_hexbin": "fig_sfd_all_sky_hexbin.pdf",
+    "plot_aitoff_sfd_map": "fig_sfd_map.pdf",
     "plot_regime_decomposition": "fig_regime_decomposition.pdf",
     "plot_reddening_distribution": "fig_reddening_distribution.pdf",
     "plot_optical_vs_w2_comparison": "fig_optical_ir_comparison.pdf",
+    "plot_aitoff_reddening_dark": "fig_reddening_map_dark.pdf",
+    "plot_quality_diagnostics": "fig_quality_diagnostics.pdf",
+    "plot_inlier_prob_map": "fig_inlier_prob_map.pdf",
 }
 
 mpl.rcParams.update(
@@ -528,7 +533,7 @@ def plot_pl_sampler_comparison_corner(
         fig = corner.corner(
             np.asarray(samples, dtype=float),
             labels=labels,
-            fig=fig if fig is not None else plt.figure(figsize=_textwidth_figsize(7)),
+            fig=fig if fig is not None else plt.figure(figsize=(0.8 * TEXTWIDTH_IN, 0.8 * TEXTWIDTH_IN * 7 / 8)),
             color=color,
             fill_contours=False,
             plot_datapoints=False,
@@ -927,8 +932,8 @@ def _draw_period_abs_mag(
                 m_g[mask],
                 color=color,
                 label=label,
-                s=MARKER_MS_FINE**2,
-                alpha=ALPHA_DENSE,
+                s=MARKER_MS_MICRO**2,
+                alpha=ALPHA_STANDARD,
                 rasterized=True,
                 zorder=2,
             )
@@ -947,8 +952,8 @@ def _draw_period_abs_mag(
             m_g,
             color=PRIMARY_COLOR,
             label="RR Lyrae",
-            s=MARKER_MS_FINE**2,
-            alpha=ALPHA_DENSE,
+            s=MARKER_MS_MICRO**2,
+            alpha=ALPHA_STANDARD,
             rasterized=True,
             zorder=2,
         )
@@ -1295,8 +1300,8 @@ def plot_inlier_prob_period_luminosity_comparison(
         cmap="RdYlGn",
         vmin=0.0,
         vmax=1.0,
-        s=MARKER_MS_FINE**2,
-        alpha=ALPHA_DENSE,
+        s=MARKER_MS_MICRO**2,
+        alpha=ALPHA_STANDARD,
         rasterized=True,
         zorder=2,
     )
@@ -1410,7 +1415,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
         ax_fundamental.scatter(
             fundamental_period[mask],
             best_period[mask],
-            s=MARKER_MS_SMALL**2,
+            s=MARKER_MS_FINE**2,
             alpha=RRLYRAE_POINT_ALPHA,
             color=color,
             label=label,
@@ -1479,7 +1484,7 @@ def plot_vari_rrlyrae_period_comparison(data: Table):
         ax_first_overtone.scatter(
             first_overtone_period[finite_rrd],
             best_period[finite_rrd],
-            s=MARKER_MS_SMALL**2,
+            s=MARKER_MS_FINE**2,
             alpha=RRLYRAE_POINT_ALPHA,
             color=rr_d_color,
             zorder=2,
@@ -1562,7 +1567,12 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     mag_err = np.asarray(data["g_transit_mag_err"], dtype=float)
     phase = (epoch % period) / period
 
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(2))
+    fig, axes = plt.subplots(
+        2, 1,
+        figsize=_columnwidth_figsize(4.55),
+        sharey=True,
+    )
+    fig.subplots_adjust(hspace=0.3)
 
     errorbar_alpha = RRLYRAE_POINT_ALPHA * (ALPHA_LIGHT / ALPHA_STANDARD)
     raw_errorbar_kwargs = {
@@ -1585,7 +1595,7 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     axes[0].scatter(
         epoch,
         mag,
-        s=MARKER_MS_FINE**2,
+        s=MARKER_MS_MICRO**2,
         alpha=RRLYRAE_POINT_ALPHA,
         color=PRIMARY_COLOR,
         zorder=2,
@@ -1601,7 +1611,7 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
     axes[1].scatter(
         phase,
         mag,
-        s=MARKER_MS_FINE**2,
+        s=MARKER_MS_MICRO**2,
         alpha=RRLYRAE_POINT_ALPHA,
         color=SECONDARY_COLOR,
         zorder=2,
@@ -1648,7 +1658,7 @@ def plot_fourier_harmonic_fits(
 
     fig, outer_grid = _grid_nx1(
         len(K_values),
-        figsize=(TEXTWIDTH_IN, A4_USABLE_HEIGHT_IN),
+        figsize=(COLUMNWIDTH_IN, A4_USABLE_HEIGHT_IN + 1.0),
         hspace=0.24,
     )
     axes = np.empty((len(K_values), 2), dtype=object)
@@ -1879,7 +1889,7 @@ def plot_rrlyrae_shape_comparison(rrab_source, rrc_source):
                 mag_centered,
                 yerr=mag_err,
                 fmt="o",
-                ms=MARKER_MS_SMALL,
+                ms=MARKER_MS_FINE,
                 elinewidth=LW_FINE,
                 color=point_color,
                 alpha=ALPHA_MUTED,
@@ -2299,7 +2309,7 @@ def plot_fourier_extrapolation(
         epoch_pred,
         mag_pred,
         marker="*",
-        ms=MARKER_MS_BIG,
+        ms=MARKER_MS_LARGE,
         color="k",
         lw=LW_NONE,
         label=rf"10-day prediction: $G={mag_pred:.3f}\pm{mag_pred_err:.3f}$",
@@ -2556,7 +2566,7 @@ def plot_pl_posterior_predictive(
     ctx: Any,
     samples: np.ndarray,
 ):
-    _, ax = _single_panel(_textwidth_figsize(19 / 4))
+    _, ax = _single_panel(_textwidth_figsize(4))
     color = _rrlyrae_class_color(getattr(ctx, "class_label", ""), 0)
     _draw_pl_posterior_predictive_layer(
         ax,
@@ -2621,11 +2631,14 @@ def _draw_pc_posterior_predictive_layer(
     data_label: str | None,
     median_label: str | None,
     show_interval_labels: bool,
+    x_offset: float = 0.0,
 ) -> None:
     env = _relation_predictive_envelope(ctx, samples)
+    x_data = np.asarray(ctx.x_centered, dtype=float) + x_offset
+    x_grid = env.x_grid + x_offset
 
     ax.errorbar(
-        np.asarray(ctx.x_centered, dtype=float),
+        x_data,
         np.asarray(ctx.y, dtype=float),
         yerr=np.asarray(ctx.sigma, dtype=float),
         fmt="none",
@@ -2635,7 +2648,7 @@ def _draw_pc_posterior_predictive_layer(
         zorder=1,
     )
     ax.scatter(
-        np.asarray(ctx.x_centered, dtype=float),
+        x_data,
         np.asarray(ctx.y, dtype=float),
         s=MARKER_MS_SMALL**2,
         color=color,
@@ -2645,7 +2658,7 @@ def _draw_pc_posterior_predictive_layer(
         label=data_label,
     )
     ax.fill_between(
-        env.x_grid,
+        x_grid,
         env.q025,
         env.q975,
         color=color,
@@ -2655,7 +2668,7 @@ def _draw_pc_posterior_predictive_layer(
         label="95% predictive envelope" if show_interval_labels else None,
     )
     ax.fill_between(
-        env.x_grid,
+        x_grid,
         env.q16,
         env.q84,
         color=color,
@@ -2665,7 +2678,7 @@ def _draw_pc_posterior_predictive_layer(
         label="68% predictive envelope" if show_interval_labels else None,
     )
     ax.plot(
-        env.x_grid,
+        x_grid,
         env.median_mean,
         color=color,
         lw=LW_EMPHASIS,
@@ -2703,7 +2716,7 @@ def plot_pc_posterior_predictive_comparison(
     secondary_ctx: Any,
     secondary_samples: np.ndarray,
 ):
-    _, ax = _single_panel(_textwidth_figsize(5))
+    _, ax = _single_panel(_textwidth_figsize(9 / 2))
     primary_color = _rrlyrae_class_color(getattr(primary_ctx, "class_label", ""), 0)
     secondary_color = _rrlyrae_class_color(getattr(secondary_ctx, "class_label", ""), 1)
     _draw_pc_posterior_predictive_layer(
@@ -2714,6 +2727,7 @@ def plot_pc_posterior_predictive_comparison(
         data_label=f"{primary_ctx.class_label} data",
         median_label=f"{primary_ctx.class_label} posterior median",
         show_interval_labels=False,
+        x_offset=float(primary_ctx.x_mean),
     )
     _draw_pc_posterior_predictive_layer(
         ax,
@@ -2723,10 +2737,11 @@ def plot_pc_posterior_predictive_comparison(
         data_label=f"{secondary_ctx.class_label} data",
         median_label=f"{secondary_ctx.class_label} posterior median",
         show_interval_labels=False,
+        x_offset=float(secondary_ctx.x_mean),
     )
-    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day}) - \langle \log_{10}P \rangle_{\rm class}$")
+    ax.set_xlabel(r"$\log_{10}(P/\mathrm{day})$")
     ax.set_ylabel(getattr(primary_ctx, "y_label", r"$G_\mathrm{BP} - G_\mathrm{RP}$ [mag]"))
-    ax.legend(loc="best")
+    ax.legend(loc="upper left")
     _apply_grid(ax)
     _tight_layout(ax.figure)
     return ax
@@ -2891,14 +2906,10 @@ def plot_empirical_vs_catalog_extinction_comparison(
     empirical_ag: np.ndarray,
     residuals: np.ndarray,
 ):
-    fig, axes = _grid_1x2(
-        figsize=_textwidth_figsize(7 / 2),
-        sharey=False,
-    )
+    fig, ax = plt.subplots(figsize=_columnwidth_figsize(3.5))
 
     x_values = np.asarray(catalog_ag, dtype=float)
     y_values = np.asarray(empirical_ag, dtype=float)
-    delta_values = np.asarray(residuals, dtype=float)
 
     finite_scatter = np.isfinite(x_values) & np.isfinite(y_values)
     if not np.any(finite_scatter):
@@ -2911,16 +2922,16 @@ def plot_empirical_vs_catalog_extinction_comparison(
     if not np.isfinite(line_min) or not np.isfinite(line_max):
         raise ValueError("catalog_ag and empirical_ag must contain finite values.")
 
-    axes[0].scatter(
+    ax.scatter(
         x_plot,
         y_plot,
-        s=MARKER_MS_FINE**2,
+        s=MARKER_MS_MICRO**2,
         alpha=ALPHA_FAINT,
         color=PRIMARY_COLOR,
         rasterized=True,
         label="RR Lyrae sample",
     )
-    axes[0].plot(
+    ax.plot(
         [line_min, line_max],
         [line_min, line_max],
         linestyle="--",
@@ -2928,46 +2939,14 @@ def plot_empirical_vs_catalog_extinction_comparison(
         lw=LW_MEDIUM,
         label="1:1 line",
     )
-    axes[0].set_title("Catalog vs. empirical $A_G$")
-    axes[0].set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
-    axes[0].set_ylabel(r"Empirical $A_G$ [mag]")
-    axes[0].legend(loc="best")
-    _apply_grid(axes[0])
-
-    finite_residuals = delta_values[np.isfinite(delta_values)]
-    if finite_residuals.size == 0:
-        raise ValueError("residuals must contain at least one finite value.")
-
-    residual_min = float(np.min(finite_residuals))
-    residual_max = float(np.max(finite_residuals))
-    if residual_min == residual_max:
-        residual_min -= 0.5
-        residual_max += 0.5
-
-    axes[1].hist(
-        finite_residuals,
-        bins=80,
-        range=(residual_min, residual_max),
-        color=SECONDARY_COLOR,
-        alpha=ALPHA_LIGHT,
-        label="Residual count",
-    )
-    residual_median = float(np.median(finite_residuals))
-    axes[1].axvline(
-        residual_median,
-        linestyle="--",
-        color=QUATERNARY_COLOR,
-        lw=LW_MEDIUM,
-        label=rf"Median = {residual_median:.3f} mag",
-    )
-    axes[1].set_title(r"$A_G^{\mathrm{calc}} - g_{\mathrm{absorption}}$")
-    axes[1].set_xlabel(r"Residual [mag]")
-    axes[1].set_ylabel("Count")
-    axes[1].legend(loc="best")
-    _apply_grid(axes[1])
+    ax.set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
+    ax.set_ylabel(r"Empirical $A_G$ [mag]")
+    ax.legend(loc="upper left")
+    ax.set_aspect("equal", adjustable="box")
+    _apply_grid(ax)
 
     _tight_layout(fig)
-    return fig, axes
+    return fig, ax
 
 
 def plot_posterior(
@@ -3053,7 +3032,7 @@ def plot_corner(source, labels=None, *, color: str = PRIMARY_COLOR):
         title_fmt=".3f",
         quantiles=[0.16, 0.5, 0.84],
         color=color,
-        fig=plt.figure(figsize=_textwidth_figsize(7)),
+        fig=plt.figure(figsize=(0.8 * TEXTWIDTH_IN, 0.8 * TEXTWIDTH_IN * 7 / 8)),
     )
     return fig
 
@@ -3068,6 +3047,12 @@ def _wrap_longitude(l_deg: np.ndarray) -> np.ndarray:
     return ((l_deg + 180.0) % 360.0) - 180.0
 
 
+_AITOFF_FIGSIZE = (
+    A4_HEIGHT_IN - 2 * 0.75,        # landscape width: A4 long edge minus L+R margins
+    A4_WIDTH_IN - 2 * 0.75 - 0.25, # landscape height: A4 short edge minus T+B margins and caption
+)
+
+
 def plot_aitoff_reddening_map(
     data: Table,
     mask: np.ndarray,
@@ -3076,8 +3061,8 @@ def plot_aitoff_reddening_map(
     vmin: float,
     vmax: float,
     cmap: str = "magma",
-    alpha: float = 0.22,
-    size: float = 2.0,
+    alpha: float = 0.5,
+    size: float = 6.0,
 ) -> tuple:
     """Aitoff projection scatter plot of empirical E(BP-RP) reddening."""
     l_plot = _wrap_longitude(np.asarray(data["l"], dtype=float))
@@ -3085,7 +3070,7 @@ def plot_aitoff_reddening_map(
     e_bprp = np.asarray(data["E_bprp"], dtype=float)
     mask = np.asarray(mask, dtype=bool)
 
-    fig = plt.figure(figsize=_textwidth_figsize(4), dpi=180)
+    fig = plt.figure(figsize=_AITOFF_FIGSIZE)
     ax = fig.add_subplot(111, projection="aitoff")
     sc = ax.scatter(
         np.deg2rad(l_plot[mask]),
@@ -3100,9 +3085,88 @@ def plot_aitoff_reddening_map(
         rasterized=True,
     )
     ax.grid(True, alpha=0.35)
-    ax.set_title(f"{title}\nN = {int(mask.sum()):,}")
-    cbar = fig.colorbar(sc, ax=ax, orientation="horizontal", pad=0.08, shrink=0.85)
+    cbar = fig.colorbar(sc, ax=ax, orientation="vertical", pad=0.04, shrink=0.85, fraction=0.02)
     cbar.set_label(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_aitoff_reddening_dark(
+    data: Table,
+    mask: np.ndarray,
+    *,
+    vmin: float,
+    vmax: float,
+    cmap: str = "inferno",
+    gridsize: int = 300,
+) -> tuple:
+    """Dark-background Aitoff reddening map using hexbin median per bin."""
+    l_plot = _wrap_longitude(np.asarray(data["l"], dtype=float))
+    b_deg = np.asarray(data["b"], dtype=float)
+    e_bprp = np.asarray(data["E_bprp"], dtype=float)
+    mask = np.asarray(mask, dtype=bool)
+
+    fig = plt.figure(figsize=_AITOFF_FIGSIZE)
+    ax = fig.add_subplot(111, projection="aitoff")
+    ax.set_facecolor("black")
+
+    hb = ax.hexbin(
+        np.deg2rad(l_plot[mask]),
+        np.deg2rad(b_deg[mask]),
+        C=e_bprp[mask],
+        reduce_C_function=np.median,
+        gridsize=gridsize,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        mincnt=1,
+        rasterized=True,
+    )
+
+    ax.grid(True, alpha=0.2, color="white")
+    ax.tick_params(labelsize=TICK_SIZE)
+
+    cbar = fig.colorbar(hb, ax=ax, orientation="vertical", pad=0.04, shrink=0.85, fraction=0.02)
+    cbar.set_label(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+
+    plt.tight_layout()
+    return fig, ax
+
+
+def plot_aitoff_sfd_map(
+    data: Table,
+    mask: np.ndarray,
+    *,
+    title: str,
+    vmin: float,
+    vmax: float,
+    cmap: str = "viridis",
+    alpha: float = 0.5,
+    size: float = 6.0,
+) -> tuple:
+    """Aitoff projection scatter plot of SFD E(B-V) sampled at RR Lyrae positions."""
+    l_plot = _wrap_longitude(np.asarray(data["l"], dtype=float))
+    b_deg = np.asarray(data["b"], dtype=float)
+    sfd_ebv = np.asarray(data["sfd_ebv"], dtype=float)
+    mask = np.asarray(mask, dtype=bool)
+
+    fig = plt.figure(figsize=_AITOFF_FIGSIZE)
+    ax = fig.add_subplot(111, projection="aitoff")
+    sc = ax.scatter(
+        np.deg2rad(l_plot[mask]),
+        np.deg2rad(b_deg[mask]),
+        c=sfd_ebv[mask],
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        s=size,
+        alpha=alpha,
+        linewidths=0,
+        rasterized=True,
+    )
+    ax.grid(True, alpha=0.35)
+    cbar = fig.colorbar(sc, ax=ax, orientation="vertical", pad=0.04, shrink=0.85, fraction=0.02)
+    cbar.set_label(r"SFD $E(B-V)$ [mag]")
     plt.tight_layout()
     return fig, ax
 
@@ -3143,7 +3207,7 @@ def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarr
     """Two-panel Gaia G vs WISE W2 PL comparison (RRab top, RRc bottom)."""
     band_colors = {"G": PRIMARY_COLOR, "W2": SECONDARY_COLOR}
 
-    fig, axes = plt.subplots(2, 1, figsize=(TEXTWIDTH_IN, 1.20 * TEXTWIDTH_IN), sharex=True)
+    fig, axes = plt.subplots(2, 1, figsize=_textwidth_figsize(9.6), sharex=True)
 
     for i, (ax, class_label) in enumerate(zip(axes, ("RRab", "RRc"))):
         optical = optical_map[class_label]
@@ -3151,8 +3215,13 @@ def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarr
 
         ax.errorbar(
             optical.x_obs, optical.y_obs, yerr=optical.sigma_obs,
-            fmt="o", ms=MARKER_MS_FINE, alpha=0.12, color=band_colors["G"],
-            elinewidth=0.4, capsize=0, label=r"Gaia $G$ data",
+            fmt="none", ecolor=band_colors["G"], elinewidth=LW_FINE,
+            alpha=ALPHA_LIGHT, capsize=0,
+        )
+        ax.scatter(
+            optical.x_obs, optical.y_obs,
+            s=MARKER_MS_SMALL**2, alpha=ALPHA_MUTED, color=band_colors["G"],
+            rasterized=True, label=r"Gaia $G$ data",
         )
         ax.fill_between(
             optical.x_grid, optical.predictive_q16, optical.predictive_q84,
@@ -3162,8 +3231,13 @@ def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarr
 
         ax.errorbar(
             wise.x_obs, wise.y_obs, yerr=wise.sigma_obs,
-            fmt="s", ms=MARKER_MS_FINE, alpha=0.16, color=band_colors["W2"],
-            elinewidth=0.4, capsize=0, label=r"WISE $W2$ data",
+            fmt="none", ecolor=band_colors["W2"], elinewidth=LW_FINE,
+            alpha=ALPHA_LIGHT, capsize=0,
+        )
+        ax.scatter(
+            wise.x_obs, wise.y_obs,
+            s=MARKER_MS_SMALL**2, alpha=ALPHA_MUTED, color=band_colors["W2"],
+            marker="s", rasterized=True, label=r"WISE $W2$ data",
         )
         ax.fill_between(
             wise.x_grid, wise.predictive_q16, wise.predictive_q84,
@@ -3186,7 +3260,6 @@ def plot_optical_vs_w2_comparison(optical_map: dict, wise_map: dict) -> np.ndarr
             pad = 0.15 * max(y_max - y_min, 0.5)
             ax.set_ylim(y_max + pad, y_min - pad)
 
-        ax.set_title(class_label)
         ax.set_ylabel("Absolute magnitude [mag]")
         ax.grid(True, lw=LW_GRID, alpha=ALPHA_FAINT)
 
@@ -3200,7 +3273,7 @@ def plot_w2_posterior_predictive(ctx, samples: np.ndarray):
     """Thin wrapper around plot_pl_posterior_predictive with W2 axis labels."""
     ax = plot_pl_posterior_predictive(ctx, samples)
     ax.set_ylabel(r"$M_{W2}$ [mag]")
-    ax.set_title(rf"{ctx.class_label}: posterior predictive fit in WISE $W2$")
+    ax.set_title("")
     return ax
 
 
@@ -3236,7 +3309,7 @@ def plot_quality_diagnostics(
     lower = 1.0 + 0.015 * x_grid ** 2
     upper = 1.3 + 0.06 * x_grid ** 2
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5), dpi=180)
+    fig, axes = plt.subplots(1, 2, figsize=_textwidth_figsize(3.0))
 
     axes[0].hist(sigma_e[finite], bins=80, color="0.45", alpha=0.8)
     axes[0].axvline(
@@ -3282,7 +3355,7 @@ def plot_sfd_empirical_hexbin_comparison(
 
     n_panels = len(subset_specs)
     fig, axes = plt.subplots(
-        1, n_panels, figsize=(TEXTWIDTH_IN, 0.40 * TEXTWIDTH_IN), dpi=180,
+        1, n_panels, figsize=_textwidth_figsize(3.2),
         sharex=True, sharey=True, constrained_layout=True,
     )
     if n_panels == 1:
@@ -3320,13 +3393,13 @@ def plot_reddening_distribution(
     e_bprp: np.ndarray,
     *,
     min_ebprp: float = 0.0,
-    max_ebprp: float = 3.0,
+    max_ebprp: float = 10.0,
 ) -> tuple:
     """Histogram of E(BP-RP) distribution with lower-bound and upper-ceiling markers."""
     e_bprp = np.asarray(e_bprp, dtype=float)
     finite = np.isfinite(e_bprp)
 
-    fig, ax = plt.subplots(figsize=(9, 4), dpi=150)
+    fig, ax = plt.subplots(figsize=_textwidth_figsize(3.5))
     ax.hist(e_bprp[finite], bins=120, color="0.4", alpha=0.8)
     ax.axvline(
         min_ebprp, color=QUATERNARY_COLOR, linestyle="--", linewidth=LW_FIT,
@@ -3356,7 +3429,7 @@ def plot_sfd_all_sky_hexbin(
     cmap: str = "viridis",
 ) -> tuple:
     """Single-panel hexbin of empirical E(BP-RP) vs SFD E(B-V) for the full cleaned sample."""
-    from ugdatalab.dust import binned_median_trend, rank_spearman
+    from ugdatalab.dust import binned_median_trend, pearson_r2
 
     e_bprp = np.asarray(data["E_bprp"], dtype=float)
     sfd_ebv = np.asarray(data["sfd_ebv"], dtype=float)
@@ -3365,9 +3438,9 @@ def plot_sfd_all_sky_hexbin(
     y = e_bprp[finite]
 
     centers, medians = binned_median_trend(x, y)
-    rho = rank_spearman(x, y)
+    r2 = pearson_r2(x, y)
 
-    fig, ax = plt.subplots(figsize=(7.5, 5.5), dpi=180)
+    fig, ax = plt.subplots(figsize=_textwidth_figsize(6.0))
     hb = ax.hexbin(x, y, gridsize=gridsize, mincnt=1, bins="log", cmap=cmap, rasterized=True)
     ax.plot(centers, medians, color="white", linewidth=2.5, label="Binned median trend")
     ax.plot(centers, medians, color=QUATERNARY_COLOR, linewidth=LW_STANDARD)
@@ -3376,7 +3449,7 @@ def plot_sfd_all_sky_hexbin(
     ax.set_title(
         rf"Matched-sightline density plot"
         "\n"
-        rf"Spearman $\rho = {rho:.3f}$, $N = {int(finite.sum()):,}$"
+        rf"$R^2 = {r2:.3f}$, $N = {int(finite.sum()):,}$"
     )
     ax.legend(loc="upper left")
     fig.colorbar(hb, ax=ax, label="log10(count)")
@@ -3393,10 +3466,10 @@ def plot_regime_decomposition(
     large_mask: np.ndarray,
     slope: float,
     intercept: float,
-    rho_sim: float,
+    r2_sim: float,
     similar_scale_max: float = 2.0,
     large_sfd_min: float = 10.0,
-    quality_ceiling: float = 3.0,
+    quality_ceiling: float = 10.0,
 ) -> tuple:
     """Two-panel regime decomposition: similar-scale hexbin+fit (left) and large-SFD scatter (right)."""
     from ugdatalab.dust import binned_median_trend
@@ -3412,7 +3485,7 @@ def plot_regime_decomposition(
     y_fit = slope * x_fit + intercept
     centers_sim, medians_sim = binned_median_trend(x_sim, y_sim)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5), dpi=150)
+    fig, axes = plt.subplots(1, 2, figsize=_textwidth_figsize(3.0))
 
     # Left: similar-scale hexbin with linear fit
     ax = axes[0]
@@ -3425,11 +3498,6 @@ def plot_regime_decomposition(
     )
     ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
     ax.set_ylabel(r"RR Lyrae $E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ [mag]")
-    ax.set_title(
-        rf"Similar-scale regime ($\leq {similar_scale_max}$ mag)"
-        "\n"
-        rf"$N = {int(similar_mask.sum()):,}$, Spearman $\rho = {rho_sim:.3f}$"
-    )
     ax.legend(loc="upper left", fontsize=LEGEND_SIZE)
     fig.colorbar(hb, ax=ax, label="log10(count)")
     _apply_grid(ax)
@@ -3449,11 +3517,6 @@ def plot_regime_decomposition(
     )
     ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
     ax.set_ylabel(r"RR Lyrae $E(G_{\mathrm{BP}}-G_{\mathrm{RP}})$ [mag]")
-    ax.set_title(
-        rf"Large-SFD regime ($> {large_sfd_min}$ mag)"
-        "\n"
-        rf"$N = {int(large_mask.sum()):,}$"
-    )
     ax.legend(loc="upper right", fontsize=LEGEND_SIZE)
     _apply_grid(ax)
 
@@ -3502,12 +3565,14 @@ _REPORT_SAVABLE_PLOTS = (
     "plot_trace",
     "plot_corner",
     "plot_aitoff_reddening_map",
+    "plot_aitoff_reddening_dark",
     "plot_optical_vs_w2_comparison",
     "plot_w2_posterior_predictive",
     "plot_w2_posterior_line_draws",
     "plot_quality_diagnostics",
     "plot_sfd_empirical_hexbin_comparison",
     "plot_sfd_all_sky_hexbin",
+    "plot_aitoff_sfd_map",
     "plot_regime_decomposition",
     "plot_reddening_distribution",
     "plot_calibration_sky_distribution",

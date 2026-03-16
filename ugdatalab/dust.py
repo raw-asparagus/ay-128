@@ -437,7 +437,7 @@ def build_stage_summary(data: table.Table, components: dict) -> table.Table:
             r"+ sigma_E <= 0.15",
             components["finite"] & components["bp_snr"] & components["rp_snr"] & components["bp_rp_excess"] & components["sigma_e"],
         ),
-        (r"+ E(BP-RP) in [0, 3.0]", components["adopted"]),
+        (r"+ E(BP-RP) in [0, 10.0]", components["adopted"]),
     ]
 
     rows = []
@@ -469,7 +469,7 @@ def build_criterion_failure_table(data: table.Table, components: dict) -> table.
         ("rp_snr", "Fails RP S/N > 5"),
         ("bp_rp_excess", "Fails BP/RP excess envelope"),
         ("sigma_e", r"Fails sigma_E <= 0.15"),
-        ("physical_e", r"Fails E(BP-RP) in [0, 3.0]"),
+        ("physical_e", r"Fails E(BP-RP) in [0, 10.0]"),
     ]:
         failed = finite & ~components[key]
         count = int(failed.sum())
@@ -504,6 +504,17 @@ def rank_spearman(x: np.ndarray, y: np.ndarray) -> float:
     return float(np.corrcoef(x_rank, y_rank)[0, 1])
 
 
+def pearson_r2(x: np.ndarray, y: np.ndarray) -> float:
+    """Compute Pearson R² (square of the Pearson correlation coefficient)."""
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    if int(np.count_nonzero(mask)) < 2:
+        return np.nan
+    r = float(np.corrcoef(x[mask], y[mask])[0, 1])
+    return r ** 2
+
+
 def binned_median_trend(
     x: np.ndarray, y: np.ndarray, *, bins: int = 30
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -535,7 +546,7 @@ def binned_median_trend(
 def subset_row(label: str, data: table.Table, mask: np.ndarray) -> dict:
     """Statistical summary for a subset of the reddening catalog.
 
-    Keys: subset, N, median_E_bprp, median_SFD_EBV, spearman_rho.
+    Keys: subset, N, median_E_bprp, median_SFD_EBV, r2.
     """
     values_empirical = _as_float_array(data["E_bprp"])[mask]
     values_sfd = _as_float_array(data["sfd_ebv"])[mask]
@@ -544,5 +555,5 @@ def subset_row(label: str, data: table.Table, mask: np.ndarray) -> dict:
         "N": int(np.count_nonzero(mask)),
         "median_E_bprp": round(float(np.nanmedian(values_empirical)), 4),
         "median_SFD_EBV": round(float(np.nanmedian(values_sfd)), 4),
-        "spearman_rho": round(rank_spearman(values_sfd, values_empirical), 4),
+        "r2": round(pearson_r2(values_sfd, values_empirical), 4),
     }
