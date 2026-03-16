@@ -1291,7 +1291,7 @@ def plot_inlier_prob_period_luminosity_comparison(
     kept = inlier_prob >= threshold
     removed = ~kept
 
-    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
+    _, ax = _single_panel(_columnwidth_figsize(4))
 
     sc = ax.scatter(
         periods[kept],
@@ -1320,7 +1320,7 @@ def plot_inlier_prob_period_luminosity_comparison(
         zorder=1,
         label=rf"Removed ($p_{{\rm in}} < {threshold}$, $N={int(removed.sum())}$)",
     )
-    plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
+    plt.colorbar(sc, ax=ax, location="bottom", label="Posterior inlier probability")
     _set_log_period_xaxis(ax)
     _set_descending_magnitude_yaxis(ax)
     ax.set_xlabel(r"$P$ [days]")
@@ -1569,10 +1569,10 @@ def plot_raw_phase_folded_lightcurve(source_id: int, data: Table):
 
     fig, axes = plt.subplots(
         2, 1,
-        figsize=_columnwidth_figsize(4.55),
+        figsize=_columnwidth_figsize(15 / 4),
         sharey=True,
     )
-    fig.subplots_adjust(hspace=0.3)
+    fig.subplots_adjust(hspace=0.34)
 
     errorbar_alpha = RRLYRAE_POINT_ALPHA * (ALPHA_LIGHT / ALPHA_STANDARD)
     raw_errorbar_kwargs = {
@@ -1656,36 +1656,39 @@ def plot_fourier_harmonic_fits(
     if len(K_values) == 0:
         raise ValueError("K_values must contain at least one harmonic order.")
 
-    fig, outer_grid = _grid_nx1(
-        len(K_values),
-        figsize=(COLUMNWIDTH_IN, A4_USABLE_HEIGHT_IN + 1.0),
-        hspace=0.24,
-    )
+    ncols = 2
+    nrows = (len(K_values) + 1) // 2
+    fig = plt.figure(figsize=_textwidth_figsize(5.5))
+    outer_grid = fig.add_gridspec(nrows, ncols, hspace=0.28, wspace=0.28)
+
     axes = np.empty((len(K_values), 2), dtype=object)
-    first_curve_ax = None
+    first_curve_ax = [None, None]  # one anchor per column for x-sharing
+    col_last_i = {}
     for i in range(len(K_values)):
-        inner_grid = outer_grid[i, 0].subgridspec(2, 1, height_ratios=[2.5, 1], hspace=0.0)
-        if first_curve_ax is None:
+        col_last_i[i % ncols] = i
+
+    for i in range(len(K_values)):
+        row, col = i // ncols, i % ncols
+        inner_grid = outer_grid[row, col].subgridspec(2, 1, height_ratios=[2.5, 1], hspace=0.0)
+        if first_curve_ax[col] is None:
             ax_curve = fig.add_subplot(inner_grid[0, 0])
-            first_curve_ax = ax_curve
+            first_curve_ax[col] = ax_curve
         else:
-            ax_curve = fig.add_subplot(inner_grid[0, 0], sharex=first_curve_ax)
-        ax_resid = fig.add_subplot(inner_grid[1, 0], sharex=first_curve_ax)
+            ax_curve = fig.add_subplot(inner_grid[0, 0], sharex=first_curve_ax[col])
+        ax_resid = fig.add_subplot(inner_grid[1, 0], sharex=first_curve_ax[col])
         axes[i, 0] = ax_curve
         axes[i, 1] = ax_resid
 
-    all_curve_values = [mag]
-    all_residual_values = []
     for i, K in enumerate(K_values):
+        col = i % ncols
+        is_bottom = i == col_last_i[col]
+
         fit = fourier_fit(data, period, K)
         model_mag = fit.predict(epoch_grid)
         fitted_mag = fit.predict(epoch)
         residuals = mag - fitted_mag
-        all_curve_values.append(model_mag)
-        all_residual_values.append(residuals)
 
         ax_curve, ax_resid = axes[i]
-        is_bottom = i == len(K_values) - 1
 
         ax_curve.errorbar(
             phase,
@@ -1727,25 +1730,6 @@ def plot_fourier_harmonic_fits(
         else:
             ax_resid.tick_params(axis="x", bottom=False, labelbottom=False)
         _apply_grid(ax_resid)
-
-    curve_values = np.concatenate(all_curve_values)
-    curve_values = curve_values[np.isfinite(curve_values)]
-    if len(curve_values):
-        curve_min = float(np.min(curve_values))
-        curve_max = float(np.max(curve_values))
-        curve_pad = max(0.05 * (curve_max - curve_min), 0.02)
-        for ax_curve in axes[:, 0]:
-            ax_curve.set_ylim(curve_max + curve_pad, curve_min - curve_pad)
-
-    if all_residual_values:
-        residual_values = np.concatenate(all_residual_values)
-        residual_values = residual_values[np.isfinite(residual_values)]
-        if len(residual_values):
-            resid_max = float(np.max(np.abs(residual_values)))
-            resid_max = resid_max if resid_max > 0 else 0.1
-            resid_max *= 1.1
-            for ax_resid in axes[:, 1]:
-                ax_resid.set_ylim(-resid_max, resid_max)
 
     return axes
 
@@ -1807,7 +1791,7 @@ def plot_rrlyrae_shape_comparison(rrab_source, rrc_source):
     outer_grid = fig.add_gridspec(
         nrows,
         2,
-        hspace=0.48,
+        hspace=0.44,
         wspace=0.28,
     )
     axes = np.empty((2 * nrows, 2), dtype=object)
@@ -1956,7 +1940,7 @@ def plot_fourier_cross_validation(result: HarmonicCrossValidationResult):
         raise ValueError("best_K must be present in Ks.")
     cv_best = float(chi2r_cv[best_mask][0])
 
-    _, ax = _single_panel(_columnwidth_figsize(3 / 2))
+    _, ax = _single_panel(_columnwidth_figsize(5 / 2))
     ax.plot(
         Ks[valid],
         chi2r_train[valid],
@@ -2032,7 +2016,7 @@ def plot_fourier_normalized_residual_histograms(
     low_K: int,
     best_K: int,
 ):
-    fig, axes = _grid_1x2(figsize=_textwidth_figsize(3 / 2))
+    fig, axes = _grid_1x2(figsize=_textwidth_figsize(3 / 2), sharex=True)
     bins = np.linspace(-5.0, 5.0, 31)
     x_gauss = np.linspace(-5.0, 5.0, 400)
     gaussian = np.exp(-0.5 * x_gauss**2) / np.sqrt(2.0 * np.pi)
@@ -2087,7 +2071,7 @@ def plot_fourier_normalized_residual_histograms(
         ax._histogram_legend_handles = [train_artist, cv_patches[0], gaussian_artist]
 
     axes[0].set_ylabel("Density")
-    axes[1].set_ylabel("Density")
+    axes[1].set_ylabel("")
     axes[0].legend(handles=axes[0]._histogram_legend_handles, loc="best")
     return axes
 
