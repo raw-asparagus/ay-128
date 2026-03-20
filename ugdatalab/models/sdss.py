@@ -1,143 +1,103 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from textwrap import shorten
 
-from astropy.table import Table, vstack
-from astroquery.sdss import SDSS
 import numpy as np
+from astropy import table
+from astroquery.sdss import SDSS
 
 from ugdatalab.models.cache import _cache_stable
-from ugdatalab.models.gaia import _as_float_array
 
 
-ALLSTAR_DR17_QUERY_TEMPLATE = """
-SELECT
-    star.apogee_id AS APOGEE_ID,
-    star.apstar_id AS APSTAR_ID,
-    star.location_id AS LOCATION_ID,
-    star.field AS FIELD,
-    star.ra AS RA,
-    star.dec AS DEC,
-    star.glon AS GLON,
-    star.glat AS GLAT,
-    star.nvisits AS NVISITS,
-    star.snr AS SNR,
-    star.starflag AS STARFLAG,
-    star.andflag AS ANDFLAG,
-    star.vhelio_avg AS VHELIO_AVG,
-    star.vscatter AS VSCATTER,
-    star.verr AS VERR,
-    aspcap.aspcap_id AS ASPCAP_ID,
-    aspcap.aspcapflag AS ASPCAPFLAG,
-    aspcap.teff AS TEFF,
-    aspcap.teff_err AS TEFF_ERR,
-    aspcap.logg AS LOGG,
-    aspcap.logg_err AS LOGG_ERR,
-    aspcap.m_h AS M_H,
-    aspcap.m_h_err AS M_H_ERR,
-    aspcap.fe_h AS FE_H,
-    aspcap.fe_h_err AS FE_H_ERR,
-    aspcap.mg_fe AS MG_FE,
-    aspcap.mg_fe_err AS MG_FE_ERR,
-    aspcap.si_fe AS SI_FE,
-    aspcap.si_fe_err AS SI_FE_ERR
-FROM apogeeStar AS star
-LEFT JOIN aspcapStar AS aspcap
-    ON aspcap.apstar_id = star.apstar_id
-WHERE {ra_clause}
-"""
+_SDSS_FLOAT_COLUMNS = (
+    "teff",
+    "logg",
+    "fe_h",
+    "mg_fe",
+    "si_fe",
+    "snr",
+)
 
+_ASPCAP_NULL = -9999.0
+_LABEL_COLS  = ("teff", "logg", "fe_h", "mg_fe", "si_fe")
 
-_RA_CHUNKS = (
-    (0.0, 90.0),
-    (90.0, 180.0),
-    (180.0, 270.0),
-    (270.0, 360.0),
+_SDSS_STRING_COLUMNS = (
+    "apogee_id",
+    "telescope",
+    "field",
+    "apstar_id",
 )
 
 
-def _run_sdss_sql(query: str) -> Table:
-    """Run an SDSS SQL query and raise a readable error on non-CSV responses."""
-    response = SDSS.query_sql_async(query, data_release=17, cache=False)
-    response.raise_for_status()
-
-    text = response.text.lstrip()
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    first_data_line = next((line for line in lines if not line.startswith("#")), "")
-    if not text or first_data_line.startswith("<") or "," not in first_data_line:
-        snippet = shorten(" ".join(text.split()), width=240, placeholder="...")
-        raise RuntimeError(f"SDSS SkyServer returned a non-CSV response: {snippet}")
-
-    return Table.read(text, format="ascii.csv", comment="#")
+@_cache_stable(module="ugdatalab.sdss")
+def get_sdss(query):
+    return SDSS.query_sql(query)
 
 
-def _query_sdss_allstar_chunk(ra_min: float, ra_max: float, *, inclusive_upper: bool = False) -> Table:
-    """Query one RA chunk of the APOGEE DR17 catalog through astroquery."""
-    upper_op = "<=" if inclusive_upper else "<"
-    query = ALLSTAR_DR17_QUERY_TEMPLATE.format(
-        ra_clause=f"star.ra >= {ra_min:.1f} AND star.ra {upper_op} {ra_max:.1f}"
-    )
-    return _run_sdss_sql(query)
+def _sanitize_stars(data: table.Table) -> table.Table:
+    """Clean raw get_sdss output: decode byte strings, strip whitespace, cast numerics."""
+    out = data.copy()
 
+    for name in out.colnames:
+        col = out[name]
+        if col.dtype.kind in ("S", "O"):
+            try:
+                decoded = np.asarray(
+                    [v.decode() if isinstance(v, bytes) else str(v) for v in col]
+                )
+                out[name] = np.char.strip(decoded)
+            except Exception:
+                pass
 
-def _query_sdss_allstar() -> Table:
-    """Query the APOGEE DR17 catalog through astroquery/SDSS SkyServer in chunks."""
-    tables = []
-    for i, (ra_min, ra_max) in enumerate(_RA_CHUNKS):
-        tables.append(
-            _query_sdss_allstar_chunk(
-                ra_min,
-                ra_max,
-                inclusive_upper=(i == len(_RA_CHUNKS) - 1),
-            )
-        )
-    return vstack(tables, metadata_conflicts="silent")
+    for name in _SDSS_STRING_COLUMNS:
+        if name in out.colnames:
+            out[name] = np.char.strip(np.asarray(out[name], dtype=str))
 
+    for name in _SDSS_FLOAT_COLUMNS:
+        if name in out.colnames:
+            values = np.ma.asarray(out[name], dtype=float)
+            out[name] = np.asarray(np.ma.filled(values, np.nan), dtype=float)
 
-def _metallicity_column_name(data: Table) -> str:
-    """Return the APOGEE metallicity column used for [Fe/H]."""
-    if "FE_H" in data.colnames:
-        return "FE_H"
-    if "M_H" in data.colnames:
-        return "M_H"
-    raise KeyError("SDSS allStar table is missing both 'FE_H' and 'M_H'.")
+    return out
 
 
 @_cache_stable(module="ugdatalab.sdss")
-def get_sdss() -> Table:
-    """Return the full APOGEE DR17 catalog before any cuts."""
-    return _query_sdss_allstar()
+def _get_sdss_quality(query):
+    raw  = _sanitize_stars(get_sdss(query))
+    mask = np.ones(len(raw), dtype=bool)
 
+    # drop rows where any label is ASPCAP null or NaN
+    for name in _LABEL_COLS:
+        if name in raw.colnames:
+            col   = np.asarray(raw[name], dtype=float)
+            mask &= (col != _ASPCAP_NULL) & np.isfinite(col)
 
-@_cache_stable(module="ugdatalab.sdss")
-def get_sdss_quality() -> Table:
-    """
-    Return APOGEE stars with labels for Teff, log g, [Fe/H], [Mg/Fe], [Si/Fe]
-    and SNR >= 50, as reported in the allStar catalog.
-    """
-    data = get_sdss()
-    feh_col = _metallicity_column_name(data)
+    # quality and science cuts
+    if "snr"  in raw.colnames: mask &= np.asarray(raw["snr"],  dtype=float) >= 50.0
+    if "logg" in raw.colnames: mask &= np.asarray(raw["logg"], dtype=float) <= 4.0
+    if "teff" in raw.colnames: mask &= np.asarray(raw["teff"], dtype=float) <= 5700.0
+    if "fe_h" in raw.colnames: mask &= np.asarray(raw["fe_h"], dtype=float) >= -1.0
 
-    mask = np.ones(len(data), dtype=bool)
-    for name in ("TEFF", "LOGG", feh_col, "MG_FE", "SI_FE"):
-        mask &= np.isfinite(_as_float_array(data[name]))
-
-    mask &= _as_float_array(data["SNR"]) >= 50.0
-    return data[mask]
+    return raw[mask]
 
 
 @dataclass
 class SDSSData:
-    """Fetches the full cached APOGEE allStar catalog."""
-    data: Table = field(init=False, repr=False)
+    """Fetches and caches SDSS/APOGEE query results."""
+    query: str
+    include_spectra: bool = False
+    data: table.Table = field(init=False, repr=False)
+    spectra: table.Table | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self):
-        self.data = get_sdss()
+        self.data = _get_sdss_quality(self.query)
+        self._load_spectra()
 
+    def _load_spectra(self):
+        if not self.include_spectra:
+            self.spectra = None
+            return
 
-class SDSSQuality(SDSSData):
-    """Fetches the cached APOGEE allStar subset after the quality cuts."""
+        from ugdatalab.spectra import _fetch_joined_spectra
 
-    def __post_init__(self):
-        self.data = get_sdss_quality()
+        self.spectra = _fetch_joined_spectra(self.data)

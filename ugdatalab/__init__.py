@@ -9,13 +9,10 @@ from ugdatalab.models import (
     WISEQualityFilter,
     attach_w2_absolute_magnitude,
     MixtureContaminationModel,
-    SDSSData,
-    SDSSQuality,
     get_gaia,
     rrlyrae_class_mask,
     rrlyrae_representative_period,
     get_sdss,
-    get_sdss_quality,
     _cache_stable,
 )
 from ugdatalab.mcmc import (

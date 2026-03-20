@@ -1,5 +1,6 @@
 README.md
 pyproject.toml
+tests/test_artifacts.py
 tests/test_dust.py
 tests/test_fourier.py
 tests/test_gaia.py
@@ -9,12 +10,16 @@ tests/test_relations.py
 tests/test_runtime.py
 tests/test_sdss.py
 ugdatalab/__init__.py
+ugdatalab/artifacts.py
+ugdatalab/deoutlier.py
 ugdatalab/dust.py
+ugdatalab/lab2_plotting.py
 ugdatalab/lightcurves.py
 ugdatalab/mcmc.py
 ugdatalab/paths.py
 ugdatalab/plotting.py
 ugdatalab/relations.py
+ugdatalab/spectra.py
 ugdatalab.egg-info/PKG-INFO
 ugdatalab.egg-info/SOURCES.txt
 ugdatalab.egg-info/dependency_links.txt
@@ -22,6 +27,6 @@ ugdatalab.egg-info/requires.txt
 ugdatalab.egg-info/top_level.txt
 ugdatalab/models/__init__.py
 ugdatalab/models/cache.py
-ugdatalab/models/deoutlier.py
 ugdatalab/models/gaia.py
 ugdatalab/models/sdss.py
+ugdatalab/models/wise.py

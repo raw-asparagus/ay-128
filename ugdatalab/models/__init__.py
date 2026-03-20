@@ -12,5 +12,5 @@ from ugdatalab.models.gaia import (
     rrlyrae_representative_period,
 )
 from ugdatalab.deoutlier import MixtureContaminationModel
-from ugdatalab.models.sdss import SDSSData, SDSSQuality, get_sdss, get_sdss_quality
+from ugdatalab.models.sdss import get_sdss
 from ugdatalab.models.wise import WISEQualityFilter, attach_w2_absolute_magnitude
