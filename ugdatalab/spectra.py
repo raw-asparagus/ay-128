@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable, Any
 
@@ -8,7 +6,7 @@ from astropy import table
 from astropy.io import fits
 from astropy.utils.data import download_file
 
-from ugdatalab.models.cache import _cache_stable
+from ugdatalab.models.cache import cache_stable
 from ugdatalab.paths import CONTINUUM_PIXELS_PATH
 
 _DOWNLOAD_TIMEOUT = 120  # seconds
@@ -148,7 +146,7 @@ def _empty_joined_table(catalog: table.Table, spectra: table.Table) -> table.Tab
 # ---------------------------------------------------------------------------
 
 
-@_cache_stable(module="ugdatalab.sdss")
+@cache_stable(module="ugdatalab.sdss")
 def _get_spectra(apogee_id: str, telescope: str, field: str) -> table.Table:
     """Download and cache the apStar spectrum for one source."""
     url        = _apstar_url(telescope, field, apogee_id)

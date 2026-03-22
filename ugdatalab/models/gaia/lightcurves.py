@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -8,13 +6,13 @@ from astroquery.gaia import Gaia
 from astropy import table
 from astropy.timeseries import LombScargle
 
-from ugdatalab.models.cache import _cache_stable
-from ugdatalab.models.gaia import ZP_ERR_G, ZP_G, _as_float_array
+from ugdatalab.models.cache import cache_stable
+from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G
 
 DEFAULT_PERIOD_MIN = 0.2
 DEFAULT_PERIOD_MAX = 1.2
 EPOCH_DATA_RELEASE = "Gaia DR3"
-EPOCH_FILE_FORMAT = "xml"
+
 _EPOCH_FLOAT_COLUMNS = (
     "g_transit_time",
     "g_transit_mag",
@@ -28,32 +26,13 @@ _MIN_PERIOD = np.finfo(float).tiny
 
 
 def _epoch_payload(datalink: dict, source_id: int):
-    key = f"EPOCH_PHOTOMETRY-{EPOCH_DATA_RELEASE} {source_id}.{EPOCH_FILE_FORMAT}"
-    if key in datalink:
-        return datalink[key]
-
-    source_id_str = str(source_id)
-    for dl_key, payload in datalink.items():
-        if source_id_str in dl_key:
+    for key, payload in datalink.items():
+        if str(source_id) in key:
             return payload
     raise KeyError(f"Could not find epoch photometry for source_id={source_id}.")
 
 
-def _empty_epoch_table() -> table.Table:
-    return table.Table({"source_id": np.asarray([], dtype=np.int64)})
-
-
-def _empty_joined_table(catalog: table.Table, epoch_data: table.Table) -> table.Table:
-    res = table.Table()
-    for name in catalog.colnames:
-        res[name] = np.asarray(catalog[name])[:0]
-    for name in epoch_data.colnames:
-        if name not in res.colnames:
-            res[name] = np.asarray(epoch_data[name])[:0]
-    return res
-
-
-@_cache_stable(module="ugdatalab.gaia")
+@cache_stable(module="ugdatalab.gaia")
 def _get_epoch_photometry(source_id: int) -> table.Table:
     """Download Gaia epoch photometry for one source."""
     datalink = Gaia.load_data(
@@ -71,15 +50,8 @@ def _get_epoch_photometry(source_id: int) -> table.Table:
 
 def _fetch_epoch_photometry(source_ids: Iterable[int]) -> table.Table:
     """Download epoch photometry for many Gaia sources and stack the results."""
-    source_ids = tuple(source_id for source_id in source_ids)
-    chunks = []
-    for source_id in source_ids:
-        chunk = _get_epoch_photometry(source_id)
-        if len(chunk):
-            chunks.append(chunk)
-
-    if not chunks:
-        return _empty_epoch_table()
+    source_ids = tuple(source_ids)
+    chunks = [_get_epoch_photometry(source_id) for source_id in source_ids]
     if len(chunks) == 1:
         return chunks[0].copy()
     return table.vstack(chunks)
@@ -87,30 +59,21 @@ def _fetch_epoch_photometry(source_ids: Iterable[int]) -> table.Table:
 
 def _clean_epoch_photometry(data: table.Table) -> table.Table:
     """Drop rows with missing Gaia G epoch time, flux, or magnitude values."""
-    if len(data) == 0:
-        out = data.copy()
-        for name in _EPOCH_FLOAT_COLUMNS:
-            if name in out.colnames:
-                out[name] = _as_float_array(out[name])
-        return out
-
     mask = (
-        np.isfinite(_as_float_array(data["g_transit_time"]))
-        & np.isfinite(_as_float_array(data["g_transit_mag"]))
-        & np.isfinite(_as_float_array(data["g_transit_flux"]))
-        & np.isfinite(_as_float_array(data["g_transit_flux_error"]))
+        np.isfinite(np.asarray(data["g_transit_time"], dtype=float))
+        & np.isfinite(np.asarray(data["g_transit_mag"], dtype=float))
+        & np.isfinite(np.asarray(data["g_transit_flux"], dtype=float))
+        & np.isfinite(np.asarray(data["g_transit_flux_error"], dtype=float))
     )
     out = data[mask].copy()
     for name in _EPOCH_FLOAT_COLUMNS:
-        out[name] = _as_float_array(out[name])
+        out[name] = np.asarray(out[name], dtype=float)
     return out
 
 
 def _join_catalog_with_epoch_photometry(catalog: table.Table, epoch_data: table.Table) -> table.Table:
     """Join a source catalog to epoch photometry on `source_id` and clean the result."""
     epoch_data = _clean_epoch_photometry(epoch_data)
-    if len(epoch_data) == 0 or "source_id" not in epoch_data.colnames:
-        return _empty_joined_table(catalog, epoch_data)
     return table.join(catalog, epoch_data, keys="source_id")
 
 

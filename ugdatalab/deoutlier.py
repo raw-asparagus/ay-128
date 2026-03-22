@@ -2,7 +2,7 @@ import emcee
 
 import numpy as np
 
-from ugdatalab.models.gaia import GaiaQuality, rrlyrae_class_mask
+from ugdatalab.models.gaia import GaiaQuality
 
 
 class MixtureContaminationModel:
@@ -100,8 +100,8 @@ class MixtureContaminationModel:
 
         inlier_probs = np.ones(len(source.data))
         for label, mask in [
-            ("RRab", rrlyrae_class_mask(source.data, "RRab")),
-            ("RRc", rrlyrae_class_mask(source.data, "RRc")),
+            ("RRab", source.data["best_classification"] == "RRab"),
+            ("RRc", source.data["best_classification"] == "RRc"),
         ]:
             if mask.sum() < 10:
                 continue

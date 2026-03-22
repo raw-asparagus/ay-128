@@ -3,23 +3,19 @@ from ugdatalab.models import (
     GaiaQuality,
     Local,
     StrictGBPRP,
-    Cut1,
-    Cut2,
-    DR3Astrometric,
-    WISEQualityFilter,
-    attach_w2_absolute_magnitude,
-    MixtureContaminationModel,
+    LindegrenC1,
+    LindegrenC2,
+    WISEData,
+    WISESample,
     get_gaia,
-    rrlyrae_class_mask,
-    rrlyrae_representative_period,
-    get_sdss,
-    _cache_stable,
+    cache_stable,
 )
+from ugdatalab.deoutlier import MixtureContaminationModel
 from ugdatalab.mcmc import (
     MetropolisHastings,
     NoUTurnHamiltonian,
 )
-from ugdatalab.plotting import (
+from ugdatalab.lab1_plotter import (
     figure,
     figure_names,
     plot_calibration_sky_distribution,
@@ -109,7 +105,7 @@ from ugdatalab.artifacts import (
     load_table_npz,
     load_or_create_table_npz,
 )
-from ugdatalab.lightcurves import (
+from ugdatalab.models.gaia.lightcurves import (
     DEFAULT_PERIOD_MIN,
     DEFAULT_PERIOD_MAX,
     FourierFit,

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import numpy as np
 import corner
 import matplotlib.pyplot as plt

@@ -13,7 +13,7 @@
 - `ugdatalab.fourier`
   Builds Fourier design matrices, fits harmonic light-curve models, cross-validates the harmonic order, extrapolates future magnitudes, and computes Fourier mean magnitudes.
 - `ugdatalab.models`
-  Provides `Local`, `StrictGBPRP`, `Cut1`, and `Cut2` for the main quality and locality cuts.
+  Provides `Local`, `StrictGBPRP`, `LindegrenC1`, and `LindegrenC2` for the main quality and locality cuts.
 - `ugdatalab.plotting`
   Provides the reusable Gaia/deoutlier and MCMC plotting helpers used by the Lab 1 notebooks.
 - `ugdatalab.deoutlier.MixtureContaminationModel`
@@ -68,7 +68,7 @@
 ## Package-To-Analysis Mapping
 
 - Sample construction:
-  `GaiaQuality(query)` followed by `Local`, `StrictGBPRP`, `Cut1`, and `Cut2`.
+  `GaiaQuality(query)` followed by `Local`, `StrictGBPRP`, `LindegrenC1`, and `LindegrenC2`.
 - Light-curve download and period finding:
   `build_rrlyrae_top_n_query(...)`, `get_epoch_photometry(...)`, `join_catalog_with_epoch_photometry(...)`, and `lomb_scargle_periodogram(...)`.
 - Fourier modeling:
@@ -91,12 +91,12 @@
 
 ## Notebook Cache Pattern
 
-For notebook-defined Gaia helpers, import `_cache_stable` from the package and give the helper its own namespace:
+For notebook-defined Gaia helpers, import `cache_stable` from the package and give the helper its own namespace:
 
 ```python
-from ugdatalab import _cache_stable, get_gaia
+from ugdatalab import cache_stable, get_gaia
 
-@_cache_stable(module="lab02.epoch_photometry")
+@cache_stable(module="lab02.epoch_photometry")
 def get_epoch_photometry(source_id):
     ...
 ```

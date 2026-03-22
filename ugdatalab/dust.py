@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import ast
 import json
 from collections.abc import Mapping, Sequence
@@ -12,15 +10,15 @@ import astropy.units as u
 import numpy as np
 from astropy import table
 from astropy.coordinates import SkyCoord
+from dustmaps.sfd import SFDQuery
 
 from ugdatalab.artifacts import load_table_npz, save_table_npz
 from ugdatalab.models.gaia import (
-    _as_float_array,
-    _sanitize_vari_rrlyrae_table,
-    get_gaia,
-    rrlyrae_class_mask,
-    rrlyrae_representative_period,
+    _attach_rrlyrae_representative_period_column,
+    _get_gaia as get_gaia,
 )
+from ugdatalab.models.gaia.gaia import _GAIA_SCHEMA
+from ugdatalab.models.utils import _sanitize_table
 
 
 FULL_RRLYRAE_GAIA_SOURCE_QUERY = """
@@ -105,7 +103,10 @@ def load_cached_gaia_table(
         except (SyntaxError, ValueError):
             cached_query = str(raw_query).strip().strip("'")
         if _normalize_query(cached_query) == query_key:
-            return _sanitize_vari_rrlyrae_table(joblib.load(metadata_path.with_name("output.pkl")))
+            data = joblib.load(metadata_path.with_name("output.pkl"))
+            _sanitize_table(data, _GAIA_SCHEMA)
+            _attach_rrlyrae_representative_period_column(data)
+            return data
     return None
 
 
@@ -130,7 +131,9 @@ def load_or_create_rrab_rrc_full_catalog(
         data = load_cached_gaia_table(FULL_RRLYRAE_GAIA_SOURCE_QUERY, cache_root=cache_root)
         status = "created_from_full_cache"
     if data is None:
-        data = _sanitize_vari_rrlyrae_table(get_gaia(RRAB_RRC_GAIA_SOURCE_QUERY))
+        data = get_gaia(RRAB_RRC_GAIA_SOURCE_QUERY)
+        _sanitize_table(data, _GAIA_SCHEMA)
+        _attach_rrlyrae_representative_period_column(data)
         status = "created_from_query"
 
     rrab_rrc = _rrab_rrc_only(data)
@@ -194,13 +197,13 @@ def compute_empirical_extinction(
     """Compute class-specific intrinsic color, color excess, and empirical extinction."""
     out = data.copy(copy_data=True) if copy else data
 
-    period = rrlyrae_representative_period(out)
+    period = np.asarray(out["rrlyrae_representative_period"], dtype=float)
     log10_period = np.full(len(out), np.nan, dtype=float)
     positive_period = np.isfinite(period) & (period > 0)
     log10_period[positive_period] = np.log10(period[positive_period])
 
-    snr_bp = _as_float_array(out["phot_bp_mean_flux_over_error"])
-    snr_rp = _as_float_array(out["phot_rp_mean_flux_over_error"])
+    snr_bp = np.asarray(out["phot_bp_mean_flux_over_error"], dtype=float)
+    snr_rp = np.asarray(out["phot_rp_mean_flux_over_error"], dtype=float)
     sigma_color_obs = (2.5 / np.log(10.0)) * np.sqrt(1.0 / snr_bp**2 + 1.0 / snr_rp**2)
 
     color_int = np.full(len(out), np.nan, dtype=float)
@@ -209,7 +212,7 @@ def compute_empirical_extinction(
 
     for rr_class, summary_like in period_color_models.items():
         summary = _coerce_summary(summary_like)
-        mask = rrlyrae_class_mask(out, rr_class)
+        mask = out["best_classification"] == rr_class
         mask &= np.isfinite(log10_period)
 
         color_int[mask] = summary.slope_median * log10_period[mask] + summary.intercept_median
@@ -218,7 +221,7 @@ def compute_empirical_extinction(
         )
         sigma_intrinsic[mask] = summary.intrinsic_sigma_median
 
-    color_obs = _as_float_array(out["bp_rp"])
+    color_obs = np.asarray(out["bp_rp"], dtype=float)
     E_bprp = color_obs - color_int
     A_G_calc = float(R_G) * E_bprp
     sigma_E = np.sqrt(sigma_color_obs**2 + sigma_coeff**2 + sigma_intrinsic**2)
@@ -252,8 +255,8 @@ def empirical_vs_catalog_extinction(
     catalog_column: str = "g_absorption",
 ) -> ExtinctionResiduals:
     """Return the finite comparison subset for Lab 1 part 26."""
-    empirical = _as_float_array(data[empirical_column])
-    catalog = _as_float_array(data[catalog_column])
+    empirical = np.asarray(data[empirical_column], dtype=float)
+    catalog = np.asarray(data[catalog_column], dtype=float)
     mask = np.isfinite(empirical) & np.isfinite(catalog)
     return ExtinctionResiduals(
         mask=mask,
@@ -292,29 +295,29 @@ def build_reddening_quality_mask(
 ) -> np.ndarray:
     """Construct a practical quality mask for the empirical reddening map."""
     mask = (
-        np.isfinite(_as_float_array(data["E_bprp"]))
-        & np.isfinite(_as_float_array(data["A_G_calc"]))
-        & np.isfinite(_as_float_array(data["bp_rp"]))
-        & (_as_float_array(data["phot_bp_mean_flux_over_error"]) > float(min_bp_snr))
-        & (_as_float_array(data["phot_rp_mean_flux_over_error"]) > float(min_rp_snr))
+        np.isfinite(np.asarray(data["E_bprp"], dtype=float))
+        & np.isfinite(np.asarray(data["A_G_calc"], dtype=float))
+        & np.isfinite(np.asarray(data["bp_rp"], dtype=float))
+        & (np.asarray(data["phot_bp_mean_flux_over_error"], dtype=float) > float(min_bp_snr))
+        & (np.asarray(data["phot_rp_mean_flux_over_error"], dtype=float) > float(min_rp_snr))
     )
 
     if apply_bp_rp_excess_cut:
-        bp_rp = _as_float_array(data["bp_rp"])
-        excess = _as_float_array(data["phot_bp_rp_excess_factor"])
+        bp_rp = np.asarray(data["bp_rp"], dtype=float)
+        excess = np.asarray(data["phot_bp_rp_excess_factor"], dtype=float)
         mask &= (excess > 1.0 + 0.015 * bp_rp**2) & (excess < 1.3 + 0.06 * bp_rp**2)
 
     if max_sigma_E is not None:
-        mask &= _as_float_array(data["sigma_E"]) <= float(max_sigma_E)
+        mask &= np.asarray(data["sigma_E"], dtype=float) <= float(max_sigma_E)
     if max_abs_E is not None:
-        mask &= np.abs(_as_float_array(data["E_bprp"])) <= float(max_abs_E)
+        mask &= np.abs(np.asarray(data["E_bprp"], dtype=float)) <= float(max_abs_E)
     if min_ebprp is not None:
-        mask &= _as_float_array(data["E_bprp"]) >= float(min_ebprp)
+        mask &= np.asarray(data["E_bprp"], dtype=float) >= float(min_ebprp)
     if max_ebprp is not None:
-        mask &= _as_float_array(data["E_bprp"]) <= float(max_ebprp)
+        mask &= np.asarray(data["E_bprp"], dtype=float) <= float(max_ebprp)
     if min_reddening_snr is not None:
-        sigma_e = _as_float_array(data["sigma_E"])
-        e_bprp = _as_float_array(data["E_bprp"])
+        sigma_e = np.asarray(data["sigma_E"], dtype=float)
+        e_bprp = np.asarray(data["E_bprp"], dtype=float)
         with np.errstate(divide="ignore", invalid="ignore"):
             snr = np.where(sigma_e > 0, e_bprp / sigma_e, -np.inf)
         mask &= snr >= float(min_reddening_snr)
@@ -327,13 +330,6 @@ def apply_reddening_quality_mask(data: table.Table, **kwargs: Any) -> table.Tabl
 
 
 def _load_sfd_query():
-    try:
-        from dustmaps.sfd import SFDQuery
-    except ImportError as exc:
-        raise ImportError(
-            "dustmaps is required for SFD comparisons. Install the optional "
-            "`ugdatalab[dust]` dependency or add `dustmaps` to your environment."
-        ) from exc
     return SFDQuery()
 
 
@@ -347,8 +343,8 @@ def sample_sfd_ebv(
         query = _load_sfd_query()
 
     coords = SkyCoord(
-        l=_as_float_array(data["l"]) * u.deg,
-        b=_as_float_array(data["b"]) * u.deg,
+        l=np.asarray(data["l"], dtype=float) * u.deg,
+        b=np.asarray(data["b"], dtype=float) * u.deg,
         frame="galactic",
     )
     return np.asarray(query(coords), dtype=float)
@@ -384,13 +380,13 @@ def build_quality_components(
 
     Keys: 'finite', 'bp_snr', 'rp_snr', 'bp_rp_excess', 'sigma_e', 'physical_e', 'adopted'.
     """
-    e_bprp = _as_float_array(data["E_bprp"])
-    a_g = _as_float_array(data["A_G_calc"])
-    bp_rp = _as_float_array(data["bp_rp"])
-    snr_bp = _as_float_array(data["phot_bp_mean_flux_over_error"])
-    snr_rp = _as_float_array(data["phot_rp_mean_flux_over_error"])
-    excess = _as_float_array(data["phot_bp_rp_excess_factor"])
-    sigma_e = _as_float_array(data["sigma_E"])
+    e_bprp = np.asarray(data["E_bprp"], dtype=float)
+    a_g = np.asarray(data["A_G_calc"], dtype=float)
+    bp_rp = np.asarray(data["bp_rp"], dtype=float)
+    snr_bp = np.asarray(data["phot_bp_mean_flux_over_error"], dtype=float)
+    snr_rp = np.asarray(data["phot_rp_mean_flux_over_error"], dtype=float)
+    excess = np.asarray(data["phot_bp_rp_excess_factor"], dtype=float)
+    sigma_e = np.asarray(data["sigma_E"], dtype=float)
 
     finite = np.isfinite(e_bprp) & np.isfinite(a_g) & np.isfinite(bp_rp)
     bp_snr = np.isfinite(snr_bp) & (snr_bp > float(min_bp_snr))
@@ -421,8 +417,8 @@ def build_quality_components(
 
 def build_stage_summary(data: table.Table, components: dict) -> table.Table:
     """Build a table summarizing how many stars survive each quality stage."""
-    rrab_mask = rrlyrae_class_mask(data, "RRab")
-    rrc_mask = rrlyrae_class_mask(data, "RRc")
+    rrab_mask = data["best_classification"] == "RRab"
+    rrc_mask = data["best_classification"] == "RRc"
     total = len(data)
 
     stages = [
@@ -458,8 +454,8 @@ def build_stage_summary(data: table.Table, components: dict) -> table.Table:
 
 def build_criterion_failure_table(data: table.Table, components: dict) -> table.Table:
     """Build a table of how many stars fail each quality criterion independently."""
-    rrab_mask = rrlyrae_class_mask(data, "RRab")
-    rrc_mask = rrlyrae_class_mask(data, "RRc")
+    rrab_mask = data["best_classification"] == "RRab"
+    rrc_mask = data["best_classification"] == "RRc"
     finite = components["finite"]
     finite_count = int(finite.sum())
 
@@ -548,8 +544,8 @@ def subset_row(label: str, data: table.Table, mask: np.ndarray) -> dict:
 
     Keys: subset, N, median_E_bprp, median_SFD_EBV, r2.
     """
-    values_empirical = _as_float_array(data["E_bprp"])[mask]
-    values_sfd = _as_float_array(data["sfd_ebv"])[mask]
+    values_empirical = np.asarray(data["E_bprp"], dtype=float)[mask]
+    values_sfd = np.asarray(data["sfd_ebv"], dtype=float)[mask]
     return {
         "subset": label,
         "N": int(np.count_nonzero(mask)),

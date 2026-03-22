@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from astropy import table
+
+from ugdatalab.models.gaia import _attach_rrlyrae_representative_period_column
 
 
 def _archive_ready_column(column: Any) -> np.ndarray:
@@ -56,9 +56,12 @@ def save_table_npz(path: str | Path, data: table.Table) -> Path:
 def load_table_npz(path: str | Path) -> table.Table:
     with np.load(Path(path), allow_pickle=False) as archive:
         if "colnames" not in archive.files:
-            return table.Table({name: archive[name] for name in archive.files})
-        colnames = [str(name) for name in archive["colnames"]]
-        return table.Table({name: archive[name] for name in colnames})
+            data = table.Table({name: archive[name] for name in archive.files})
+        else:
+            colnames = [str(name) for name in archive["colnames"]]
+            data = table.Table({name: archive[name] for name in colnames})
+
+    return _attach_rrlyrae_representative_period_column(data)
 
 
 def load_or_create_table_npz(

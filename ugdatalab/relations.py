@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -7,10 +5,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
 from astropy import table
 
 from ugdatalab.mcmc import MetropolisHastings, NoUTurnHamiltonian
-from ugdatalab.models.gaia import _as_float_array, rrlyrae_class_mask
 
 
 @dataclass
@@ -100,13 +99,13 @@ _RELATION_META = {
 def _class_mask(data, rr_class: str) -> np.ndarray:
     if rr_class not in {"RRab", "RRc"}:
         raise ValueError(f"Unsupported RR Lyrae class: {rr_class}")
-    return rrlyrae_class_mask(data, rr_class)
+    return data["best_classification"] == rr_class
 
 
 def _period_column(data, rr_class: str) -> np.ndarray:
     if rr_class == "RRab":
-        return _as_float_array(data["pf"])
-    return _as_float_array(data["p1_o"])
+        return np.asarray(data["pf"])
+    return np.asarray(data["p1_o"], dtype=float)
 
 
 def relation_parameter_labels(relation_kind: str) -> list[str]:
@@ -133,8 +132,8 @@ def _predictive_summary(
     seed: int = 42,
     n_grid: int = 300,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    x_obs = _as_float_array(ctx.x_raw)
-    sigma_obs = _as_float_array(ctx.sigma)
+    x_obs = np.asarray(ctx.x_raw, dtype=float)
+    sigma_obs = np.asarray(ctx.sigma, dtype=float)
     x_mean = float(ctx.x_mean)
     if len(x_obs) == 0:
         raise ValueError(f"No observations available for {getattr(ctx, 'class_label', 'relation')}.")
@@ -142,7 +141,7 @@ def _predictive_summary(
     x_grid = np.linspace(float(np.min(x_obs)), float(np.max(x_obs)), int(n_grid))
     order = np.argsort(x_obs)
     sigma_logp = getattr(ctx, "sigma_logp", np.zeros_like(x_obs))
-    sigma_logp = _as_float_array(sigma_logp)
+    sigma_logp = np.asarray(sigma_logp, dtype=float)
     sigma_obs_grid = np.interp(x_grid, x_obs[order], sigma_obs[order])
     sigma_x_grid = np.interp(x_grid, x_obs[order], sigma_logp[order])
 
@@ -178,9 +177,9 @@ def build_optical_pl_comparison_data(
     if rr_class not in {"RRab", "RRc"}:
         raise ValueError("Expected `ctx.class_label` to be `RRab` or `RRc`.")
 
-    x_obs = _as_float_array(ctx.x_raw)
-    y_obs = _as_float_array(ctx.y)
-    sigma_obs = _as_float_array(ctx.sigma)
+    x_obs = np.asarray(ctx.x_raw, dtype=float)
+    y_obs = np.asarray(ctx.y, dtype=float)
+    sigma_obs = np.asarray(ctx.sigma, dtype=float)
     values = np.asarray(samples, dtype=float)
     if values.ndim != 2 or values.shape[1] != 3:
         raise ValueError("Expected posterior samples with shape (n_samples, 3).")
@@ -234,9 +233,9 @@ def build_optical_pc_comparison_data(
     if rr_class not in {"RRab", "RRc"}:
         raise ValueError("Expected `ctx.class_label` to be `RRab` or `RRc`.")
 
-    x_obs = _as_float_array(ctx.x_raw)
-    y_obs = _as_float_array(ctx.y)
-    sigma_obs = _as_float_array(ctx.sigma)
+    x_obs = np.asarray(ctx.x_raw, dtype=float)
+    y_obs = np.asarray(ctx.y, dtype=float)
+    sigma_obs = np.asarray(ctx.sigma, dtype=float)
     values = np.asarray(samples, dtype=float)
     if values.ndim != 2 or values.shape[1] != 3:
         raise ValueError("Expected posterior samples with shape (n_samples, 3).")
@@ -439,12 +438,12 @@ def prepare_relation_data(source, rr_class: str, relation_kind: str) -> Relation
     x = np.log10(period)
 
     if relation_kind == "pl":
-        y = _as_float_array(sub["M_G"])
-        sigma = _as_float_array(sub["sigma_M"])
+        y = np.asarray(sub["M_G"], dtype=float)
+        sigma = np.asarray(sub["sigma_M"], dtype=float)
     else:
-        y = _as_float_array(sub["bp_rp"])
-        snr_bp = _as_float_array(sub["phot_bp_mean_flux_over_error"])
-        snr_rp = _as_float_array(sub["phot_rp_mean_flux_over_error"])
+        y = np.asarray(sub["bp_rp"], dtype=float)
+        snr_bp = np.asarray(sub["phot_bp_mean_flux_over_error"], dtype=float)
+        snr_rp = np.asarray(sub["phot_rp_mean_flux_over_error"], dtype=float)
         sigma = (2.5 / np.log(10)) * np.sqrt(1.0 / snr_bp**2 + 1.0 / snr_rp**2)
 
     ok = np.isfinite(x) & np.isfinite(y) & np.isfinite(sigma) & (sigma > 0)
@@ -603,9 +602,6 @@ def fit_relation_mh(
 
 
 def _build_pymc_model(data: RelationData, model_kind: str):
-    import pymc as pm
-    import pytensor.tensor as pt
-
     x = pt.as_tensor_variable(data.x)
     y = pt.as_tensor_variable(data.y)
     sigma_obs = pt.as_tensor_variable(data.sigma)
@@ -668,11 +664,11 @@ def build_pl_context(
     period_column = "pf" if class_label == "RRab" else "p1_o"
     period_error_column = "pf_error" if class_label == "RRab" else "p1_o_error"
 
-    period = _as_float_array(data[period_column])
-    period_error = _as_float_array(data[period_error_column])
+    period = np.asarray(data[period_column], dtype=float)
+    period_error = np.asarray(data[period_error_column], dtype=float)
     x_raw = np.log10(period)
-    y = _as_float_array(data["M_G"])
-    sigma = _as_float_array(data["sigma_M"])
+    y = np.asarray(data["M_G"], dtype=float)
+    sigma = np.asarray(data["sigma_M"], dtype=float)
     sigma_logp = period_error / (period * np.log(10.0))
 
     mask = (
@@ -731,12 +727,12 @@ def build_pc_context(
     period_column = "pf" if class_label == "RRab" else "p1_o"
     period_error_column = "pf_error" if class_label == "RRab" else "p1_o_error"
 
-    period = _as_float_array(data[period_column])
-    period_error = _as_float_array(data[period_error_column])
+    period = np.asarray(data[period_column], dtype=float)
+    period_error = np.asarray(data[period_error_column], dtype=float)
     x_raw = np.log10(period)
-    y = _as_float_array(data["bp_rp"])
-    snr_bp = _as_float_array(data["phot_bp_mean_flux_over_error"])
-    snr_rp = _as_float_array(data["phot_rp_mean_flux_over_error"])
+    y = np.asarray(data["bp_rp"], dtype=float)
+    snr_bp = np.asarray(data["phot_bp_mean_flux_over_error"], dtype=float)
+    snr_rp = np.asarray(data["phot_rp_mean_flux_over_error"], dtype=float)
     sigma = (2.5 / np.log(10.0)) * np.sqrt(1.0 / snr_bp ** 2 + 1.0 / snr_rp ** 2)
     sigma_logp = period_error / (period * np.log(10.0))
 
@@ -804,11 +800,11 @@ def build_w2_context(
     period_column = "pf" if class_label == "RRab" else "p1_o"
     period_error_column = "pf_error" if class_label == "RRab" else "p1_o_error"
 
-    period = _as_float_array(data[period_column])
-    period_error = _as_float_array(data[period_error_column])
+    period = np.asarray(data[period_column], dtype=float)
+    period_error = np.asarray(data[period_error_column], dtype=float)
     x_raw = np.log10(period)
-    y = _as_float_array(data["M_W2"])
-    sigma = _as_float_array(data["sigma_M_W2"])
+    y = np.asarray(data["M_W2"], dtype=float)
+    sigma = np.asarray(data["sigma_M_W2"], dtype=float)
     sigma_logp = period_error / (period * np.log(10.0))
 
     mask = (
@@ -861,9 +857,6 @@ def build_w2_context(
 
 def _build_pl_pymc_model_normal_priors(ctx: SimpleNamespace, model_kind: str):
     """Build a PyMC model for the PL/PC/W2 relation with Normal/HalfNormal priors."""
-    import pymc as pm
-    import pytensor.tensor as pt
-
     x_centered = pt.as_tensor_variable(ctx.x_centered)
     y = pt.as_tensor_variable(ctx.y)
     sigma_obs = pt.as_tensor_variable(ctx.sigma)
@@ -947,9 +940,6 @@ def fit_w2_nuts(ctx: SimpleNamespace, *, n_steps: int = 2000, n_burn: int = 1000
 
 def fit_pc_nuts(ctx: SimpleNamespace, *, n_steps: int = 10000, n_burn: int = 2000, seed: int = 42) -> SimpleNamespace:
     """NUTS fit for period-color relation. Returns samples in [a_c, b_c, sigma_c_scatter] space."""
-    import pymc as pm
-    import pytensor.tensor as pt
-
     display_labels = [r"$a_c$", r"$b_c$", r"$\sigma_c$"]
     x_centered = pt.as_tensor_variable(ctx.x_centered)
     sigma_obs = pt.as_tensor_variable(ctx.sigma)
@@ -1062,10 +1052,10 @@ def build_band_summary(
 ) -> SimpleNamespace:
     """Predictive summary for a single band given context + samples."""
     values = np.asarray(samples, dtype=float)
-    x_obs = _as_float_array(ctx.x_raw)
-    y_obs = _as_float_array(ctx.y)
-    sigma_obs = _as_float_array(ctx.sigma)
-    sigma_logp = _as_float_array(ctx.sigma_logp)
+    x_obs = np.asarray(ctx.x_raw, dtype=float)
+    y_obs = np.asarray(ctx.y, dtype=float)
+    sigma_obs = np.asarray(ctx.sigma, dtype=float)
+    sigma_logp = np.asarray(ctx.sigma_logp, dtype=float)
 
     x_grid = np.linspace(float(np.min(x_obs)), float(np.max(x_obs)), int(n_grid))
     order = np.argsort(x_obs)
@@ -1118,10 +1108,9 @@ def pl_scatter_metrics(data: table.Table, label: str) -> dict:
 
     Keys: sample, N, sigma_MAD [mag], RMS [mag], N(|ΔM|>1 mag), N(|ΔM|>2 mag).
     """
-    from ugdatalab.models.gaia import rrlyrae_representative_period
-    periods = _as_float_array(rrlyrae_representative_period(data))
+    periods = np.asarray(data["rrlyrae_representative_period"], dtype=float)
     x = np.log10(periods)
-    y = _as_float_array(data["M_G"])
+    y = np.asarray(data["M_G"], dtype=float)
     coeff = np.polyfit(x, y, 1)
     resid = y - np.polyval(coeff, x)
     abs_resid = np.abs(resid)

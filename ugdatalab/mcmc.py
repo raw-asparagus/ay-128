@@ -1,4 +1,5 @@
 import numpy as np
+import pymc as pm
 
 class MetropolisHastings:
     """Single-chain Metropolis-Hastings sampler with an isotropic Gaussian proposal.
@@ -126,8 +127,6 @@ class NoUTurnHamiltonian:
         -------
         self
         """
-        import pymc as pm
-
         initvals = dict(zip(self.var_names, self.theta0))
 
         with self.model:
