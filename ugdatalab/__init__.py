@@ -7,7 +7,6 @@ from ugdatalab.models import (
     LindegrenC2,
     WISEData,
     WISESample,
-    get_gaia,
     cache_stable,
 )
 from ugdatalab.deoutlier import MixtureContaminationModel
@@ -108,17 +107,12 @@ from ugdatalab.artifacts import (
 from ugdatalab.models.gaia.lightcurves import (
     DEFAULT_PERIOD_MIN,
     DEFAULT_PERIOD_MAX,
-    FourierFit,
-    HarmonicCrossValidationResult,
-    attach_flux_mean_magnitudes,
-    attach_periodogram_periods,
-    cross_validate_harmonics,
-    fourier_fit,
-    fourier_mean_magnitude,
-    fourier_mean_magnitude_error,
-    lomb_scargle_periodogram,
-    phase_fold,
-    predict_future_magnitude,
+)
+from ugdatalab.methods.periodogram import PeriodogramResult, lomb_scargle
+from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
+from ugdatalab.methods.cross_validate import (
+    ValidationResult, HoldoutResult, KFoldResult,
+    holdout_validate, k_fold_validate,
 )
 from ugdatalab.dust import (
     FULL_RRLYRAE_GAIA_SOURCE_QUERY,

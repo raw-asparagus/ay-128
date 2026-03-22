@@ -61,7 +61,8 @@ def load_table_npz(path: str | Path) -> table.Table:
             colnames = [str(name) for name in archive["colnames"]]
             data = table.Table({name: archive[name] for name in colnames})
 
-    return _attach_rrlyrae_representative_period_column(data)
+    _attach_rrlyrae_representative_period_column(data)
+    return data
 
 
 def load_or_create_table_npz(

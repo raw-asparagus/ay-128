@@ -8,5 +8,4 @@ from ugdatalab.models.gaia import (
     LindegrenC2,
     WISEData,
     WISESample,
-    _get_gaia as get_gaia,
 )

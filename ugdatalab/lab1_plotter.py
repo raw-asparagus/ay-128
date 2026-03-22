@@ -13,18 +13,10 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
 from .dust import binned_median_trend, pearson_r2
-from .models.gaia.lightcurves import (
-    FourierFit,
-    HarmonicCrossValidationResult,
-    attach_flux_mean_magnitudes,
-    attach_periodogram_periods,
-    cross_validate_harmonics,
-    fourier_fit,
-    fourier_mean_magnitude,
-    lomb_scargle_periodogram,
-    phase_fold,
-    predict_future_magnitude,
-)
+from .methods.fourier import FourierFit, fourier_fit, phase_fold
+from .methods.periodogram import lomb_scargle
+from .methods.cross_validate import ValidationResult, holdout_validate
+from .models.gaia.lightcurves import DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX
 from .paths import FIGURES_DIR, ensure_output_dirs
 from .plotting import (
     TEXTWIDTH_IN,
@@ -793,7 +785,11 @@ def plot_lomb_scargle_periodogram(source_id: int, data: Table):
     if len(data) == 0:
         raise ValueError("No light-curve rows available for plotting.")
 
-    periods, power, _ = lomb_scargle_periodogram(data)
+    result = lomb_scargle(
+        data["g_transit_time"], data["g_transit_flux"], data["g_transit_flux_error"],
+        DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX,
+    )
+    periods, power = result.periods, result.power
     periods = np.asarray(periods, dtype=float)
     power = np.asarray(power, dtype=float)
 
@@ -1604,7 +1600,7 @@ def plot_fourier_harmonic_fits(
         col = i % ncols
         is_bottom = i == col_last_i[col]
 
-        fit = fourier_fit(data, period, K)
+        fit = fourier_fit(epoch, mag, mag_err, period=period, k=K)
         model_mag = fit.predict(epoch_grid)
         fitted_mag = fit.predict(epoch)
         residuals = mag - fitted_mag
@@ -1657,7 +1653,7 @@ def plot_fourier_harmonic_fits(
 
 def _prepare_rrlyrae_shape_panels(source, rr_class: str) -> list[dict[str, Any]]:
     sample_data = _as_table(source)
-    lightcurves = attach_periodogram_periods(attach_flux_mean_magnitudes(_as_table(source, attr="lightcurves").copy()))
+    lightcurves = _as_table(source, attr="lightcurves").copy()
     lightcurve_source_ids = lightcurves["source_id"]
     period_column = "p1_o" if rr_class == "RRc" else "pf"
     phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
@@ -1668,10 +1664,18 @@ def _prepare_rrlyrae_shape_panels(source, rr_class: str) -> list[dict[str, Any]]
         period = float(row[period_column])
         star = lightcurves[lightcurve_source_ids == source_id]
 
-        cross_validation_res = cross_validate_harmonics(star)
-        best_K = int(cross_validation_res.best_K)
-        fit = fourier_fit(star, period, best_K)
-        mean_fourier_g = fourier_mean_magnitude(fit)
+        cv_period = float(star["period_ls"][0])
+        cross_validation_res = holdout_validate(
+            star["g_transit_time"], star["g_transit_mag"], star["g_transit_mag_err"],
+            lambda x, y, ye, k: fourier_fit(x, y, ye, cv_period, k),
+            np.arange(1, 26, dtype=int),
+        )
+        best_K = int(cross_validation_res.best_param)
+        fit = fourier_fit(
+            star["g_transit_time"], star["g_transit_mag"], star["g_transit_mag_err"],
+            period, best_K,
+        )
+        mean_fourier_g = float(star["fourier_mean_g_mag"][0])
 
         phase = phase_fold(star["g_transit_time"], period)
         model_centered_data = fit.predict(star["g_transit_time"]) - mean_fourier_g
@@ -1844,12 +1848,12 @@ def plot_rrlyrae_shape_comparison(rrab_source, rrc_source):
     return axes
 
 
-def plot_fourier_cross_validation(result: HarmonicCrossValidationResult):
-    Ks = np.asarray(result.Ks, dtype=int)
+def plot_fourier_cross_validation(result: ValidationResult, *, source_id: int = 0):
+    Ks = np.asarray(result.param_values, dtype=int)
     chi2r_train = np.asarray(result.chi2r_train, dtype=float)
     chi2r_cv = np.asarray(result.chi2r_cv, dtype=float)
-    best_K = int(result.best_K)
-    target_id = int(result.source_id)
+    best_K = int(result.best_param)
+    target_id = int(source_id)
     n_train = len(result.train_idx)
     n_cv = len(result.cv_idx)
     valid = np.isfinite(chi2r_train) & np.isfinite(chi2r_cv)
@@ -1924,8 +1928,8 @@ def plot_fourier_cv_normalized_residual_histograms(
         cv_norm_low,
         train_norm_best,
         cv_norm_best,
-        int(low_fit.K),
-        int(best_fit.K),
+        int(low_fit.k),
+        int(best_fit.k),
     )
 
 
@@ -2031,8 +2035,8 @@ def plot_fourier_cv_phase_comparison(
         phase_grid,
         model_mag_best,
         model_mag_high,
-        int(best_fit.K),
-        int(high_fit.K),
+        int(best_fit.k),
+        int(high_fit.k),
         train_errs=train_errs,
         cv_errs=cv_errs,
     )
@@ -2149,20 +2153,22 @@ def plot_fourier_train_cv_phase_comparison(
 
 
 def plot_fourier_extrapolation(
-    result: HarmonicCrossValidationResult,
-    fit,
+    result: ValidationResult,
+    fit: FourierFit,
 ):
-    epochs = np.asarray(fit.epochs, dtype=float)
-    mags = np.asarray(fit.mags, dtype=float)
-    mag_errs = np.asarray(fit.mag_errs, dtype=float)
+    epochs = np.asarray(fit.x, dtype=float)
+    mags = np.asarray(fit.y, dtype=float)
+    mag_errs = np.asarray(fit.y_err, dtype=float)
     epoch_last = float(np.max(epochs))
     epoch_window_start = epoch_last - 5.0
     epoch_window_end = epoch_last + 12.0
     epoch_grid = np.linspace(epoch_window_start, epoch_window_end, 2000)
     mag_grid = fit.predict(epoch_grid)
     mag_grid_err = fit.predict_std(epoch_grid)
-    epoch_pred, mag_pred, mag_pred_err = predict_future_magnitude(fit)
-    time_unit = getattr(fit.epochs, "unit", None)
+    epoch_pred = float(np.max(epochs)) + 10.0
+    mag_pred = float(fit.predict(np.array([epoch_pred]))[0])
+    mag_pred_err = float(fit.predict_std(np.array([epoch_pred]))[0])
+    time_unit = getattr(fit.x, "unit", None)
     time_label = f"Time [{time_unit}]" if time_unit is not None else "Time [days]"
 
     observed_mask = epochs >= float(np.min(epoch_grid))
@@ -2185,7 +2191,7 @@ def plot_fourier_extrapolation(
         mag_grid[model_observed],
         color=SECONDARY_COLOR,
         lw=LW_STANDARD,
-        label=rf"Fourier fit ($K={fit.K}$)",
+        label=rf"Fourier fit ($K={fit.k}$)",
     )
     ax.plot(
         epoch_grid[~model_observed],

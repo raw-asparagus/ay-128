@@ -7,7 +7,10 @@ from ugdatalab.models.cache import cache_stable
 import numpy as np
 
 from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G
-from ugdatalab.models.gaia.lightcurves import _fetch_joined_epoch_photometry
+from ugdatalab.models.gaia.lightcurves import (
+    _fetch_joined_epoch_photometry, _attach_derived_epoch_columns,
+    _attach_periodogram_periods, _attach_fourier_mean_magnitudes,
+)
 from ugdatalab.models.utils import _sanitize_table
 
 
@@ -15,7 +18,7 @@ from ugdatalab.models.utils import _sanitize_table
 # Derived columns
 # ---------------------------------------------------------------------------
 
-def _attach_rrlyrae_representative_period_column(data: table.Table) -> table.Table:
+def _attach_rrlyrae_representative_period_column(data: table.Table) -> None:
     cf = data["best_classification"]
 
     period = np.full(len(data), np.nan, dtype=float)
@@ -25,7 +28,6 @@ def _attach_rrlyrae_representative_period_column(data: table.Table) -> table.Tab
     period[fundamental] = data["pf"][fundamental]
     period[first_overtone] = data["p1_o"][first_overtone]
     data["rrlyrae_representative_period"] = period
-    return data
 
 
 _GAIA_SCHEMA = {
@@ -43,7 +45,7 @@ _GAIA_SCHEMA = {
 }
 
 
-def _add_gaia_photometry_columns(data: table.Table) -> table.Table:
+def _add_gaia_photometry_columns(data: table.Table) -> None:
     phot_g_mean_flux = data["phot_g_mean_flux"]
     phot_g_mean_flux_error = data["phot_g_mean_flux_error"]
     sigma_G_meas = (2.5 / np.log(10)) * np.abs(phot_g_mean_flux_error / phot_g_mean_flux)
@@ -54,7 +56,6 @@ def _add_gaia_photometry_columns(data: table.Table) -> table.Table:
     data["sigma_mu"] = 5 * data["parallax_error"] / (omega * np.log(10))
     data["M_G"] = data["phot_g_mean_mag"] - data["mu"]
     data["sigma_M"] = np.sqrt(data["sigma_G"]**2 + data["sigma_mu"]**2)
-    return data
 
 
 @cache_stable(module="ugdatalab.gaia")
@@ -70,7 +71,7 @@ def _get_gaia_quality(query):
     poe = raw["parallax_over_error"]
     b = raw["b"]
     data = raw[(poe > 5) & (np.abs(b) > 30)]
-    data = _add_gaia_photometry_columns(data)
+    _add_gaia_photometry_columns(data)
     return data
 
 # ---------------------------------------------------------------------------
@@ -97,9 +98,11 @@ class GaiaData:
             self.lightcurves = None
             return
 
-        self.lightcurves = _fetch_joined_epoch_photometry(
-            self.data,
-        )
+        lightcurves = _fetch_joined_epoch_photometry(self.data)
+        _attach_derived_epoch_columns(lightcurves)
+        _attach_periodogram_periods(lightcurves)
+        _attach_fourier_mean_magnitudes(lightcurves)
+        self.lightcurves = lightcurves
 
 
 class GaiaQuality(GaiaData):

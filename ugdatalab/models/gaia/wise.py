@@ -22,14 +22,13 @@ _WISE_SCHEMA = {
 }
 
 
-def _add_wise_photometry_columns(data: table.Table) -> table.Table:
+def _add_wise_photometry_columns(data: table.Table) -> None:
     """Attach mu, sigma_mu, M_W2, sigma_M_W2 from w2mpro and Gaia parallax."""
     omega = data["parallax"]
     data["mu"] = 10 - 5 * np.log10(omega)
     data["sigma_mu"] = 5 * data["parallax_error"] / (omega * np.log(10))
     data["M_W2"] = data["w2mpro"] - data["mu"]
     data["sigma_M_W2"] = np.sqrt(data["w2mpro_error"] ** 2 + data["sigma_mu"] ** 2)
-    return data
 
 
 @cache_stable(module="ugdatalab.wise")
@@ -38,7 +37,7 @@ def _get_wise_quality(query):
     poe = raw["parallax_over_error"]
     b = raw["b"]
     data = raw[(poe > 5) & (np.abs(b) > 30)]
-    data = _add_wise_photometry_columns(data)
+    _add_wise_photometry_columns(data)
     return data
 
 
