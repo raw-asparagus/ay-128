@@ -26,9 +26,19 @@ class MixtureResult:
         Per-data-point posterior inlier probability, averaged over MCMC draws.
     theta : ndarray
         Posterior median of the inlier model parameters.
+    samples : ndarray
+        Posterior samples, shape (n_samples, n_params). For trace/corner plots.
+    var_names : list[str]
+        Names of the inlier model parameters.
+    trace : InferenceData
+        Full PyMC trace for diagnostics.
     """
     inlier_prob: np.ndarray
     theta: np.ndarray
+    samples: np.ndarray
+    var_names: list
+    labels: list
+    trace: object
 
 
 def mixture_contamination(
@@ -62,9 +72,16 @@ def mixture_contamination(
     model_var_names = [v.name for v in model.free_RVs if v.name != "f"]
     posterior = trace.posterior
     theta_median = np.array([float(posterior[name].median()) for name in model_var_names])
+    samples = np.column_stack([
+        posterior[name].values.flatten() for name in model_var_names
+    ])
     probs = likelihood.inlier_probs(trace, model_var_names)
 
     return MixtureResult(
         inlier_prob=probs,
         theta=theta_median,
+        samples=samples,
+        var_names=model_var_names,
+        labels=likelihood.param_labels,
+        trace=trace,
     )

@@ -23,6 +23,12 @@ class Likelihood(ABC):
     y: np.ndarray
     y_err: np.ndarray
 
+    @property
+    @abstractmethod
+    def param_labels(self) -> list[str]:
+        """LaTeX-formatted parameter labels for plotting."""
+        ...
+
     @abstractmethod
     def inlier_probs(self, trace, model_var_names: list[str]) -> np.ndarray:
         """Compute per-point inlier probabilities from posterior samples."""

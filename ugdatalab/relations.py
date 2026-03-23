@@ -9,7 +9,7 @@ import pymc as pm
 import pytensor.tensor as pt
 from astropy import table
 
-from ugdatalab.mcmc import MetropolisHastings, NoUTurnHamiltonian
+from ugdatalab.methods.mcmc import MCMCResult, nuts_sample
 
 
 @dataclass

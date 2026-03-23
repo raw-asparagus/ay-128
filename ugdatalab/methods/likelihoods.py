@@ -28,6 +28,10 @@ class LinearGaussianLikelihood(GaussianLikelihood):
         self.y = np.asarray(self.y, dtype=float)
         self.y_err = np.asarray(self.y_err, dtype=float)
 
+    @property
+    def param_labels(self) -> list[str]:
+        return [r"$a$", r"$b$", r"$\log_{10}\,\sigma_s$"]
+
     def _predict(self, x, theta):
         a, b, *_ = theta
         return a + b * np.asarray(x, dtype=float)

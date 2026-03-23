@@ -12,13 +12,13 @@ from astropy.table import Table
 from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 
-from .dust import binned_median_trend, pearson_r2
-from .methods.fourier import FourierFit, fourier_fit, phase_fold
-from .methods.periodogram import lomb_scargle
-from .methods.cross_validate import ValidationResult, holdout_validate
-from .models.gaia.lightcurves import DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX
-from .paths import FIGURES_DIR, ensure_output_dirs
-from .plotting import (
+from ugdatalab.dust import binned_median_trend, pearson_r2
+from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
+from ugdatalab.methods.periodogram import lomb_scargle
+from ugdatalab.methods.cross_validate import ValidationResult, holdout_validate
+from ugdatalab.models.gaia.lightcurves import DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX
+from ugdatalab.paths import FIGURES_DIR, ensure_output_dirs
+from ugdatalab.plotting import (
     TEXTWIDTH_IN,
     COLUMNWIDTH_IN,
     A4_WIDTH_IN,

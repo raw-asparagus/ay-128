@@ -137,10 +137,7 @@ mpl.rcParams.update(
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible helpers re-exported for lab2_plotting (which imports
-# ``ugdatalab.plotting as ugplt`` and calls these directly).
-# We define them here instead of re-importing from lab1_plotter to avoid a
-# circular import (lab1_plotter imports constants from this module).
+# Shared plotting helpers
 # ---------------------------------------------------------------------------
 
 def _textwidth_figsize(height_out_of_8: float) -> tuple[float, float]:
