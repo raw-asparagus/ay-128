@@ -516,11 +516,10 @@ def estimate_initial_theta0(
     if relation_kind == "pl" and hasattr(source, "mcmc_results"):
         class_result = getattr(source, "mcmc_results", {}).get(rr_class)
         if class_result is not None:
-            intercept = float(class_result["a"][0])
-            slope = float(class_result["b"][0])
-            sigma0 = float(class_result["sig_scatter"][0])
-            sigma0 = float(np.clip(sigma0, 1e-3, 10.0))
-            return np.array([slope, intercept, np.log10(sigma0)], dtype=float)
+            # theta = [a (intercept), b (slope), log10(sig_scatter)]
+            a, b, log10_sig = class_result.theta
+            sigma0 = float(np.clip(10.0**log10_sig, 1e-3, 10.0))
+            return np.array([b, a, np.log10(sigma0)], dtype=float)
 
     return _wls_theta0(data)
 

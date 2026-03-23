@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ugdatalab.methods.base import Fit
+
 
 def phase_fold(x: np.ndarray, period: float) -> np.ndarray:
     """Map values to phase in [0, 1)."""
@@ -22,7 +24,7 @@ def _build_design_matrix(x: np.ndarray, omega: float, k: int) -> np.ndarray:
 
 
 @dataclass(frozen=True)
-class FourierFit:
+class FourierFit(Fit):
     """Result of a weighted least-squares Fourier fit.
 
     Attributes

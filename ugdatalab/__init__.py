@@ -114,6 +114,8 @@ from ugdatalab.methods.cross_validate import (
     ValidationResult, HoldoutResult, KFoldResult,
     holdout_validate, k_fold_validate,
 )
+from ugdatalab.methods.likelihoods import LinearGaussianLikelihood
+from ugdatalab.methods.mixture import MixtureResult, mixture_contamination
 from ugdatalab.dust import (
     FULL_RRLYRAE_GAIA_SOURCE_QUERY,
     RRAB_RRC_GAIA_SOURCE_QUERY,

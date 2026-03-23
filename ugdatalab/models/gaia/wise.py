@@ -48,8 +48,6 @@ def _get_wise_quality(query):
 @dataclass
 class WISEData(GaiaData):
     """Fetches and caches the WISE quality-filtered sample with photometry-derived columns."""
-    query: str
-    data: table.Table = field(init=False, repr=False)
 
     def __post_init__(self):
         data = _get_wise_quality(self.query)

@@ -3,8 +3,6 @@ from typing import Callable
 
 import numpy as np
 
-from ugdatalab.methods.protocols import Fit
-
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -48,7 +46,7 @@ def holdout_validate(
     x: np.ndarray,
     y: np.ndarray,
     y_err: np.ndarray,
-    fit_fn: Callable[[np.ndarray, np.ndarray, np.ndarray, int], Fit],
+    fit_fn: Callable,
     param_values: np.ndarray,
     cv_fraction: float = 0.2,
 ) -> HoldoutResult:
@@ -117,7 +115,7 @@ def k_fold_validate(
     x: np.ndarray,
     y: np.ndarray,
     y_err: np.ndarray,
-    fit_fn: Callable[[np.ndarray, np.ndarray, np.ndarray, int], Fit],
+    fit_fn: Callable,
     param_values: np.ndarray,
     n_folds: int = 5,
 ) -> KFoldResult:

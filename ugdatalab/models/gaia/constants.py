@@ -1,8 +1,10 @@
-"""Gaia zero-point constants extracted to break circular imports."""
-
 from importlib import resources
 
 from astropy.io import ascii
+
+# ---------------------------------------------------------------------------
+# Gaia zero-point constants
+# ---------------------------------------------------------------------------
 
 _ZP_DIR = resources.files("ugdatalab.data") / "GaiaEDR3_passbands_zeropoints_version2"
 _ZEROPT = ascii.read(str(_ZP_DIR / "zeropt.dat"), readme=str(_ZP_DIR / "ReadMe"))
