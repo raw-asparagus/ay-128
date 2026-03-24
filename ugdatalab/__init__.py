@@ -2,12 +2,24 @@
 
 Submodules are imported on demand to avoid pulling heavy dependencies
 (PyMC, astroquery) at package import time.
-
-Usage:
-    from ugdatalab.methods.fourier import fourier_fit, FourierFit
-    from ugdatalab.methods.periodogram import lomb_scargle
-    from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
-    from ugdatalab.methods.bayesian.mcmc import nuts_sample
-    from ugdatalab.methods.bayesian.mixture import mixture_contamination
-    from ugdatalab.models.gaia import GaiaData, GaiaQuality
 """
+
+from ugdatalab.models.cache import cache_stable
+from ugdatalab.models.gaia import (
+    GaiaData,
+    GaiaQuality,
+    Local,
+    StrictGBPRP,
+    LindegrenC1,
+    LindegrenC2,
+)
+from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
+from ugdatalab.methods.periodogram import PeriodogramResult, lomb_scargle
+from ugdatalab.methods.cross_validate import (
+    HoldoutResult,
+    KFoldResult,
+    ValidationResult,
+    holdout_validate,
+    k_fold_validate,
+)
+from ugdatalab.models.gaia.lightcurves import DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX

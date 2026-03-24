@@ -20,6 +20,7 @@ When the user says "audit ugdatalab", perform the following checks on all `.py` 
 12. **Duplicate code** — flag identical logic that could be shared
 13. **Convention consistency** — schemas use `type: [colnames]` format; prior scales are data-driven; style dicts used for plot styling
 14. **Redundant rcParams** — no rcParams that match matplotlib defaults
+15. **Redundant type casting** — no `np.asarray(col, dtype=...)` on columns already sanitized by `_sanitize_table`; no casting of return values from libraries that already return numpy arrays (e.g., `LombScargle.autopower`)
 
 ### Output format
 

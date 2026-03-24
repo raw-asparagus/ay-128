@@ -49,8 +49,6 @@ def lomb_scargle(
     if period_min is not None:
         autopower_kwargs["maximum_frequency"] = 1.0 / period_min
     freqs, power = ls.autopower(**autopower_kwargs)
-    freqs = np.asarray(freqs, dtype=float)
-    power = np.asarray(power, dtype=float)
 
     periods = 1.0 / freqs
     order = np.argsort(power)[::-1]

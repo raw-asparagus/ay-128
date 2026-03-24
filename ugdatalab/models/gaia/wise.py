@@ -74,13 +74,13 @@ class WISESample(WISEData):
         allwise_oid = np.asarray(source.data["allwise_oid"], dtype=float)
         matched = source.data[np.isfinite(allwise_oid)]
 
-        rr_classes = np.asarray(matched["best_classification"], dtype=str)
+        rr_classes = matched["best_classification"]
         matched = matched[np.isin(rr_classes, ["RRab", "RRc", "RRd"])]
 
         number_of_mates = np.asarray(matched["number_of_mates"], dtype=float)
         number_of_neighbours = np.asarray(matched["number_of_neighbours"], dtype=float)
-        w2 = np.asarray(matched["w2mpro"], dtype=float)
-        w2_error = np.asarray(matched["w2mpro_error"], dtype=float)
+        w2 = matched["w2mpro"]
+        w2_error = matched["w2mpro_error"]
         ph_qual_w2 = _char_at(matched["ph_qual"], 1)
         cc_flags_w2 = _char_at(matched["cc_flags"], 1)
         ext_flg = np.asarray(matched["ext_flag"], dtype=float)
