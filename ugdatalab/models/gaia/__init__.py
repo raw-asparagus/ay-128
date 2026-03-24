@@ -5,8 +5,6 @@ from ugdatalab.models.gaia.gaia import (
     StrictGBPRP,
     LindegrenC1,
     LindegrenC2,
-    _attach_rrlyrae_representative_period_column,
-    _get_gaia,
 )
 from ugdatalab.models.gaia.wise import (
     WISEData,

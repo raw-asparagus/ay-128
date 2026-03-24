@@ -4,7 +4,7 @@ import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ugdatalab.methods.base import GaussianLikelihood
+from ugdatalab.methods.bayesian.base import GaussianLikelihood
 
 
 @dataclass

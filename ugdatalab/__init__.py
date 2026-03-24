@@ -1,85 +1,13 @@
-from ugdatalab.models import (
-    GaiaData,
-    GaiaQuality,
-    Local,
-    StrictGBPRP,
-    LindegrenC1,
-    LindegrenC2,
-    WISEData,
-    WISESample,
-    cache_stable,
-)
-from ugdatalab.relations import (
-    RelationData,
-    OpticalPLComparisonData,
-    OpticalPCComparisonData,
-    prepare_relation_data,
-    estimate_initial_theta0,
-    fit_relation_mh,
-    fit_relation_nuts,
-    relation_parameter_labels,
-    build_optical_pl_comparison_data,
-    build_infrared_pl_comparison_data,
-    build_optical_pc_comparison_data,
-    save_optical_pl_comparison_data,
-    save_infrared_pl_comparison_data,
-    save_optical_pc_comparison_data,
-    load_optical_pl_comparison_data,
-    load_infrared_pl_comparison_data,
-    load_optical_pc_comparison_data,
-    build_pl_context,
-    build_pc_context,
-    build_w2_context,
-    fit_pl_nuts_native,
-    fit_pl_nuts_potential,
-    fit_w2_nuts,
-    fit_pc_nuts,
-    pl_scatter_metrics,
-    build_band_summary,
-    pl_posterior_summary_row,
-    w2_posterior_summary_row,
-    pc_posterior_summary_row,
-)
-from ugdatalab.artifacts import (
-    save_table_npz,
-    load_table_npz,
-    load_or_create_table_npz,
-)
-from ugdatalab.models.gaia.lightcurves import (
-    DEFAULT_PERIOD_MIN,
-    DEFAULT_PERIOD_MAX,
-)
-from ugdatalab.methods.periodogram import PeriodogramResult, lomb_scargle
-from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
-from ugdatalab.methods.cross_validate import (
-    ValidationResult, HoldoutResult, KFoldResult,
-    holdout_validate, k_fold_validate,
-)
-from ugdatalab.methods.likelihoods import LinearGaussianLikelihood
-from ugdatalab.methods.mixture import MixtureResult, mixture_contamination
-from ugdatalab.dust import (
-    FULL_RRLYRAE_GAIA_SOURCE_QUERY,
-    RRAB_RRC_GAIA_SOURCE_QUERY,
-    RelationPosteriorSummary,
-    ExtinctionResiduals,
-    build_rrlyrae_gaia_source_query,
-    load_cached_gaia_table,
-    load_or_create_rrab_rrc_full_catalog,
-    summarize_relation_samples,
-    summarize_relation_posteriors,
-    load_relation_posteriors,
-    compute_empirical_extinction,
-    compute_period_color_extinction,
-    empirical_vs_catalog_extinction,
-    extinction_residuals,
-    build_reddening_quality_mask,
-    apply_reddening_quality_mask,
-    sample_sfd_ebv,
-    attach_sfd_ebv,
-    build_quality_components,
-    build_stage_summary,
-    build_criterion_failure_table,
-    rank_spearman,
-    binned_median_trend,
-    subset_row,
-)
+"""ugdatalab — methods and models for astronomical data analysis.
+
+Submodules are imported on demand to avoid pulling heavy dependencies
+(PyMC, astroquery) at package import time.
+
+Usage:
+    from ugdatalab.methods.fourier import fourier_fit, FourierFit
+    from ugdatalab.methods.periodogram import lomb_scargle
+    from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
+    from ugdatalab.methods.bayesian.mcmc import nuts_sample
+    from ugdatalab.methods.bayesian.mixture import mixture_contamination
+    from ugdatalab.models.gaia import GaiaData, GaiaQuality
+"""

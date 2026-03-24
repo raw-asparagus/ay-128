@@ -23,8 +23,12 @@ class MCMCResult(Fit):
         Posterior median of the model parameters.
     theta_std : ndarray
         Posterior standard deviation of the model parameters.
+    samples : ndarray
+        Posterior samples, shape (n_samples, n_params). For trace/corner plots.
     var_names : list[str]
         Names of the model parameters (matching PyMC variable names).
+    labels : list[str]
+        LaTeX-formatted parameter labels for plotting.
     trace : InferenceData
         Full PyMC trace for diagnostics.
     chi2_r : float

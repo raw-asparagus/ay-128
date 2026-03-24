@@ -30,6 +30,8 @@ class MixtureResult:
         Posterior samples, shape (n_samples, n_params). For trace/corner plots.
     var_names : list[str]
         Names of the inlier model parameters.
+    labels : list[str]
+        LaTeX-formatted parameter labels for plotting.
     trace : InferenceData
         Full PyMC trace for diagnostics.
     """

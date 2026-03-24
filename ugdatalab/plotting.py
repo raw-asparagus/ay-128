@@ -1,6 +1,10 @@
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+# ---------------------------------------------------------------------------
+# Page dimensions
+# ---------------------------------------------------------------------------
+
 TEXTWIDTH_IN = 7.59
 COLUMNWIDTH_IN = 3.73
 A4_WIDTH_IN = 8.27
@@ -8,148 +12,178 @@ A4_HEIGHT_IN = 11.69
 A4_MARGIN_IN = 0.75
 A4_USABLE_WIDTH_IN = A4_WIDTH_IN - 2.0 * A4_MARGIN_IN
 A4_USABLE_HEIGHT_IN = A4_HEIGHT_IN - 2.0 * A4_MARGIN_IN
-LABEL_SIZE = 9
-TICK_SIZE = 8
-LEGEND_SIZE = 8
-ANNOTATION_SIZE = 9
-EMPHASIS_SIZE = 10
-TITLE_SIZE = 9
 
-# Visual weight scale tuned for the figure sizes defined above.
+# ---------------------------------------------------------------------------
+# Font sizes
+# ---------------------------------------------------------------------------
+
+LABEL_SIZE = 10
+TICK_SIZE = 10
+LEGEND_SIZE = 10
+EMPHASIS_SIZE = 12
+
+# ---------------------------------------------------------------------------
+# Line weights
+# ---------------------------------------------------------------------------
+
 LW_NONE = 0.0
-LW_GRID = 0.4
 LW_FINE = 0.6
-LW_GUIDE = 0.8
-LW_LIGHT = 0.9
-LW_STANDARD = 1.0
-LW_MEDIUM = 1.1
-LW_STRONG = 1.3
-LW_FIT = 1.5
-LW_MODEL = 1.6
-LW_EMPHASIS = 1.8
-LW_CALLOUT = 2.2
-LW_LEVEL = 2.6
+LW_LIGHT = 1.0
+LW_STANDARD = 1.5
+LW_MEDIUM = 2.0
+LW_THICK = 2.5
 
-MARKER_MS_MICRO  = 2.0    # micro      — extra-fine, reduced dense scatter
-MARKER_MS_FINE   = 2.5    # fine       — dense scatter / many-point plots
-MARKER_MS_SMALL  = 3.5    # small      — RR Lyrae light-curve data
-MARKER_MS_MEDIUM = 5.0    # medium     — moderate emphasis
-MARKER_MS_LARGE  = 8.0    # large      — prominent markers
-MARKER_MS_BIG    = 12.0   # big        — callout / special annotation
-RRLYRAE_POINT_ALPHA = 0.55
+# ---------------------------------------------------------------------------
+# Marker sizes (markersize= for ax.plot, diameter in points)
+# ---------------------------------------------------------------------------
 
-ALPHA_SHADE = 0.1
+MS_MICRO = 2.0
+MS_FINE = 3.0
+MS_STANDARD = 6.0
+MS_MEDIUM = 9.0
+MS_LARGE = 14.0
+
+# Scatter equivalents (s= for ax.scatter, area in points^2 = ms^2)
+SS_MICRO = MS_MICRO**2
+SS_FINE = MS_FINE**2
+SS_STANDARD = MS_STANDARD**2
+SS_MEDIUM = MS_MEDIUM**2
+SS_LARGE = MS_LARGE**2
+
+# ---------------------------------------------------------------------------
+# Transparency
+# ---------------------------------------------------------------------------
+
 ALPHA_EXTRA_LIGHT = 0.2
-ALPHA_DIM = 0.3
-ALPHA_MUTED = 0.4
-ALPHA_FAINT = 0.5
+ALPHA_FAINT = 0.4
 ALPHA_LIGHT = 0.6
-ALPHA_STANDARD = 0.7
-ALPHA_DENSE = 0.75
-ALPHA_GUIDE = 0.8
-ALPHA_EMPHASIS = 0.9
+ALPHA_STANDARD = 0.75
+ALPHA_FULL = 1.0
 
-PRIMARY_COLOR = "C0"
-SECONDARY_COLOR = "C1"
-TERTIARY_COLOR = "C2"
-QUATERNARY_COLOR = "C3"
-QUINARY_COLOR = "C4"
-SENARY_COLOR = "C5"
-SEPTENARY_COLOR = "C6"
+# ---------------------------------------------------------------------------
+# Colors
+# ---------------------------------------------------------------------------
+
 NEUTRAL_COLOR = "C7"
-LIGHT_NEUTRAL_COLOR = "C8"
-NONARY_COLOR = "C9"
-COMPONENT_COLORS = (QUINARY_COLOR, SENARY_COLOR, SEPTENARY_COLOR, LIGHT_NEUTRAL_COLOR, NONARY_COLOR)
 
-MCMC_SAMPLER_COLORS = {
-    "native_nuts":         {"RRab": PRIMARY_COLOR,    "RRc": SECONDARY_COLOR},
-    "metropolis_hastings": {"RRab": QUATERNARY_COLOR, "RRc": QUINARY_COLOR},
-    "nuts_potential":      {"RRab": SENARY_COLOR,     "RRc": SEPTENARY_COLOR},
-}
-_MCMC_SAMPLER_ALIASES = {
-    "native": "native_nuts",
-    "nuts": "native_nuts",
-    "native_pymc_nuts": "native_nuts",
-    "metropolis_hastings": "metropolis_hastings",
-    "metropolis_hastings_sampler": "metropolis_hastings",
-    "metropolis_hastings_fit": "metropolis_hastings",
-    "mh": "metropolis_hastings",
-    "nuts_potential": "nuts_potential",
-    "nuts_with_potential": "nuts_potential",
-    "potential": "nuts_potential",
-}
-_REPORT_FIGURE_FILENAMES = {
-    "plot_raw_phase_folded_lightcurve": "fig_lc_raw_phased.pdf",
-    "plot_lomb_scargle_periodogram": "fig_periodogram.pdf",
-    "plot_fourier_harmonic_fits": "fig_fourier_harmonics.pdf",
-    "plot_fourier_cross_validation": "fig_crossval.pdf",
-    "plot_fourier_cv_normalized_residual_histograms": "fig_fourier_cv_residuals.pdf",
-    "plot_fourier_cv_phase_comparison": "fig_fourier_cv_phase.pdf",
-    "plot_vari_rrlyrae_period_comparison": "fig_period_comparison.pdf",
-    "plot_rrlyrae_shape_comparison": "fig_rrab_rrc.pdf",
-    "plot_mollweide": "fig_calibration_sky.pdf",
-    "plot_mollweide_diff": "fig_calibration_sky_c12.pdf",
-    "plot_calibration_sky_distribution": "fig_calibration_sky.pdf",
-    "plot_period_abs_mag_stage_comparison": "fig_pl_stages.pdf",
-    "plot_period_abs_mag_c12_comparison": "fig_period_abs_mag_c12_comparison.pdf",
-    "plot_inlier_prob_period_luminosity_comparison": "fig_inlier_prob_period_luminosity_comparison.pdf",
-    "plot_pl_posterior_predictive": "fig_pl_posterior.pdf",
-    "plot_pl_sampler_comparison_corner": "fig_methods_corner.pdf",
-    "plot_pc_posterior_predictive_comparison": "fig_period_color.pdf",
-    "plot_empirical_vs_catalog_extinction_comparison": "fig_extinction_comparison.pdf",
-    "plot_mean_g_catalog_comparison": "fig_mean_g_comparison.pdf",
-    "plot_period_mean_g": "fig_period_mean_g.pdf",
-    "plot_fourier_extrapolation": "fig_fourier_extrapolation.pdf",
-    "plot_aitoff_reddening_map": "fig_reddening_map.pdf",
-    "plot_sfd_empirical_hexbin_comparison": "fig_sfd_comparison.pdf",
-    "plot_sfd_all_sky_hexbin": "fig_sfd_all_sky_hexbin.pdf",
-    "plot_aitoff_sfd_map": "fig_sfd_map.pdf",
-    "plot_regime_decomposition": "fig_regime_decomposition.pdf",
-    "plot_reddening_distribution": "fig_reddening_distribution.pdf",
-    "plot_optical_vs_w2_comparison": "fig_optical_ir_comparison.pdf",
-    "plot_aitoff_reddening_dark": "fig_reddening_map_dark.pdf",
-    "plot_quality_diagnostics": "fig_quality_diagnostics.pdf",
-    "plot_inlier_prob_map": "fig_inlier_prob_map.pdf",
-}
+# ---------------------------------------------------------------------------
+# Style dictionaries (unpack as **kwargs)
+# ---------------------------------------------------------------------------
+
+GRID_STYLE = dict(lw=LW_FINE, ls=":", alpha=ALPHA_FAINT, color=NEUTRAL_COLOR)
+GUIDE_STYLE = dict(lw=LW_STANDARD, ls="-.", alpha=ALPHA_STANDARD, color=NEUTRAL_COLOR)
+FIT_STYLE = dict(lw=LW_MEDIUM, ls="-", alpha=ALPHA_FULL)
+MODEL_STYLE = dict(lw=LW_MEDIUM, ls="--", alpha=ALPHA_FULL)
+ERRORBAR_STYLE = dict(fmt=".", capsize=2, lw=LW_FINE, elinewidth=LW_FINE, markersize=MS_FINE)
+FILL_STYLE = dict(alpha=ALPHA_EXTRA_LIGHT, lw=LW_NONE)
+SCATTER_STYLE = dict(s=SS_STANDARD, alpha=ALPHA_STANDARD, lw=LW_NONE)
+
+# ---------------------------------------------------------------------------
+# rcParams
+# ---------------------------------------------------------------------------
 
 mpl.rcParams.update(
     {
+        # LaTeX rendering
         "text.usetex": True,
         "font.family": "serif",
         "font.serif": ["Computer Modern Roman"],
         "mathtext.fontset": "cm",
-        "font.size": LABEL_SIZE,
+        "text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{amsmath}\usepackage{amssymb}",
+        "axes.unicode_minus": False,
+        # Font sizes
         "axes.labelsize": LABEL_SIZE,
-        "axes.grid": True,
         "axes.titlesize": EMPHASIS_SIZE,
         "xtick.labelsize": TICK_SIZE,
         "ytick.labelsize": TICK_SIZE,
-        "grid.linewidth": LW_GRID,
-        "grid.alpha": ALPHA_FAINT,
         "legend.fontsize": LEGEND_SIZE,
-        "axes.unicode_minus": False,
-        "text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{amsmath}\usepackage{amssymb}",
+        # Axes
+        "axes.linewidth": LW_LIGHT,
+        "axes.axisbelow": True,
+        "axes.grid": True,
+        # Ticks
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.top": True,
+        "ytick.right": True,
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.major.width": LW_FINE,
+        "ytick.major.width": LW_FINE,
+        # Grid
+        "grid.linewidth": GRID_STYLE["lw"],
+        "grid.alpha": GRID_STYLE["alpha"],
+        "grid.linestyle": GRID_STYLE["ls"],
+        "grid.color": GRID_STYLE["color"],
+        # Figure
         "figure.dpi": 300,
         "savefig.bbox": "tight",
+        "savefig.dpi": 300,
     }
 )
 
 
-
 # ---------------------------------------------------------------------------
-# Shared plotting helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
-def _textwidth_figsize(height_out_of_8: float) -> tuple[float, float]:
-    return (TEXTWIDTH_IN, height_out_of_8 / 8 * TEXTWIDTH_IN)
+def _textwidth_figure(height_out_of_8: float):
+    """Create a figure spanning the full text width."""
+    return plt.figure(figsize=(TEXTWIDTH_IN, height_out_of_8 / 8 * TEXTWIDTH_IN))
 
 
-def _apply_grid(ax) -> None:
-    ax.grid(True)
+def _columnwidth_figure(height_out_of_3_5: float):
+    """Create a figure spanning a single column width."""
+    return plt.figure(figsize=(COLUMNWIDTH_IN, height_out_of_3_5 / 3.5 * COLUMNWIDTH_IN))
 
 
-def _tight_layout(fig, *, use_pyplot: bool = False, **kwargs) -> None:
-    if use_pyplot:
-        plt.tight_layout(**kwargs)
-    else:
-        fig.tight_layout(**kwargs)
+def _subpanels(
+    parent,
+    nrows: int,
+    ncols: int = 1,
+    height_ratios: list[int] | tuple[int, ...] | None = None,
+    width_ratios: list[int] | tuple[int, ...] | None = None,
+    hspace: float = 0.0,
+    wspace: float = 0.0,
+    sharex: bool = True,
+    sharey: bool = False,
+):
+    """Create axes inside a parent figure or subfigure.
+
+    Examples::
+
+        # Simple stacked panels
+        fig = plt.figure(figsize=(7, 5))
+        axes = _subpanels(fig, 2, height_ratios=(3, 1))
+        axes[0].plot(...)   # data
+        axes[1].plot(...)   # residual
+
+        # 2x2 grid, each cell with data + residual
+        fig = plt.figure(figsize=(10, 8))
+        for sf in fig.subfigures(2, 2).flat:
+            axes = _subpanels(sf, 2, height_ratios=(3, 1))
+            axes[0].plot(...)   # data
+            axes[1].plot(...)   # residual
+    """
+    gridspec_kw = {"hspace": hspace, "wspace": wspace}
+    if height_ratios is not None:
+        gridspec_kw["height_ratios"] = list(height_ratios)
+    if width_ratios is not None:
+        gridspec_kw["width_ratios"] = list(width_ratios)
+
+    return parent.subplots(
+        nrows, ncols,
+        sharex=sharex,
+        sharey=sharey,
+        gridspec_kw=gridspec_kw,
+    )
+
+
+def _zero_line(ax) -> None:
+    """Draw a horizontal reference line at y=0."""
+    ax.axhline(0.0, **GUIDE_STYLE)
+
+
+def _unity_line(ax, label: str | None = None) -> None:
+    """Draw a horizontal reference line at y=1."""
+    ax.axhline(1.0, **GUIDE_STYLE, label=label)
