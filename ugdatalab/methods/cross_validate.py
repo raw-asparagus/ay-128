@@ -81,7 +81,7 @@ def holdout_validate(
     y_err = np.asarray(y_err, dtype=float)
     param_values = np.asarray(param_values)
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(346)
     idx = rng.permutation(len(x))
     n_cv = max(1, int(round(cv_fraction * len(x))))
     cv_idx = idx[:n_cv]
@@ -141,7 +141,7 @@ def k_fold_validate(
     y_err = np.asarray(y_err, dtype=float)
     param_values = np.asarray(param_values)
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(346)
     idx = rng.permutation(len(x))
     folds = np.array_split(idx, n_folds)
 

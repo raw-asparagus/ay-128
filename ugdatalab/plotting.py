@@ -19,7 +19,7 @@ A4_USABLE_HEIGHT_IN = A4_HEIGHT_IN - 2.0 * A4_MARGIN_IN
 
 LABEL_SIZE = 10
 TICK_SIZE = 10
-LEGEND_SIZE = 10
+LEGEND_SIZE = 9
 EMPHASIS_SIZE = 12
 
 # ---------------------------------------------------------------------------
@@ -71,12 +71,12 @@ NEUTRAL_COLOR = "C7"
 # ---------------------------------------------------------------------------
 
 GRID_STYLE = dict(lw=LW_FINE, ls=":", alpha=ALPHA_FAINT, color=NEUTRAL_COLOR)
-GUIDE_STYLE = dict(lw=LW_STANDARD, ls="-.", alpha=ALPHA_STANDARD, color=NEUTRAL_COLOR)
-FIT_STYLE = dict(lw=LW_MEDIUM, ls="-", alpha=ALPHA_FULL)
-MODEL_STYLE = dict(lw=LW_MEDIUM, ls="--", alpha=ALPHA_FULL)
+GUIDE_STYLE = dict(lw=LW_LIGHT, ls="-.", alpha=ALPHA_LIGHT, color=NEUTRAL_COLOR)
+FIT_STYLE = dict(lw=LW_STANDARD, ls="-", alpha=ALPHA_STANDARD)
+MODEL_STYLE = dict(lw=LW_STANDARD, ls="--", alpha=ALPHA_STANDARD)
 ERRORBAR_STYLE = dict(fmt=".", capsize=2, lw=LW_FINE, elinewidth=LW_FINE, markersize=MS_FINE)
 FILL_STYLE = dict(alpha=ALPHA_EXTRA_LIGHT, lw=LW_NONE)
-SCATTER_STYLE = dict(s=SS_STANDARD, alpha=ALPHA_STANDARD, lw=LW_NONE)
+SCATTER_STYLE = dict(s=SS_FINE, alpha=ALPHA_STANDARD, lw=LW_NONE)
 
 # ---------------------------------------------------------------------------
 # rcParams
@@ -127,14 +127,14 @@ mpl.rcParams.update(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def textwidth_figure(height_out_of_8: float):
+def textwidth_figure(height_out_of_16: float):
     """Create a figure spanning the full text width."""
-    return plt.figure(figsize=(TEXTWIDTH_IN, height_out_of_8 / 8 * TEXTWIDTH_IN))
+    return plt.figure(figsize=(TEXTWIDTH_IN, height_out_of_16 / 16 * TEXTWIDTH_IN))
 
 
-def columnwidth_figure(height_out_of_3_5: float):
+def columnwidth_figure(height_out_of_7_5: float):
     """Create a figure spanning a single column width."""
-    return plt.figure(figsize=(COLUMNWIDTH_IN, height_out_of_3_5 / 3.5 * COLUMNWIDTH_IN))
+    return plt.figure(figsize=(COLUMNWIDTH_IN, height_out_of_7_5 / 7.5 * COLUMNWIDTH_IN))
 
 
 def subpanels(

@@ -1,0 +1,719 @@
+"""Plotting functions for Lab 01: Period Recovery.
+
+All functions accept ugdatalab objects (GaiaData, FourierFit, HoldoutResult,
+PeriodogramResult) and use ugdatalab.plotting constants with matplotlib
+default "C0"–"C9" colors. Every function saves to report/figures/ by default.
+"""
+
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
+from ugdatalab.methods.cross_validate import HoldoutResult, holdout_validate
+from ugdatalab.methods.periodogram import PeriodogramResult
+from ugdatalab.models.gaia import GaiaData
+from ugdatalab.plotting import (
+    LW_NONE,
+    LW_FINE,
+    LW_LIGHT,
+    LW_STANDARD,
+    LW_MEDIUM,
+    MS_MICRO,
+    MS_FINE,
+    MS_STANDARD,
+    MS_MEDIUM,
+    MS_LARGE,
+    SS_MICRO,
+    SS_FINE,
+    SS_STANDARD,
+    ALPHA_EXTRA_LIGHT,
+    ALPHA_FAINT,
+    ALPHA_LIGHT,
+    ALPHA_STANDARD,
+    NEUTRAL_COLOR,
+    GUIDE_STYLE,
+    FILL_STYLE,
+    textwidth_figure,
+    columnwidth_figure,
+    subpanels,
+    zero_line, MODEL_STYLE,
+)
+
+_FIGURES_DIR = Path(__file__).parent / "report" / "figures"
+_CLASS_COLORS = {"RRab": "C0", "RRc": "C1", "RRd": "C2"}
+
+
+def _savefig(fig, name):
+    _FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+    fig.savefig(_FIGURES_DIR / name)
+
+
+# ---------------------------------------------------------------------------
+# 1. Raw + phase-folded lightcurve
+# ---------------------------------------------------------------------------
+
+def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
+    """Two-panel plot: raw time series (top) and phase-folded lightcurve (bottom)."""
+    lc = rrlyrae.lightcurves
+    data = lc[lc["source_id"] == source_id]
+
+    period = data["rrlyrae_representative_period"][0]
+    epoch = data["g_transit_time"]
+    mag = data["g_transit_mag"]
+    mag_err = data["g_transit_mag_err"]
+    phase = (epoch % period) / period
+
+    fig = columnwidth_figure(33 / 4)
+    axes = subpanels(fig, 2, hspace=0.42, sharex=False, sharey=True)
+
+    err_kw = dict(fmt="none", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+
+    axes[0].errorbar(epoch, mag, yerr=mag_err, ecolor="C0", **err_kw)
+    axes[0].scatter(epoch, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C0",
+                    zorder=2, rasterized=True, label="Raw light curve")
+    axes[0].invert_yaxis()
+    axes[0].set_xlabel("Time [days]")
+    axes[0].set_ylabel(r"$G$ [mag]")
+    axes[0].legend(loc="best")
+
+    axes[1].errorbar(phase, mag, yerr=mag_err, ecolor="C1", **err_kw)
+    axes[1].scatter(phase, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C1",
+                    zorder=2, rasterized=True, label="Phase-folded light curve")
+    axes[1].invert_yaxis()
+    axes[1].set_xlabel("Phase")
+    axes[1].set_ylabel(r"$G$ [mag]")
+    axes[1].legend(loc="best")
+
+    _savefig(fig, "fig_lc_raw_phased.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 2. Lomb-Scargle periodogram
+# ---------------------------------------------------------------------------
+
+def plot_lomb_scargle_periodogram(result):
+    """Plot periodogram power vs period with best-period marker."""
+    order = np.argsort(result.periods)
+    periods = result.periods[order]
+    power = result.power[order]
+
+    fig = columnwidth_figure(4)
+    ax = fig.add_subplot(111)
+
+    ax.plot(periods, power, color="C0", lw=LW_STANDARD)
+    ax.axvline(result.best_period, color="C1", ls="--", lw=LW_LIGHT,
+               alpha=ALPHA_STANDARD, label=rf"$P={result.best_period:.4f}$ d")
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel(r"$P_{\rm LS}$ [days]")
+    ax.set_ylabel("Lomb-Scargle power")
+    ax.legend()
+
+    _savefig(fig, "fig_periodogram.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 3. Period comparison (P_F vs P_LS and P_1O vs P_LS)
+# ---------------------------------------------------------------------------
+
+def plot_vari_rrlyrae_period_comparison(rrlyrae):
+    """Two-panel comparison of catalog periods to Lomb-Scargle periods."""
+    lc = rrlyrae.lightcurves
+    _, first_idx = np.unique(lc["source_id"], return_index=True)
+    rows = lc[first_idx]
+
+    classifications = rows["best_classification"]
+    pf = rows["pf"]
+    pf_err = rows["pf_error"]
+    p_ls = rows["period_ls"]
+    p1o = rows["p1_o"]
+    p1o_err = rows["p1_o_error"]
+
+    finite_f = np.isfinite(pf) & np.isfinite(p_ls)
+
+    fig = textwidth_figure(10)
+    axes = subpanels(fig, 1, 2, sharex=False, wspace=0.28)
+    ax_f, ax_o = axes
+
+    # --- Left panel: P_F vs P_LS ---
+    for label, color in _CLASS_COLORS.items():
+        if label == "RRc":
+            continue
+        mask = classifications == label
+        m = finite_f & mask
+        m_err = m & np.isfinite(pf_err)
+        ax_f.errorbar(pf[m_err], p_ls[m_err], xerr=pf_err[m_err],
+                      fmt="none", ecolor=color, elinewidth=LW_FINE,
+                      alpha=ALPHA_FAINT, zorder=2)
+        ax_f.scatter(pf[m], p_ls[m], s=SS_FINE, alpha=ALPHA_STANDARD,
+                     color=color, label=label, zorder=3)
+
+    ax_f.autoscale_view()
+    lo = min(ax_f.get_xlim()[0], ax_f.get_ylim()[0])
+    hi = max(ax_f.get_xlim()[1], ax_f.get_ylim()[1])
+    ax_f.plot([lo, hi], [lo, hi], color="C3", **MODEL_STYLE,
+              label=r"$P_{\rm LS}=P_{\rm F}$", zorder=1)
+
+    p1o_over_pf = np.where(np.isfinite(p1o) & (pf > 0), p1o / pf, np.nan)
+    rrd_ratios = p1o_over_pf[np.isfinite(p1o_over_pf)]
+    ratio = np.median(rrd_ratios)
+    ax_f.plot([lo, hi], [ratio * lo, ratio * hi], color="C4",
+              **MODEL_STYLE, zorder=1,
+              label=rf"$P_{{\rm LS}}\approx({ratio:.3f})\,P_{{\rm F}}$")
+
+    ax_f.set_xlabel(r"\texttt{vari\_rrlyrae} fundamental period $P_{\rm F}$ [days]")
+    ax_f.set_ylabel(r"L-S period $P_{\rm LS}$ [days]")
+    ax_f.set_xlim(lo, hi)
+    ax_f.set_ylim(lo, hi)
+    ax_f.set_aspect("equal", adjustable="box")
+    ax_f.legend(ncols=2)
+
+    # --- Right panel: P_1O vs P_LS (RRd only) ---
+    finite_rrd = (classifications == "RRd") & np.isfinite(p1o) & np.isfinite(p_ls)
+    rrd_color = _CLASS_COLORS["RRd"]
+    m_err = finite_rrd & np.isfinite(p1o_err)
+    ax_o.errorbar(p1o[m_err], p_ls[m_err], xerr=p1o_err[m_err],
+                  fmt="none", ecolor=rrd_color, elinewidth=LW_FINE,
+                  alpha=ALPHA_FAINT, zorder=2)
+    ax_o.scatter(p1o[finite_rrd], p_ls[finite_rrd], s=SS_FINE,
+                 alpha=ALPHA_STANDARD, color=rrd_color, zorder=3)
+    ax_o.autoscale_view()
+    lo_r = min(ax_o.get_xlim()[0], ax_o.get_ylim()[0])
+    hi_r = max(ax_o.get_xlim()[1], ax_o.get_ylim()[1])
+    ax_o.plot([lo_r, hi_r], [lo_r, hi_r], color="C5", **MODEL_STYLE,
+              label=r"$P_{\rm LS}=P_{1\rm O}$", zorder=1)
+    ax_o.set_xlim(lo_r, hi_r)
+    ax_o.set_ylim(lo_r, hi_r)
+    ax_o.legend()
+
+    ax_o.set_xlabel(r"\texttt{vari\_rrlyrae} first-overtone period $P_{1\rm O}$ [days]")
+    ax_o.set_ylabel(r"L-S period $P_{\rm LS}$ [days]")
+    ax_o.set_aspect("equal", adjustable="box")
+
+    _savefig(fig, "fig_period_comparison.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 4. Fourier harmonic fits grid
+# ---------------------------------------------------------------------------
+
+def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
+    """Grid of phase-folded Fourier fits at different harmonic orders."""
+    lc = rrlyrae.lightcurves
+    data = lc[lc["source_id"] == source_id]
+
+    period = data["period_ls"][0]
+    epoch = data["g_transit_time"]
+    mag = data["g_transit_mag"]
+    mag_err = data["g_transit_mag_err"]
+
+    phase = phase_fold(epoch, period)
+    order = np.argsort(phase)
+    epoch, phase, mag, mag_err = epoch[order], phase[order], mag[order], mag_err[order]
+
+    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+    epoch_grid = phase_grid * period
+    ncols = 2
+    nrows = (len(K_values) + 1) // 2
+    fig = textwidth_figure(11)
+    subfigs = fig.subfigures(nrows, ncols)
+    subfigs = np.atleast_2d(subfigs)
+
+    axes = np.empty((len(K_values), 2), dtype=object)
+    col_last = {}
+    for i in range(len(K_values)):
+        col_last[i % ncols] = i
+
+    for i in range(len(K_values)):
+        row, col = i // ncols, i % ncols
+        ax_c, ax_r = subpanels(subfigs[row, col], 2, height_ratios=(2.5, 1))
+        axes[i, 0] = ax_c
+        axes[i, 1] = ax_r
+
+    for i, K in enumerate(K_values):
+        col = i % ncols
+        is_bottom = i == col_last[col]
+
+        fit = fourier_fit(epoch, mag, mag_err, period=period, k=K)
+        model_mag = fit.predict(epoch_grid)
+        residuals = mag - fit.predict(epoch)
+
+        ax_c, ax_r = axes[i]
+
+        ax_c.errorbar(phase, mag, yerr=mag_err, fmt="o", ms=MS_MICRO,
+                      elinewidth=LW_FINE, color="C0", alpha=ALPHA_FAINT, zorder=2)
+        ax_c.plot(phase_grid, model_mag, color="C1", lw=LW_MEDIUM, zorder=3)
+        ax_c.invert_yaxis()
+        ax_c.set_ylabel(r"$G$ [mag]")
+        ax_c.set_title(rf"$K={K}$, $\chi_r^2={fit.chi2_r:.2f}$",
+                       loc="left", fontsize="small")
+        ax_c.tick_params(axis="x", bottom=False, labelbottom=False)
+
+        ax_r.errorbar(phase, residuals, yerr=mag_err, fmt="o", ms=MS_MICRO,
+                      elinewidth=LW_FINE, color="C0", alpha=ALPHA_FAINT, zorder=2)
+        zero_line(ax_r)
+        ax_r.set_ylabel("Res.")
+        if is_bottom:
+            ax_r.set_xlabel("Phase")
+        else:
+            ax_r.tick_params(axis="x", bottom=False, labelbottom=False)
+
+    _savefig(fig, "fig_fourier_harmonics.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 5. Cross-validation chi2 vs K
+# ---------------------------------------------------------------------------
+
+def plot_fourier_cross_validation(result):
+    """Plot training and CV reduced chi-squared vs harmonic order."""
+    Ks = result.param_values
+    chi2r_train = result.chi2r_train
+    chi2r_cv = result.chi2r_cv
+    best_K = result.best_param
+
+    valid = np.isfinite(chi2r_train) & np.isfinite(chi2r_cv)
+    cv_best = chi2r_cv[Ks == best_K][0]
+
+    fig = columnwidth_figure(21 / 4)
+    ax = fig.add_subplot(111)
+
+    ax.plot(Ks[valid], chi2r_train[valid], marker="o", ls="none", ms=MS_FINE,
+            alpha=ALPHA_STANDARD, label=r"Training $\chi_r^2$")
+    ax.plot(Ks[valid], chi2r_cv[valid], marker="o", ls="none", ms=MS_FINE,
+            alpha=ALPHA_STANDARD, label=r"Cross-validation $\chi_r^2$")
+    ax.axvline(best_K, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT,
+               label=rf"Best $K={best_K}$")
+    ax.axhline(cv_best, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT,
+               label=rf"Best CV $\chi_r^2={cv_best:.3f}$")
+    ax.set_yscale("log")
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{y:g}"))
+    ax.yaxis.set_minor_locator(mticker.LogLocator(base=10.0, subs=np.arange(2, 10)))
+    ax.yaxis.set_minor_formatter(mticker.FuncFormatter(lambda y, _: f"{y:g}"))
+    ax.set_xlabel(r"$K$ (number of Fourier harmonics)")
+    ax.set_ylabel(r"$\chi_r^2$")
+    ax.set_title(rf"20\% CV, train={len(result.train_idx)}, CV={len(result.cv_idx)}",
+                 loc="left", fontsize="small")
+    ax.legend()
+
+    _savefig(fig, "fig_crossval.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 6. CV normalized residual histograms
+# ---------------------------------------------------------------------------
+
+def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, best_fit):
+    """Two-panel histogram of normalized residuals for low-K and best-K fits."""
+    lc = rrlyrae.lightcurves
+    lc = lc[lc["source_id"] == source_id]
+    epochs = lc["g_transit_time"]
+    mags = lc["g_transit_mag"]
+    errs = lc["g_transit_mag_err"]
+
+    train, cv = result.train_idx, result.cv_idx
+
+    bins = np.linspace(-5.0, 5.0, 31)
+    x_gauss = np.linspace(-5.0, 5.0, 400)
+    gaussian = np.exp(-0.5 * x_gauss**2) / np.sqrt(2.0 * np.pi)
+
+    fig = textwidth_figure(3)
+    axes = subpanels(fig, 1, 2, wspace=0.28, sharex=True)
+
+    panels = [
+        (axes[0], low_fit, rf"Low $K = {low_fit.k}$"),
+        (axes[1], best_fit, rf"Best $K = {best_fit.k}$"),
+    ]
+
+    for ax, fit, label in panels:
+        train_norm = (mags[train] - fit.predict(epochs[train])) / errs[train]
+        cv_norm = (mags[cv] - fit.predict(epochs[cv])) / errs[cv]
+        train_norm = train_norm[np.isfinite(train_norm)]
+        cv_norm = cv_norm[np.isfinite(cv_norm)]
+
+        ax.hist(cv_norm, bins=bins, histtype="stepfilled", density=True,
+                color="C1", alpha=ALPHA_FAINT, lw=LW_FINE, label="CV", zorder=1)
+        ax.hist(train_norm, bins=bins, histtype="step", density=True,
+                color="C0", alpha=ALPHA_STANDARD, lw=LW_MEDIUM, label="Training", zorder=2)
+        ax.plot(x_gauss, gaussian, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD,
+                label=r"$\mathcal{N}(0,1)$", zorder=3)
+        ax.axvline(0.0, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD)
+        ax.set_title(label, loc="left", fontsize="small")
+        ax.set_xlabel(r"$(G - G_{\rm model})/\sigma$")
+
+    axes[0].set_ylabel("Density")
+    axes[1].set_ylabel("Density")
+    axes[1].legend(loc="best")
+
+    _savefig(fig, "fig_fourier_cv_residuals.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 7. CV phase comparison (best K vs high K)
+# ---------------------------------------------------------------------------
+
+def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_fit):
+    """Two-panel phase-folded comparison showing train/CV split for best and high K."""
+    lc = rrlyrae.lightcurves
+    lc = lc[lc["source_id"] == source_id]
+    epochs = lc["g_transit_time"]
+    mags = lc["g_transit_mag"]
+    errs = lc["g_transit_mag_err"]
+
+    train, cv = result.train_idx, result.cv_idx
+    period = best_fit.period
+    train_phase = phase_fold(epochs[train], period)
+    cv_phase = phase_fold(epochs[cv], period)
+    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+    epoch_grid = phase_grid * period
+
+    all_mags = np.concatenate([mags[train], mags[cv]])
+    pad = 0.05 * (np.max(all_mags) - np.min(all_mags))
+    y_lim = (np.max(all_mags) + pad, np.min(all_mags) - pad)
+
+    fig = textwidth_figure(3)
+    axes = subpanels(fig, 1, 2, wspace=0.28, sharex=False)
+
+    for ax, fit, K in [(axes[0], best_fit, best_fit.k), (axes[1], high_fit, high_fit.k)]:
+        ax.scatter(train_phase, mags[train], s=SS_MICRO, alpha=ALPHA_EXTRA_LIGHT,
+                   color="C0", rasterized=True, label="Training")
+        ax.scatter(cv_phase, mags[cv], s=SS_MICRO, alpha=ALPHA_FAINT,
+                   color="C1", rasterized=True, label="CV")
+        ax.errorbar(train_phase, mags[train], yerr=errs[train], fmt="none",
+                    ecolor="C0", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax.errorbar(cv_phase, mags[cv], yerr=errs[cv], fmt="none",
+                    ecolor="C1", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax.plot(phase_grid, fit.predict(epoch_grid), color=NEUTRAL_COLOR,
+                lw=LW_STANDARD, label="Model")
+        ax.set_ylim(y_lim)
+        ax.invert_yaxis()
+        ax.set_xlabel("Phase")
+        tag = "Best" if K == best_fit.k else "High"
+        ax.set_title(rf"{tag} $K = {K}$", loc="left", fontsize="small")
+
+    axes[0].set_ylabel(r"$G$ [mag]")
+    axes[1].set_ylabel(r"$G$ [mag]")
+    axes[0].legend(loc="best")
+
+    _savefig(fig, "fig_fourier_cv_phase.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 8. Mean G catalog comparison
+# ---------------------------------------------------------------------------
+
+def plot_mean_g_catalog_comparison(rrlyrae):
+    """Two-column comparison of epoch-mean and Fourier-mean G vs Gaia int_average_g."""
+    lc = rrlyrae.lightcurves
+    _, first_idx = np.unique(lc["source_id"], return_index=True)
+    rows = lc[first_idx]
+
+    simple_g = rows["mean_g_transit_mag"]
+    simple_g_err = rows["mean_g_transit_mag_err"]
+    fourier_g = rows["fourier_mean_g_mag"]
+    fourier_g_err = rows["fourier_mean_g_mag_err"]
+    int_g = rows["int_average_g"]
+
+    resid_s = simple_g - int_g
+    resid_f = fourier_g - int_g
+    resid_s_err = np.hypot(np.nan_to_num(simple_g_err), 0.0)
+    resid_f_err = np.hypot(np.nan_to_num(fourier_g_err), 0.0)
+
+    fig = textwidth_figure(19 / 2)
+    sf_l, sf_r = fig.subfigures(1, 2)
+    ax_s, ax_sr = subpanels(sf_l, 2, height_ratios=(5.5, 1))
+    ax_f, ax_fr = subpanels(sf_r, 2, height_ratios=(5.5, 1))
+    axes = np.array([ax_s, ax_sr, ax_f, ax_fr])
+
+    # Shared limits across both columns
+    valid_s = np.isfinite(simple_g) & np.isfinite(int_g) & np.isfinite(resid_s)
+    valid_f = np.isfinite(fourier_g) & np.isfinite(int_g) & np.isfinite(resid_f)
+    all_mag = np.concatenate([int_g[valid_s], simple_g[valid_s],
+                              int_g[valid_f], fourier_g[valid_f]])
+    pad = 0.05 * (np.max(all_mag) - np.min(all_mag))
+    mag_lo = np.min(all_mag) - pad
+    mag_hi = np.max(all_mag) + pad
+
+    all_resid = np.concatenate([
+        resid_s[valid_s] - resid_s_err[valid_s], resid_s[valid_s] + resid_s_err[valid_s],
+        resid_f[valid_f] - resid_f_err[valid_f], resid_f[valid_f] + resid_f_err[valid_f],
+    ])
+    resid_max = 1.1 * np.nanmax(np.abs(all_resid))
+
+    panels = [
+        (ax_s, ax_sr, simple_g, simple_g_err, resid_s, resid_s_err, valid_s,
+         "C0", r"$\langle G \rangle_{\rm epoch}$ [mag]"),
+        (ax_f, ax_fr, fourier_g, fourier_g_err, resid_f, resid_f_err, valid_f,
+         "C1", r"$\langle G \rangle_{\rm Fourier}$ [mag]"),
+    ]
+
+    for ax_m, ax_r, y, y_err, resid, r_err, valid, color, ylabel in panels:
+        ax_m.errorbar(int_g[valid], y[valid], yerr=y_err[valid], fmt="none", ms=MS_FINE,
+                      ecolor=color, elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax_m.scatter(int_g[valid], y[valid], s=SS_FINE, alpha=ALPHA_STANDARD,
+                     color=color, rasterized=True)
+        ax_m.plot([mag_lo, mag_hi], [mag_lo, mag_hi], **GUIDE_STYLE)
+        ax_m.set_xlim(mag_hi, mag_lo)
+        ax_m.set_ylim(mag_hi, mag_lo)
+        ax_m.set_ylabel(ylabel)
+        plt.setp(ax_m.get_xticklabels(), visible=False)
+
+        ax_r.errorbar(int_g[valid], resid[valid], yerr=r_err[valid], fmt="none", ms=MS_FINE,
+                      ecolor=color, elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax_r.scatter(int_g[valid], resid[valid], s=SS_FINE, alpha=ALPHA_STANDARD,
+                     color=color, rasterized=True)
+        ax_r.axhline(0.0, **GUIDE_STYLE)
+        ax_r.set_xlim(mag_hi, mag_lo)
+        ax_r.set_ylim(-resid_max, resid_max)
+        ax_r.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
+        ax_r.set_ylabel("Res.")
+
+    _savefig(fig, "fig_mean_g_comparison.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 9. Fourier extrapolation
+# ---------------------------------------------------------------------------
+
+def plot_fourier_extrapolation(fit):
+    """Plot last few days of data with 12-day extrapolation and 10-day prediction."""
+    epochs = fit.x
+    mags = fit.y
+    mag_errs = fit.y_err
+
+    epoch_last = np.max(epochs)
+    epoch_start = epoch_last - 5.0
+    epoch_end = epoch_last + 12.0
+    epoch_grid = np.linspace(epoch_start, epoch_end, 2000)
+    mag_grid = fit.predict(epoch_grid)
+    mag_grid_err = fit.predict_std(epoch_grid)
+
+    epoch_pred = epoch_last + 10.0
+    mag_pred = fit.predict(np.array([epoch_pred]))[0]
+    mag_pred_err = fit.predict_std(np.array([epoch_pred]))[0]
+
+    observed_mask = epochs >= epoch_start
+    model_observed = epoch_grid <= epoch_last
+
+    fig = textwidth_figure(5)
+    ax = fig.add_subplot(111)
+
+    ax.errorbar(epochs[observed_mask], mags[observed_mask], yerr=mag_errs[observed_mask],
+                fmt="o", ms=MS_STANDARD, elinewidth=LW_FINE, color="C0",
+                alpha=ALPHA_STANDARD, label="Gaia data")
+    ax.plot(epoch_grid[model_observed], mag_grid[model_observed], color="C1",
+            lw=LW_STANDARD, label=rf"Fourier fit ($K={fit.k}$)")
+    ax.plot(epoch_grid[~model_observed], mag_grid[~model_observed], color="C1",
+            lw=LW_STANDARD, ls="--", label="12-day extrapolation")
+
+    ax.fill_between(epoch_grid, mag_grid - mag_grid_err, mag_grid + mag_grid_err,
+                    color="C1", **FILL_STYLE, label=r"Model $\pm1\sigma$")
+
+    ax.axvline(epoch_last, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD, alpha=ALPHA_LIGHT)
+    ax.plot(epoch_pred, mag_pred, marker="*", ms=MS_MEDIUM, color="k", lw=LW_NONE,
+            label=rf"10-day prediction: $G={mag_pred:.3f}\pm{mag_pred_err:.3f}$")
+    ax.invert_yaxis()
+    ax.set_xlim(epoch_start, epoch_end)
+    ax.set_xlabel("Time [days]")
+    ax.set_ylabel(r"$G$ [mag]")
+    ax.legend(ncols=2, loc="upper right")
+
+    _savefig(fig, "fig_fourier_extrapolation.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 10. RRab vs RRc shape comparison
+# ---------------------------------------------------------------------------
+
+def _prepare_shape_panels(rrlyrae, rr_class):
+    """Build per-source panel data for shape comparison."""
+    lc = rrlyrae.lightcurves
+    period_col = "p1_o" if rr_class == "RRc" else "pf"
+    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+
+    panels = []
+    for row in rrlyrae.data:
+        sid = row["source_id"]
+        period = row[period_col]
+        star = lc[lc["source_id"] == sid]
+
+        cv_period = star["period_ls"][0]
+        cv = holdout_validate(
+            star["g_transit_time"], star["g_transit_mag"], star["g_transit_mag_err"],
+            lambda x, y, ye, k, p=cv_period: fourier_fit(x, y, ye, p, k),
+            np.arange(1, 26),
+        )
+        best_K = cv.best_param
+        fit = fourier_fit(
+            star["g_transit_time"], star["g_transit_mag"], star["g_transit_mag_err"],
+            period, best_K,
+        )
+        mean_g = star["fourier_mean_g_mag"][0]
+
+        phase = phase_fold(star["g_transit_time"], period)
+        mag_centered = star["g_transit_mag"] - mean_g
+        model_centered = fit.predict(star["g_transit_time"]) - mean_g
+        residuals = mag_centered - model_centered
+        order = np.argsort(phase)
+
+        panels.append(dict(
+            source_id=sid, rr_class=rr_class,
+            phase=phase[order], mag_centered=mag_centered[order],
+            mag_err=star["g_transit_mag_err"][order], residuals=residuals[order],
+            phase_grid=phase_grid,
+            model_centered=fit.predict(phase_grid * period) - mean_g,
+            best_K=best_K, period=period, chi2_r=fit.chi2_r,
+        ))
+    return panels
+
+
+def plot_rrlyrae_shape_comparison(rrab, rrc):
+    """Grid comparing RRab and RRc phase-folded lightcurve shapes."""
+    rrab_panels = _prepare_shape_panels(rrab, "RRab")
+    rrc_panels = _prepare_shape_panels(rrc, "RRc")
+    all_panels = rrab_panels + rrc_panels
+
+    # Shared y-limits across all panels
+    all_mag, all_resid = [], []
+    for p in all_panels:
+        finite = np.isfinite(p["mag_centered"])
+        all_mag.append(p["mag_centered"][finite])
+        all_mag.append(p["model_centered"][np.isfinite(p["model_centered"])])
+        r_finite = np.isfinite(p["residuals"])
+        all_resid.append(p["residuals"][r_finite])
+
+    mag_vals = np.concatenate(all_mag)
+    pad = max(0.05 * (np.max(mag_vals) - np.min(mag_vals)), 0.05)
+    y_lim = (np.min(mag_vals) - pad, np.max(mag_vals) + pad)
+
+    resid_vals = np.concatenate(all_resid)
+    resid_max = max(np.max(np.abs(resid_vals)), 0.05) * 1.1
+    resid_lim = (-resid_max, resid_max)
+
+    nrows = max(len(rrab_panels), len(rrc_panels))
+    from ugdatalab.plotting import TEXTWIDTH_IN
+    fig = plt.figure(figsize=(TEXTWIDTH_IN, 7 / 2 * nrows))
+    subfigs = fig.subfigures(nrows, 2)
+    subfigs = np.atleast_2d(subfigs)
+
+    axes = np.empty((nrows, 2, 2), dtype=object)
+    columns = [
+        (rrab_panels, _CLASS_COLORS["RRab"], "RRab"),
+        (rrc_panels, _CLASS_COLORS["RRc"], "RRc"),
+    ]
+
+    for col, (panel_list, color, rr_class) in enumerate(columns):
+        for row in range(nrows):
+            ax_c, ax_r = subpanels(subfigs[row, col], 2, height_ratios=(3, 1))
+            axes[row, col, 0] = ax_c
+            axes[row, col, 1] = ax_r
+
+            if row >= len(panel_list):
+                ax_c.axis("off")
+                ax_r.axis("off")
+                continue
+
+            p = panel_list[row]
+            ax_c.errorbar(p["phase"], p["mag_centered"], yerr=p["mag_err"],
+                          fmt="o", ms=MS_MICRO, elinewidth=LW_FINE, color=color,
+                          alpha=ALPHA_FAINT, zorder=2,
+                          label=rr_class if row == 0 else "_nolegend_")
+            ax_c.plot(p["phase_grid"], p["model_centered"], color=NEUTRAL_COLOR,
+                      lw=LW_MEDIUM, zorder=3,
+                      label="Fourier model" if row == 0 else "_nolegend_")
+            ax_c.set_xlim(0.0, 1.0)
+            ax_c.set_ylim(y_lim)
+            ax_c.invert_yaxis()
+            ax_c.set_ylabel(r"$G - \langle G \rangle_{\rm Fourier}$")
+            ax_c.set_title(
+                rf"{rr_class}: Gaia DR3 {p['source_id']}"
+                "\n"
+                rf"$P={p['period']:.4f}\,\mathrm{{d}}$, $K={p['best_K']}$, "
+                rf"$\chi_r^2={p['chi2_r']:.2f}$",
+                loc="left", fontsize="small")
+            ax_c.tick_params(axis="x", bottom=False, labelbottom=False)
+
+            ax_r.errorbar(p["phase"], p["residuals"], yerr=p["mag_err"],
+                          fmt="o", ms=MS_MICRO, elinewidth=LW_FINE, color=color,
+                          alpha=ALPHA_FAINT, zorder=2)
+            zero_line(ax_r)
+            ax_r.set_xlim(0.0, 1.0)
+            ax_r.set_ylim(resid_lim)
+            ax_r.set_ylabel("Res.")
+            ax_r.set_xlabel("Phase")
+
+        axes[0, col, 0].legend(loc="best")
+
+    _savefig(fig, "fig_rrab_rrc.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 11. MCMC posterior histogram
+# ---------------------------------------------------------------------------
+
+def plot_posterior(samples, labels, n_burn, *, param_idx, pdf_fn=None):
+    """Histogram of post-burn MCMC samples with optional analytic PDF overlay."""
+    post_burn = samples[n_burn:, param_idx]
+    xlabel = labels[param_idx]
+
+    fig = columnwidth_figure(5 / 2 * 7.5 / 3.5)
+    ax = fig.add_subplot(111)
+
+    ax.hist(post_burn, bins=50, density=True, alpha=ALPHA_LIGHT, color="C0",
+            label="MCMC samples")
+
+    if pdf_fn is not None:
+        margin = 0.5 * (post_burn.max() - post_burn.min())
+        grid = np.linspace(post_burn.min() - margin, post_burn.max() + margin, 500)
+        legend_param = xlabel
+        if legend_param.startswith("$") and legend_param.endswith("$"):
+            legend_param = legend_param[1:-1]
+        ax.plot(grid, pdf_fn(grid), lw=LW_MEDIUM, color="C1",
+                label=rf"Analytic $p({legend_param}\mid x)$")
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Probability density")
+    ax.legend()
+
+    _savefig(fig, "fig_mh_validation_posterior.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 12. MCMC trace plot
+# ---------------------------------------------------------------------------
+
+def plot_trace(samples, log_probs, labels, n_burn):
+    """Trace plot of post-burn MCMC samples and log-probability."""
+    post_burn = samples[n_burn:]
+    post_burn_lp = log_probs[n_burn:]
+    steps = np.arange(len(post_burn))
+    ndim = post_burn.shape[1]
+
+    from ugdatalab.plotting import TEXTWIDTH_IN
+    fig_height = (31 / 20) * (ndim + 1)
+    fig = plt.figure(figsize=(TEXTWIDTH_IN, fig_height))
+    axes = subpanels(fig, ndim + 1, height_ratios=[1] * (ndim + 1))
+
+    for i, lbl in enumerate(labels):
+        axes[i].plot(steps, post_burn[:, i], lw=LW_FINE, alpha=ALPHA_STANDARD, color="C0")
+        axes[i].set_ylabel(lbl)
+
+    axes[-1].plot(steps, post_burn_lp, lw=LW_FINE, alpha=ALPHA_STANDARD, color="C0")
+    axes[-1].set_ylabel(r"$\ln P$")
+    axes[-1].set_xlabel("Step")
+
+    _savefig(fig, "fig_mh_trace.pdf")
+    return axes

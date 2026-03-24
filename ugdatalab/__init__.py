@@ -4,7 +4,6 @@ Submodules are imported on demand to avoid pulling heavy dependencies
 (PyMC, astroquery) at package import time.
 """
 
-from ugdatalab.models.cache import cache_stable
 from ugdatalab.models.gaia import (
     GaiaData,
     GaiaQuality,
@@ -12,6 +11,8 @@ from ugdatalab.models.gaia import (
     StrictGBPRP,
     LindegrenC1,
     LindegrenC2,
+    WISEData,
+    WISESample,
 )
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
 from ugdatalab.methods.periodogram import PeriodogramResult, lomb_scargle

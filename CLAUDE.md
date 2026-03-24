@@ -22,6 +22,10 @@ When the user says "audit ugdatalab", perform the following checks on all `.py` 
 14. **Redundant rcParams** — no rcParams that match matplotlib defaults
 15. **Redundant type casting** — no `np.asarray(col, dtype=...)` on columns already sanitized by `_sanitize_table`; no casting of return values from libraries that already return numpy arrays (e.g., `LombScargle.autopower`)
 
+16. **Circular imports** — no import cycles between modules; verify with `import ugdatalab`
+17. **Signature consistency** — engines use consistent parameter names (e.g., `n_steps`, `n_burn`, `seed`); result dataclasses carry `labels`, `samples`, `trace` where applicable
+18. **Numerical stability** — no unguarded `log(0)`, `1/0`, or `10**large_number`; magnitude conversions handle edge cases
+
 ### Output format
 
 For each file: list issues or say "clean". End with `import ugdatalab` verification.

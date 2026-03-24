@@ -1,6 +1,6 @@
 import io
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable
 
 import numpy as np
@@ -12,7 +12,7 @@ from ugdatalab.models.cache import cache_stable
 from ugdatalab.models.utils import _sanitize_table
 from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G
 from ugdatalab.methods.periodogram import lomb_scargle
-from ugdatalab.methods.fourier import FourierFit, fourier_fit, _build_design_matrix
+from ugdatalab.methods.fourier import FourierFit, fourier_fit, build_design_matrix
 from ugdatalab.methods.cross_validate import holdout_validate
 
 DEFAULT_PERIOD_MIN = 0.2
@@ -65,9 +65,14 @@ def _fetch_epoch_photometry(
     source_ids: Iterable[int], max_workers: int = 4,
 ) -> table.Table:
     """Download epoch photometry for many Gaia sources in parallel."""
+    from tqdm.auto import tqdm
+
     source_ids = tuple(source_ids)
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        chunks = list(pool.map(_get_epoch_photometry, source_ids))
+        futures = {pool.submit(_get_epoch_photometry, sid): sid for sid in source_ids}
+        chunks = []
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Epoch photometry"):
+            chunks.append(future.result())
     return table.vstack(chunks)
 
 
@@ -87,7 +92,9 @@ def _fetch_joined_epoch_photometry(catalog: table.Table) -> table.Table:
     mask = np.all(
         [np.isfinite(epoch_data[name]) for name in _EPOCH_SCHEMA[float]], axis=0,
     )
-    return table.join(catalog, epoch_data[mask], keys="source_id")
+    joined = table.join(catalog, epoch_data[mask], keys="source_id")
+    joined.sort(["source_id", "g_transit_time"])
+    return joined
 
 
 def _attach_derived_epoch_columns(data: table.Table) -> None:
@@ -148,7 +155,7 @@ def _fourier_mean_mag_err(fit: FourierFit) -> float:
     """Propagate coefficient covariance into the flux-space mean magnitude."""
     epoch_grid = np.linspace(0.0, fit.period, 1000, endpoint=False)
     omega = 2.0 * np.pi / fit.period
-    X_grid = _build_design_matrix(epoch_grid, omega, fit.k)
+    X_grid = build_design_matrix(epoch_grid, omega, fit.k)
     mag_grid = X_grid @ fit.beta
     fluepoch_grid = 10.0 ** (-0.4 * (mag_grid - ZP_G))
     mean_flux = np.mean(fluepoch_grid)
