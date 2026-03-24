@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 
 import numpy as np
+import pymc as pm
+import pytensor.tensor as pt
 
 
 class Likelihood(ABC):
@@ -101,9 +103,6 @@ class GaussianLikelihood(Likelihood):
         Inlier component defined by _pymc_inlier_model().
         Outlier: N(mu_bg, sigma_obs^2 + sigma_bg^2).
         """
-        import pymc as pm
-        import pytensor.tensor as pt
-
         y = pt.as_tensor_variable(self.y)
         y_err = pt.as_tensor_variable(self.y_err)
 

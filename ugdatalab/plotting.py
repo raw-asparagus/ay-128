@@ -127,17 +127,17 @@ mpl.rcParams.update(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _textwidth_figure(height_out_of_8: float):
+def textwidth_figure(height_out_of_8: float):
     """Create a figure spanning the full text width."""
     return plt.figure(figsize=(TEXTWIDTH_IN, height_out_of_8 / 8 * TEXTWIDTH_IN))
 
 
-def _columnwidth_figure(height_out_of_3_5: float):
+def columnwidth_figure(height_out_of_3_5: float):
     """Create a figure spanning a single column width."""
     return plt.figure(figsize=(COLUMNWIDTH_IN, height_out_of_3_5 / 3.5 * COLUMNWIDTH_IN))
 
 
-def _subpanels(
+def subpanels(
     parent,
     nrows: int,
     ncols: int = 1,
@@ -154,14 +154,14 @@ def _subpanels(
 
         # Simple stacked panels
         fig = plt.figure(figsize=(7, 5))
-        axes = _subpanels(fig, 2, height_ratios=(3, 1))
+        axes = subpanels(fig, 2, height_ratios=(3, 1))
         axes[0].plot(...)   # data
         axes[1].plot(...)   # residual
 
         # 2x2 grid, each cell with data + residual
         fig = plt.figure(figsize=(10, 8))
         for sf in fig.subfigures(2, 2).flat:
-            axes = _subpanels(sf, 2, height_ratios=(3, 1))
+            axes = subpanels(sf, 2, height_ratios=(3, 1))
             axes[0].plot(...)   # data
             axes[1].plot(...)   # residual
     """
@@ -179,11 +179,11 @@ def _subpanels(
     )
 
 
-def _zero_line(ax) -> None:
+def zero_line(ax) -> None:
     """Draw a horizontal reference line at y=0."""
     ax.axhline(0.0, **GUIDE_STYLE)
 
 
-def _unity_line(ax, label: str | None = None) -> None:
+def unity_line(ax, label: str | None = None) -> None:
     """Draw a horizontal reference line at y=1."""
     ax.axhline(1.0, **GUIDE_STYLE, label=label)

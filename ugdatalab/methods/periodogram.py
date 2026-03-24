@@ -59,10 +59,7 @@ def lomb_scargle(
 
     best_power = float(power[0])
     near_max = np.where(power >= 0.98 * best_power)[0]
-    if len(near_max) == 0:
-        best_period = periods[0]
-    else:
-        best_period = float(periods[near_max[np.argmax(periods[near_max])]])
+    best_period = float(periods[near_max[np.argmax(periods[near_max])]])
 
     fap = float(ls.false_alarm_probability(best_power))
 
