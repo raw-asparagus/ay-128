@@ -1,10 +1,3 @@
-"""PyMC NUTS sampling engine.
-
-Builds a native PyMC model from the likelihood's ``build_pymc()`` method
-and samples with NUTS. Returns an MCMCResult with posterior summaries
-and a predict method.
-"""
-
 from dataclasses import dataclass
 
 import numpy as np
@@ -21,25 +14,19 @@ class MCMCResult(Fit):
     ----------
     theta : ndarray
         Posterior median of the model parameters.
-    theta_std : ndarray
-        Posterior standard deviation of the model parameters.
     samples : ndarray
-        Posterior samples, shape (n_samples, n_params). For trace/corner plots.
-    var_names : list[str]
-        Names of the model parameters (matching PyMC variable names).
+        Posterior samples, shape (n_samples, n_params).
+    log_probs : ndarray
+        Log-posterior probability at each sample.
     labels : list[str]
         LaTeX-formatted parameter labels for plotting.
-    trace : InferenceData
-        Full PyMC trace for diagnostics.
     chi2_r : float
         Reduced chi-squared evaluated at the posterior median.
     """
     theta: np.ndarray
-    theta_std: np.ndarray
     samples: np.ndarray
-    var_names: list
+    log_probs: np.ndarray
     labels: list
-    trace: object
     chi2_r: float
     _likelihood: object = None
 
@@ -85,10 +72,10 @@ def nuts_sample(
     var_names = [v.name for v in model.free_RVs]
     posterior = trace.posterior
     theta_median = np.array([float(posterior[name].median()) for name in var_names])
-    theta_std = np.array([float(posterior[name].std()) for name in var_names])
     samples = np.column_stack([
         posterior[name].values.flatten() for name in var_names
     ])
+    log_probs = trace.sample_stats["lp"].values.flatten()
 
     y_pred = likelihood._predict(likelihood.x, theta_median)
     resid = likelihood.y - y_pred
@@ -97,11 +84,9 @@ def nuts_sample(
 
     return MCMCResult(
         theta=theta_median,
-        theta_std=theta_std,
         samples=samples,
-        var_names=var_names,
+        log_probs=log_probs,
         labels=likelihood.param_labels,
-        trace=trace,
         chi2_r=chi2_r,
         _likelihood=likelihood,
     )

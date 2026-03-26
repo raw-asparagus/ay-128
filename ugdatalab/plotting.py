@@ -127,14 +127,29 @@ mpl.rcParams.update(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def textwidth_figure(height_out_of_16: float):
-    """Create a figure spanning the full text width."""
-    return plt.figure(figsize=(TEXTWIDTH_IN, height_out_of_16 / 16 * TEXTWIDTH_IN))
+def _make_figure(width, height_ratio, height, subfigures):
+    fig = plt.figure(figsize=(width, height / height_ratio * width))
+    if subfigures is not None:
+        return fig, fig.subfigures(*subfigures)
+    return fig, fig.add_subplot(111)
 
 
-def columnwidth_figure(height_out_of_7_5: float):
-    """Create a figure spanning a single column width."""
-    return plt.figure(figsize=(COLUMNWIDTH_IN, height_out_of_7_5 / 7.5 * COLUMNWIDTH_IN))
+def textwidth_figure(height_out_of_16, subfigures=None):
+    """Create a figure spanning the full text width.
+
+    Returns (fig, ax) for a single panel, or (fig, subfigs) when
+    subfigures=(nrows, ncols).
+    """
+    return _make_figure(TEXTWIDTH_IN, 16, height_out_of_16, subfigures)
+
+
+def columnwidth_figure(height_out_of_7_5, subfigures=None):
+    """Create a figure spanning a single column width.
+
+    Returns (fig, ax) for a single panel, or (fig, subfigs) when
+    subfigures=(nrows, ncols).
+    """
+    return _make_figure(COLUMNWIDTH_IN, 7.5, height_out_of_7_5, subfigures)
 
 
 def subpanels(

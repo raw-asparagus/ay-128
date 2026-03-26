@@ -1,15 +1,3 @@
-"""Two-component mixture contamination model.
-
-Models each observation as drawn from either an *inlier* component
-(defined by the supplied Likelihood object) or a broad *outlier*
-background. The mixture structure, background parameterization, and
-inlier probability computation are all defined by the likelihood.
-
-The engine builds the model via ``likelihood.build_pymc_mixture()``,
-samples with PyMC NUTS, and computes inlier probabilities via
-``likelihood.inlier_probs()``.
-"""
-
 from dataclasses import dataclass
 
 import numpy as np
@@ -27,20 +15,17 @@ class MixtureResult:
     theta : ndarray
         Posterior median of the inlier model parameters.
     samples : ndarray
-        Posterior samples, shape (n_samples, n_params). For trace/corner plots.
-    var_names : list[str]
-        Names of the inlier model parameters.
+        Posterior samples, shape (n_samples, n_params).
+    log_probs : ndarray
+        Log-posterior probability at each sample.
     labels : list[str]
         LaTeX-formatted parameter labels for plotting.
-    trace : InferenceData
-        Full PyMC trace for diagnostics.
     """
     inlier_prob: np.ndarray
     theta: np.ndarray
     samples: np.ndarray
-    var_names: list
+    log_probs: np.ndarray
     labels: list
-    trace: object
 
 
 def mixture_contamination(
@@ -77,13 +62,13 @@ def mixture_contamination(
     samples = np.column_stack([
         posterior[name].values.flatten() for name in model_var_names
     ])
+    log_probs = trace.sample_stats["lp"].values.flatten()
     probs = likelihood.inlier_probs(trace, model_var_names)
 
     return MixtureResult(
         inlier_prob=probs,
         theta=theta_median,
         samples=samples,
-        var_names=model_var_names,
+        log_probs=log_probs,
         labels=likelihood.param_labels,
-        trace=trace,
     )
