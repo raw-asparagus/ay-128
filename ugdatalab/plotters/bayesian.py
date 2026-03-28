@@ -5,6 +5,8 @@ All functions accept result objects with .samples, .labels, and .log_probs
 and use ugdatalab.plotting constants with matplotlib "C0"–"C9" colors.
 """
 
+import corner
+import matplotlib.pyplot as plt
 import numpy as np
 
 from ugdatalab.plotting import (
@@ -70,9 +72,6 @@ def plot_corner(result):
     result : MCMCResult or similar
         Must have .samples and .labels.
     """
-    import corner
-    import matplotlib.pyplot as plt
-
     fig = corner.corner(
         result.samples,
         labels=result.labels,
@@ -131,7 +130,7 @@ def plot_posterior(result, *, param_idx=0, pdf_fn=None):
 def plot_posterior_predictive(result, *, color="C0", data_label="Data", ax=None):
     """Posterior predictive: data + median line + 68%/95% credible bands.
 
-    Assumes a linear model y = a + b*x with intrinsic scatter sigma_s,
+    Assumes a linear model y = a*x + b with intrinsic scatter sigma_s,
     where each row of result.samples is [a, b, log10(sigma_s)].
     Data (x, y, y_err) is read from result._likelihood.
 
@@ -163,7 +162,7 @@ def plot_posterior_predictive(result, *, color="C0", data_label="Data", ax=None)
     mean_draws = np.empty((len(pool), len(x_grid)))
     pred_draws = np.empty_like(mean_draws)
     for i, (a, b, log10_sig) in enumerate(pool):
-        mu = a + b * x_grid
+        mu = a * x_grid + b
         sigma_pred = np.sqrt(sigma_grid**2 + (10.0**log10_sig)**2)
         mean_draws[i] = mu
         pred_draws[i] = rng.normal(mu, sigma_pred)

@@ -7,7 +7,7 @@ import numpy as np
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
 from ugdatalab.methods.cross_validate import HoldoutResult, holdout_validate
 from ugdatalab.methods.periodogram import PeriodogramResult
-from ugdatalab.models.gaia import GaiaData
+from ugdatalab.models.gaia import Deoutlier, GaiaData
 from ugdatalab.plotting import (
     TEXTWIDTH_IN,
     LW_NONE,
@@ -98,7 +98,7 @@ def plot_lomb_scargle_periodogram(result):
 
     fig, ax = columnwidth_figure(4)
 
-    ax.plot(periods, power, color="C0", lw=LW_STANDARD)
+    ax.plot(periods, power, color="C0", lw=LW_STANDARD, alpha=ALPHA_STANDARD)
     ax.axvline(result.best_period, color="C1", ls="--", lw=LW_LIGHT,
                alpha=ALPHA_STANDARD, label=rf"$P={result.best_period:.4f}$ d")
     ax.set_ylim(0.0, 1.0)
@@ -241,7 +241,7 @@ def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
 
         ax_c.errorbar(phase, mag, yerr=mag_err, fmt="o", ms=MS_MICRO,
                       elinewidth=LW_FINE, color="C0", alpha=ALPHA_FAINT, zorder=2)
-        ax_c.plot(phase_grid, model_mag, color="C1", lw=LW_MEDIUM, zorder=3)
+        ax_c.plot(phase_grid, model_mag, color="C1", lw=LW_MEDIUM, alpha=ALPHA_STANDARD, zorder=3)
         ax_c.invert_yaxis()
         ax_c.set_ylabel(r"$G$ [mag]")
         ax_c.set_title(rf"$K={K}$, $\chi_r^2={fit.chi2_r:.2f}$",
@@ -337,7 +337,7 @@ def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, bes
         ax.hist(train_norm, bins=bins, histtype="step", density=True,
                 color="C0", alpha=ALPHA_STANDARD, lw=LW_MEDIUM, label="Training", zorder=2)
         ax.plot(x_gauss, gaussian, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD,
-                label=r"$\mathcal{N}(0,1)$", zorder=3)
+                alpha=ALPHA_STANDARD, label=r"$\mathcal{N}(0,1)$", zorder=3)
         ax.axvline(0.0, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD)
         ax.set_title(label, loc="left", fontsize="small")
         ax.set_xlabel(r"$(G - G_{\rm model})/\sigma$")
@@ -387,7 +387,7 @@ def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_
         ax.errorbar(cv_phase, mags[cv], yerr=errs[cv], fmt="none",
                     ecolor="C1", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
         ax.plot(phase_grid, fit.predict(epoch_grid), color=NEUTRAL_COLOR,
-                lw=LW_STANDARD, label="Model")
+                lw=LW_STANDARD, alpha=ALPHA_STANDARD, label="Model")
         ax.set_ylim(y_lim)
         ax.invert_yaxis()
         ax.set_xlabel("Phase")
@@ -505,15 +505,16 @@ def plot_fourier_extrapolation(fit):
                 fmt="o", ms=MS_STANDARD, elinewidth=LW_FINE, color="C0",
                 alpha=ALPHA_STANDARD, label="Gaia data")
     ax.plot(epoch_grid[model_observed], mag_grid[model_observed], color="C1",
-            lw=LW_STANDARD, label=rf"Fourier fit ($K={fit.k}$)")
+            lw=LW_STANDARD, alpha=ALPHA_STANDARD, label=rf"Fourier fit ($K={fit.k}$)")
     ax.plot(epoch_grid[~model_observed], mag_grid[~model_observed], color="C1",
-            lw=LW_STANDARD, ls="--", label="12-day extrapolation")
+            lw=LW_STANDARD, alpha=ALPHA_STANDARD, ls="--", label="12-day extrapolation")
 
     ax.fill_between(epoch_grid, mag_grid - mag_grid_err, mag_grid + mag_grid_err,
                     color="C1", **FILL_STYLE, label=r"Model $\pm1\sigma$")
 
     ax.axvline(epoch_last, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD, alpha=ALPHA_LIGHT)
     ax.plot(epoch_pred, mag_pred, marker="*", ms=MS_MEDIUM, color="k", lw=LW_NONE,
+            alpha=ALPHA_STANDARD,
             label=rf"10-day prediction: $G={mag_pred:.3f}\pm{mag_pred_err:.3f}$")
     ax.invert_yaxis()
     ax.set_xlim(epoch_start, epoch_end)
@@ -621,7 +622,7 @@ def plot_rrlyrae_shape_comparison(rrab, rrc):
                           alpha=ALPHA_FAINT, zorder=2,
                           label=rr_class if row == 0 else "_nolegend_")
             ax_c.plot(p["phase_grid"], p["model_centered"], color=NEUTRAL_COLOR,
-                      lw=LW_MEDIUM, zorder=3,
+                      lw=LW_MEDIUM, alpha=ALPHA_STANDARD, zorder=3,
                       label="Fourier model" if row == 0 else "_nolegend_")
             ax_c.set_xlim(0.0, 1.0)
             ax_c.set_ylim(y_lim)
@@ -655,26 +656,29 @@ def plot_rrlyrae_shape_comparison(rrab, rrc):
 # 13. Mollweide sky map: removed vs kept
 # ---------------------------------------------------------------------------
 
-def plot_mollweide_diff(full_data, kept_data):
+def _to_rad(data):
+    l_wrap = np.where(data["l"] > 180, data["l"] - 360, data["l"])
+    return np.deg2rad(l_wrap), np.deg2rad(data["b"])
+
+
+def plot_aitoff_diff(source: GaiaData, filtered: GaiaData):
     """Aitoff projection showing removed vs kept stars after quality cuts."""
+    full_data = source.data
+    kept_data = filtered.data
     removed_mask = ~np.isin(full_data["source_id"], kept_data["source_id"])
     removed = full_data[removed_mask]
-
-    def to_rad(data):
-        l_wrap = np.where(data["l"] > 180, data["l"] - 360, data["l"])
-        return np.deg2rad(l_wrap), np.deg2rad(data["b"])
 
     fig, ax = textwidth_figure(9)
     ax.remove()
     ax = fig.add_subplot(111, projection="aitoff")
 
-    l_rm, b_rm = to_rad(removed)
+    l_rm, b_rm = _to_rad(removed)
     ax.scatter(l_rm, b_rm, marker="x", color="C1", s=SS_STANDARD,
                linewidths=LW_LIGHT, alpha=ALPHA_STANDARD, rasterized=True,
                zorder=1, label=f"Removed ($N$={len(removed)})")
 
-    l_k, b_k = to_rad(kept_data)
-    ax.scatter(l_k, b_k, color="C0", s=SS_FINE, alpha=ALPHA_STANDARD,
+    l_k, b_k = _to_rad(kept_data)
+    ax.scatter(l_k, b_k, color="C0", s=SS_FINE, alpha=ALPHA_FAINT,
                rasterized=True, zorder=2, label=f"Kept ($N$={len(kept_data)})")
 
     longs = np.linspace(-np.pi, np.pi, 1000)
@@ -702,7 +706,7 @@ def plot_period_abs_mag(data):
     sigma_m = data["sigma_M"]
     classifications = data["best_classification"]
 
-    fig, ax = textwidth_figure(7)
+    fig, ax = textwidth_figure(29 / 4)
 
     for label, color in _CLASS_COLORS.items():
         mask = classifications == label
@@ -732,16 +736,19 @@ def plot_period_abs_mag(data):
 # 15. Period–abs mag before/after C1/C2 comparison
 # ---------------------------------------------------------------------------
 
-def plot_period_abs_mag_c12_comparison(pre_c12_data, post_c12_data):
+def plot_period_abs_mag_c12_comparison(source: GaiaData, filtered: GaiaData):
     """Period-luminosity diagram showing kept points and removed x-markers."""
     from matplotlib.lines import Line2D
+
+    post_c12_data = filtered.data
+    pre_c12_data = source.data
 
     periods = post_c12_data["rrlyrae_representative_period"]
     m_g = post_c12_data["M_G"]
     sigma_m = post_c12_data["sigma_M"]
     classifications = post_c12_data["best_classification"]
 
-    fig, ax = columnwidth_figure(5 / 2 * 7.5 / 3.5)
+    fig, ax = columnwidth_figure(11 / 2)
 
     # Plot kept points
     for label, color in _CLASS_COLORS.items():
@@ -753,15 +760,20 @@ def plot_period_abs_mag_c12_comparison(pre_c12_data, post_c12_data):
         ax.scatter(periods[mask], m_g[mask], color=color, label=label,
                    s=SS_MICRO, alpha=ALPHA_STANDARD, rasterized=True, zorder=2)
 
-    # Overlay removed as x markers
+    # Overlay removed as x markers, colored by classification
     removed_mask = ~np.isin(pre_c12_data["source_id"], post_c12_data["source_id"])
     removed = pre_c12_data[removed_mask]
     if len(removed):
         rm_periods = removed["rrlyrae_representative_period"]
         rm_mg = removed["M_G"]
-        ax.scatter(rm_periods, rm_mg, marker="x", s=SS_STANDARD,
-                   linewidths=LW_FINE, color="grey", alpha=ALPHA_FAINT,
-                   rasterized=True, zorder=3)
+        rm_class = removed["best_classification"]
+        for label, color in _CLASS_COLORS.items():
+            m = rm_class == label
+            if not np.any(m):
+                continue
+            ax.scatter(rm_periods[m], rm_mg[m], marker="x", s=SS_STANDARD,
+                       linewidths=LW_FINE, color=color, alpha=ALPHA_FAINT,
+                       rasterized=True, zorder=3)
 
     ax.set_xscale("log")
     ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
@@ -776,7 +788,7 @@ def plot_period_abs_mag_c12_comparison(pre_c12_data, post_c12_data):
     handles = [Line2D([0], [0], marker="o", ls="none", markerfacecolor=c,
                        markeredgecolor="none", ms=MS_FINE, label=l)
                for l, c in _CLASS_COLORS.items()]
-    handles.append(Line2D([0], [0], marker="x", ls="none", color="grey",
+    handles.append(Line2D([0], [0], marker="x", ls="none", color=NEUTRAL_COLOR,
                           ms=MS_FINE, label="Removed"))
     ax.legend(handles=handles, loc="lower right")
 
@@ -788,15 +800,18 @@ def plot_period_abs_mag_c12_comparison(pre_c12_data, post_c12_data):
 # 16. Inlier probability period-luminosity comparison
 # ---------------------------------------------------------------------------
 
-def plot_inlier_prob_period_luminosity_comparison(all_data, inlier_prob, threshold=0.95):
+def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deoutlier):
     """P-M_G colored by inlier probability, with removed points marked."""
-    periods = all_data["rrlyrae_representative_period"]
-    m_g = all_data["M_G"]
+    pre_data = source.data
+    inlier_prob = clean.inlier_probs
 
-    kept = inlier_prob >= threshold
+    periods = pre_data["rrlyrae_representative_period"]
+    m_g = pre_data["M_G"]
+
+    kept = np.isin(pre_data["source_id"], clean.data["source_id"])
     removed = ~kept
 
-    fig, ax = columnwidth_figure(6)
+    fig, ax = columnwidth_figure(29 / 4)
 
     sc = ax.scatter(periods[kept], m_g[kept], c=inlier_prob[kept],
                     cmap="RdYlGn", vmin=0.0, vmax=1.0, s=SS_MICRO,
@@ -804,8 +819,8 @@ def plot_inlier_prob_period_luminosity_comparison(all_data, inlier_prob, thresho
     ax.scatter(periods[removed], m_g[removed], c=inlier_prob[removed],
                cmap="RdYlGn", vmin=0.0, vmax=1.0, marker="x", s=SS_STANDARD,
                linewidths=LW_LIGHT, alpha=ALPHA_FAINT, rasterized=True, zorder=1,
-               label=rf"Removed ($p_{{\rm in}} < {threshold}$, $N={removed.sum()}$)")
-    plt.colorbar(sc, ax=ax, location="bottom", label="Posterior inlier probability")
+               label=rf"Removed ($N={removed.sum()}$)")
+    plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
 
     ax.set_xscale("log")
     ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
@@ -823,30 +838,40 @@ def plot_inlier_prob_period_luminosity_comparison(all_data, inlier_prob, thresho
 
 
 # ---------------------------------------------------------------------------
-# 17. Inlier probability map
+# 17. Multi-sampler comparison corner plot
 # ---------------------------------------------------------------------------
 
-def plot_inlier_prob_map(all_data, inlier_prob):
-    """P-M_G scatter colored by posterior inlier probability."""
-    periods = all_data["rrlyrae_representative_period"]
-    m_g = all_data["M_G"]
+def plot_sampler_comparison_corner(results):
+    """Overlay corner contours from multiple samplers on one figure.
 
-    fig, ax = columnwidth_figure(5 / 2 * 7.5 / 3.5)
+    Parameters
+    ----------
+    results : dict[str, MCMCResult | MHResult]
+        Mapping from sampler name to result objects with .samples and .labels.
+    """
+    import corner
+    from matplotlib.lines import Line2D
 
-    sc = ax.scatter(periods, m_g, c=inlier_prob, cmap="RdYlGn",
-                    vmin=0.0, vmax=1.0, s=SS_FINE, alpha=ALPHA_STANDARD,
-                    rasterized=True)
-    plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
+    labels = next(iter(results.values())).labels
 
-    ax.set_xscale("log")
-    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
-    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
-    ax.autoscale_view()
-    y0, y1 = ax.get_ylim()
-    ax.set_ylim(max(y0, y1), min(y0, y1))
-    ax.set_xlabel(r"$P$ [days]")
-    ax.set_ylabel(r"$M_{\rm G}$ [mag]")
+    fig = None
+    handles = []
+    for i, (name, result) in enumerate(results.items()):
+        color = f"C{i}"
+        fig = corner.corner(
+            result.samples,
+            labels=labels,
+            fig=fig or plt.figure(figsize=(0.8 * TEXTWIDTH_IN, 0.8 * TEXTWIDTH_IN)),
+            color=color,
+            fill_contours=False,
+            plot_datapoints=False,
+            plot_density=False,
+            levels=(0.393, 0.865),
+            smooth=1.0,
+            hist_kwargs={"density": True, "histtype": "step", "linewidth": LW_STANDARD, "alpha": ALPHA_LIGHT},
+            contour_kwargs={"linewidths": LW_STANDARD, "alpha": ALPHA_LIGHT},
+        )
+        handles.append(Line2D([0], [0], color=color, lw=LW_STANDARD, label=name))
 
-    _savefig(fig, "fig_inlier_prob_map.pdf")
-    return ax
+    fig.legend(handles=handles, loc="upper right", frameon=False)
+    return fig

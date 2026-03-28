@@ -11,13 +11,13 @@ from ugdatalab.methods.bayesian.base import GaussianLikelihood
 class LinearGaussianLikelihood(GaussianLikelihood):
     """Linear model with Gaussian noise and intrinsic scatter.
 
-    Model: y = a + b*x
+    Model: y = a*x + b
     Noise: V_i = sigma_i^2 + sigma_s^2
 
-    Parameters: a (intercept), b (slope), log10(sigma_s) (intrinsic scatter).
+    Parameters: a (slope), b (intercept), log10(sigma_s) (intrinsic scatter).
 
     The log-likelihood is:
-        log L = -0.5 * sum_i [ log(2*pi*V_i) + (y_i - a - b*x_i)^2 / V_i ]
+        log L = -0.5 * sum_i [ log(2*pi*V_i) + (y_i - a*x_i - b)^2 / V_i ]
     """
     x: np.ndarray
     y: np.ndarray
@@ -34,17 +34,18 @@ class LinearGaussianLikelihood(GaussianLikelihood):
 
     def _predict(self, x, theta):
         a, b, *_ = theta
-        return a + b * np.asarray(x, dtype=float)
+        return a * np.asarray(x, dtype=float) + b
 
     def _inlier_variance(self, theta):
         _, _, log10_sig = theta
         return self.y_err**2 + (10.0**log10_sig)**2
 
     def _initial_guess(self):
-        A = np.column_stack([np.ones_like(self.x), self.x])
+        A = np.column_stack([self.x, np.ones_like(self.x)])
         a0, b0 = np.linalg.lstsq(A, self.y, rcond=None)[0]
-        resid = self.y - (a0 + b0 * self.x)
-        return np.array([a0, b0, np.log10(np.std(resid))])
+        resid = self.y - (a0 * self.x + b0)
+        sig_resid = max(np.std(resid), 1e-300)
+        return np.array([a0, b0, np.log10(sig_resid)])
 
     def _prior_scales(self):
         """Data-driven weakly informative prior widths.
@@ -54,7 +55,7 @@ class LinearGaussianLikelihood(GaussianLikelihood):
         """
         sy = float(np.std(self.y))
         sx = float(np.std(self.x))
-        return np.array([2.5 * sy, 2.5 * sy / sx, 2.0])
+        return np.array([2.5 * sy / sx, 2.5 * sy, 2.0])
 
     def _pymc_inlier_model(self, model):
         """Add linear inlier priors and return (mu_in, var_in)."""
@@ -66,14 +67,14 @@ class LinearGaussianLikelihood(GaussianLikelihood):
         a = pm.Normal("a", mu=guess[0], sigma=scales[0])
         b = pm.Normal("b", mu=guess[1], sigma=scales[1])
         log10_sig = pm.Normal("log10_sig", mu=guess[2], sigma=scales[2])
-        mu_in = a + b * x
+        mu_in = a * x + b
         var_in = y_err**2 + (10.0**log10_sig)**2
         return mu_in, var_in
 
     def build_pymc(self):
         """Build a native PyMC model for NUTS sampling.
 
-        Model: y ~ N(a + b*x, sigma_obs^2 + sigma_s^2)
+        Model: y ~ N(a*x + b, sigma_obs^2 + sigma_s^2)
         """
         with pm.Model() as model:
             mu_in, var_in = self._pymc_inlier_model(model)

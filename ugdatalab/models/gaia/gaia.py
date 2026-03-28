@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from astroquery.gaia import Gaia
 from astropy import table
-from ugdatalab.models.cache import cache_stable
+from ugdatalab.models.cache import _cache_stable
 
 import numpy as np
 
@@ -58,14 +58,14 @@ def _add_gaia_photometry_columns(data: table.Table) -> None:
     data["sigma_M"] = np.sqrt(data["sigma_G"]**2 + data["sigma_mu"]**2)
 
 
-@cache_stable(module="ugdatalab.gaia")
+@_cache_stable(module="ugdatalab.gaia")
 def _get_gaia(query):
     job  = Gaia.launch_job_async(query)
     data = job.get_results()
     return data
 
 
-@cache_stable(module="ugdatalab.gaia")
+@_cache_stable(module="ugdatalab.gaia")
 def _get_gaia_quality(query):
     raw = _get_gaia(query)
     poe = raw["parallax_over_error"]
@@ -176,4 +176,38 @@ class LindegrenC2(GaiaQuality):
             (E < 1.3 + 0.06  * bp_rp**2)
         )
         self.data = source.data[mask]
+        self.lightcurves = None
+
+
+class Deoutlier(GaiaData):
+    """Bayesian mixture-model outlier removal per RR Lyrae subclass.
+
+    Fits a linear-Gaussian mixture contamination model to each subclass
+    (RRab, RRc, RRd) in the period–luminosity plane, then keeps sources
+    whose posterior inlier probability exceeds the threshold.
+    """
+    def __init__(self, source: GaiaData, prob_threshold: float = 0.95):
+        from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
+        from ugdatalab.methods.bayesian.mixture import mixture_contamination
+
+        self.query = source.query
+        self.include_lightcurve = False
+
+        inlier_probs = np.full(len(source.data), np.nan)
+        for rr_class in ("RRab", "RRc", "RRd"):
+            mask = source.data["best_classification"] == rr_class
+            subset = source.data[mask]
+            if len(subset) == 0:
+                continue
+            log_p = np.log10(subset["rrlyrae_representative_period"])
+            likelihood = LinearGaussianLikelihood(
+                x=log_p - np.mean(log_p),
+                y=subset["M_G"],
+                y_err=subset["sigma_M"],
+            )
+            result = mixture_contamination(likelihood)
+            inlier_probs[mask] = result.inlier_prob
+
+        self.inlier_probs = inlier_probs
+        self.data = source.data[inlier_probs >= prob_threshold]
         self.lightcurves = None

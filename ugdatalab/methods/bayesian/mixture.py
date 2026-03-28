@@ -56,7 +56,7 @@ def mixture_contamination(
             progressbar=False,
         )
 
-    model_var_names = [v.name for v in model.free_RVs if v.name != "f"]
+    model_var_names = [v.name for v in model.free_RVs if v.name not in ("f", "logit_f")]
     posterior = trace.posterior
     theta_median = np.array([float(posterior[name].median()) for name in model_var_names])
     samples = np.column_stack([

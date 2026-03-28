@@ -80,7 +80,7 @@ def nuts_sample(
     y_pred = likelihood._predict(likelihood.x, theta_median)
     resid = likelihood.y - y_pred
     nu = len(likelihood.y) - len(var_names)
-    chi2_r = float(np.sum((resid / likelihood.y_err)**2) / nu)
+    chi2_r = float(np.sum((resid / likelihood.y_err)**2) / max(nu, 1))
 
     return MCMCResult(
         theta=theta_median,

@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 
@@ -49,6 +49,7 @@ def holdout_validate(
     fit_fn: Callable,
     param_values: np.ndarray,
     cv_fraction: float = 0.2,
+    seed: int = 346,
 ) -> HoldoutResult:
     """Validate a model over a single parameter using a holdout split.
 
@@ -71,6 +72,8 @@ def holdout_validate(
         Grid of parameter values to search over.
     cv_fraction : float
         Fraction of data held out for validation (default 0.2).
+    seed : int
+        Random seed for the train/validation split (default 346).
 
     Returns
     -------
@@ -81,7 +84,7 @@ def holdout_validate(
     y_err = np.asarray(y_err, dtype=float)
     param_values = np.asarray(param_values)
 
-    rng = np.random.default_rng(346)
+    rng = np.random.default_rng(seed)
     idx = rng.permutation(len(x))
     n_cv = max(1, int(round(cv_fraction * len(x))))
     cv_idx = idx[:n_cv]
@@ -118,6 +121,7 @@ def k_fold_validate(
     fit_fn: Callable,
     param_values: np.ndarray,
     n_folds: int = 5,
+    seed: int = 346,
 ) -> KFoldResult:
     """Validate a model over a single parameter using k-fold cross-validation.
 
@@ -131,6 +135,8 @@ def k_fold_validate(
         Grid of parameter values to search over.
     n_folds : int
         Number of folds (default 5).
+    seed : int
+        Random seed for the fold assignment (default 346).
 
     Returns
     -------
@@ -141,7 +147,7 @@ def k_fold_validate(
     y_err = np.asarray(y_err, dtype=float)
     param_values = np.asarray(param_values)
 
-    rng = np.random.default_rng(346)
+    rng = np.random.default_rng(seed)
     idx = rng.permutation(len(x))
     folds = np.array_split(idx, n_folds)
 

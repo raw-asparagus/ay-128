@@ -10,7 +10,7 @@ def phase_fold(x: np.ndarray, period: float) -> np.ndarray:
     return (np.asarray(x, dtype=float) % period) / period
 
 
-def build_design_matrix(x: np.ndarray, omega: float, k: int) -> np.ndarray:
+def _build_design_matrix(x: np.ndarray, omega: float, k: int) -> np.ndarray:
     """Build the Fourier design matrix for angular frequency *omega* and *k* harmonics."""
     x = np.asarray(x, dtype=float)
     period = 2.0 * np.pi / omega
@@ -54,14 +54,14 @@ class FourierFit(Fit):
     def predict(self, x: np.ndarray) -> np.ndarray:
         """Predict values at the given positions."""
         omega = 2.0 * np.pi / self.period
-        X = build_design_matrix(x, omega, self.k)
+        X = _build_design_matrix(x, omega, self.k)
         return X @ self.beta
 
     def predict_std(self, x: np.ndarray) -> np.ndarray:
         """Predict the standard deviation of the prediction at the given positions."""
         x = np.atleast_1d(np.asarray(x, dtype=float))
         omega = 2.0 * np.pi / self.period
-        X = build_design_matrix(x, omega, self.k)
+        X = _build_design_matrix(x, omega, self.k)
         pred_var = np.einsum("ij,jk,ik->i", X, self.beta_cov, X)
         return np.sqrt(np.clip(pred_var, 0.0, None))
 
@@ -98,7 +98,7 @@ def fourier_fit(
         )
 
     omega = 2.0 * np.pi / period
-    X = build_design_matrix(x, omega, k)
+    X = _build_design_matrix(x, omega, k)
     weights = 1.0 / y_err
     beta, _, _, _ = np.linalg.lstsq(
         X * weights[:, None], y * weights, rcond=None,

@@ -8,11 +8,11 @@ import requests
 from astropy import table
 from astropy.io.votable import parse as parse_votable
 
-from ugdatalab.models.cache import cache_stable
+from ugdatalab.models.cache import _cache_stable
 from ugdatalab.models.utils import _sanitize_table
 from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G
 from ugdatalab.methods.periodogram import lomb_scargle
-from ugdatalab.methods.fourier import FourierFit, fourier_fit, build_design_matrix
+from ugdatalab.methods.fourier import FourierFit, fourier_fit, _build_design_matrix
 from ugdatalab.methods.cross_validate import holdout_validate
 
 DEFAULT_PERIOD_MIN = 0.2
@@ -25,7 +25,7 @@ _GAIA_DATALINK_URL = "https://gea.esac.esa.int/data-server/data"
 # Epoch photometry I/O
 # ---------------------------------------------------------------------------
 
-@cache_stable(module="ugdatalab.gaia")
+@_cache_stable(module="ugdatalab.gaia")
 def _get_epoch_photometry(source_id: int) -> table.Table:
     """Download Gaia DR3 epoch photometry for one source via direct HTTP."""
     resp = requests.post(
@@ -155,7 +155,7 @@ def _fourier_mean_mag_err(fit: FourierFit) -> float:
     """Propagate coefficient covariance into the flux-space mean magnitude."""
     epoch_grid = np.linspace(0.0, fit.period, 1000, endpoint=False)
     omega = 2.0 * np.pi / fit.period
-    X_grid = build_design_matrix(epoch_grid, omega, fit.k)
+    X_grid = _build_design_matrix(epoch_grid, omega, fit.k)
     mag_grid = X_grid @ fit.beta
     fluepoch_grid = 10.0 ** (-0.4 * (mag_grid - ZP_G))
     mean_flux = np.mean(fluepoch_grid)

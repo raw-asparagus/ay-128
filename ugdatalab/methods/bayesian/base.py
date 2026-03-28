@@ -50,8 +50,8 @@ class GaussianLikelihood(Likelihood):
 
     @property
     def sig_bg(self) -> float:
-        """Background width, fixed to 3 * MAD * 1.4826."""
-        return float(3.0 * np.median(np.abs(self.y - self.mu_bg)) * 1.4826)
+        """Background width, fixed to 3 * std(y)."""
+        return float(3.0 * np.std(self.y))
 
     @abstractmethod
     def _predict(self, x: np.ndarray, theta: np.ndarray) -> np.ndarray:
@@ -108,7 +108,9 @@ class GaussianLikelihood(Likelihood):
 
         with pm.Model() as model:
             mu_in, var_in = self._pymc_inlier_model(model)
-            f = pm.Beta("f", alpha=2, beta=1)
+            logit_f = pm.Normal("logit_f", mu=0, sigma=3)
+            f = pm.math.sigmoid(logit_f)
+            pm.Deterministic("f", f)
             var_out = y_err**2 + self.sig_bg**2
 
             ll_in = pt.log(f) - 0.5 * (pt.log(2 * np.pi * var_in) + (y - mu_in)**2 / var_in)

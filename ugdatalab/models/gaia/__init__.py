@@ -5,6 +5,7 @@ from ugdatalab.models.gaia.gaia import (
     StrictGBPRP,
     LindegrenC1,
     LindegrenC2,
+    Deoutlier,
 )
 from ugdatalab.models.gaia.wise import (
     WISEData,

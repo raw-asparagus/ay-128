@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from astropy import table
 
-from ugdatalab.models.cache import cache_stable
+from ugdatalab.models.cache import _cache_stable
 from ugdatalab.models.gaia.gaia import GaiaData, _get_gaia
 from ugdatalab.models.utils import _char_at, _sanitize_table
 
@@ -31,7 +31,7 @@ def _add_wise_photometry_columns(data: table.Table) -> None:
     data["sigma_M_W2"] = np.sqrt(data["w2mpro_error"] ** 2 + data["sigma_mu"] ** 2)
 
 
-@cache_stable(module="ugdatalab.wise")
+@_cache_stable(module="ugdatalab.wise")
 def _get_wise_quality(query):
     raw = _get_gaia(query)
     poe = raw["parallax_over_error"]
@@ -70,6 +70,7 @@ class WISESample(WISEData):
     """
     def __init__(self, source: WISEData):
         self.query = source.query
+        self.include_lightcurve = False
 
         allwise_oid = np.asarray(source.data["allwise_oid"], dtype=float)
         matched = source.data[np.isfinite(allwise_oid)]
@@ -100,3 +101,4 @@ class WISESample(WISEData):
         )
 
         self.data = matched[mask]
+        self.lightcurves = None

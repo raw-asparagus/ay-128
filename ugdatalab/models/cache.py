@@ -4,7 +4,7 @@ from joblib import Memory
 _memory = Memory(".joblib-cache", verbose=0)
 
 
-def cache_stable(func=None, *, module: str | None = None):
+def _cache_stable(func=None, *, module: str | None = None):
     """Cache a function in the shared `.joblib-cache` store."""
 
     def deco(inner_func):
