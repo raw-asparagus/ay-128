@@ -152,6 +152,12 @@ def columnwidth_figure(height_out_of_7_5, subfigures=None):
     return _make_figure(COLUMNWIDTH_IN, 7.5, height_out_of_7_5, subfigures)
 
 
+def corner_figure():
+    """Create a square figure at 0.7x text width for corner plots."""
+    side = 0.7 * TEXTWIDTH_IN
+    return plt.figure(figsize=(side, side))
+
+
 def subpanels(
     parent,
     nrows: int,

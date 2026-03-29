@@ -1,7 +1,9 @@
 from pathlib import Path
 
+import corner
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.lines import Line2D
 import numpy as np
 
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
@@ -34,6 +36,7 @@ from ugdatalab.plotting import (
     columnwidth_figure,
     subpanels,
     zero_line, MODEL_STYLE,
+    corner_figure,
 )
 
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
@@ -738,7 +741,6 @@ def plot_period_abs_mag(data):
 
 def plot_period_abs_mag_c12_comparison(source: GaiaData, filtered: GaiaData):
     """Period-luminosity diagram showing kept points and removed x-markers."""
-    from matplotlib.lines import Line2D
 
     post_c12_data = filtered.data
     pre_c12_data = source.data
@@ -841,35 +843,49 @@ def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deout
 # 17. Multi-sampler comparison corner plot
 # ---------------------------------------------------------------------------
 
-def plot_sampler_comparison_corner(results):
-    """Overlay corner contours from multiple samplers on one figure.
+_CORNER_HIST_KWARGS = dict(
+    density=True, histtype="step", linewidth=LW_STANDARD, alpha=ALPHA_LIGHT,
+)
+_CORNER_CONTOUR_KWARGS = dict(linewidths=LW_STANDARD, alpha=ALPHA_LIGHT)
+_CORNER_LEVELS = (0.393, 0.865)
+
+
+def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native):
+    """Overlay corner contours from MH, NUTS+Potential, and native NUTS.
 
     Parameters
     ----------
-    results : dict[str, MCMCResult | MHResult]
-        Mapping from sampler name to result objects with .samples and .labels.
+    mh : MHResult
+        Metropolis-Hastings result.
+    nuts_potential : MCMCResult
+        NUTS with pm.Potential result.
+    nuts_native : MCMCResult
+        Native PyMC NUTS result.
     """
-    import corner
-    from matplotlib.lines import Line2D
+    labels = [r"$a$", r"$b$", r"$\log_{10}\,\sigma_s$"]
+    samplers = {
+        "Metropolis-Hastings": mh,
+        "NUTS + Potential": nuts_potential,
+        "Native PyMC NUTS": nuts_native,
+    }
 
-    labels = next(iter(results.values())).labels
+    fig = corner_figure()
 
-    fig = None
     handles = []
-    for i, (name, result) in enumerate(results.items()):
+    for i, (name, result) in enumerate(samplers.items()):
         color = f"C{i}"
         fig = corner.corner(
             result.samples,
             labels=labels,
-            fig=fig or plt.figure(figsize=(0.8 * TEXTWIDTH_IN, 0.8 * TEXTWIDTH_IN)),
+            fig=fig,
             color=color,
             fill_contours=False,
             plot_datapoints=False,
             plot_density=False,
-            levels=(0.393, 0.865),
+            levels=_CORNER_LEVELS,
             smooth=1.0,
-            hist_kwargs={"density": True, "histtype": "step", "linewidth": LW_STANDARD, "alpha": ALPHA_LIGHT},
-            contour_kwargs={"linewidths": LW_STANDARD, "alpha": ALPHA_LIGHT},
+            hist_kwargs={**_CORNER_HIST_KWARGS},
+            contour_kwargs={**_CORNER_CONTOUR_KWARGS},
         )
         handles.append(Line2D([0], [0], color=color, lw=LW_STANDARD, label=name))
 
