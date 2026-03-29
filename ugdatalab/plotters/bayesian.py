@@ -1,10 +1,3 @@
-"""Reusable MCMC diagnostic plots: trace, corner, posterior predictive.
-
-All functions accept result objects with .samples, .labels, and .log_probs
-(MCMCResult, MixtureResult, MHResult, or any compatible object)
-and use ugdatalab.plotting constants with matplotlib "C0"–"C9" colors.
-"""
-
 import corner
 import numpy as np
 
@@ -29,17 +22,12 @@ from ugdatalab.plotting import (
     subpanels,
 )
 
-_TRACE_PANEL_HEIGHT_PTS = 28
+_TRACE_PANEL_HEIGHT_PTS = 3
 _TRACE_STYLE = dict(lw=LW_FINE, alpha=ALPHA_STANDARD, color="C0")
 
 _CORNER_QUANTILES = [0.16, 0.5, 0.84]
 
 _HIST_STYLE = dict(bins=50, density=True, alpha=ALPHA_LIGHT, color="C0")
-
-_PP_N_DRAWS = 400
-_PP_GRID_N = 300
-_PP_SEED = 42
-
 
 # ---------------------------------------------------------------------------
 # Trace plot
@@ -140,6 +128,51 @@ def plot_posterior(result, *, param_idx=0, pdf_fn=None):
 # Posterior predictive check (median + credible bands)
 # ---------------------------------------------------------------------------
 
+_PP_N_DRAWS = 300
+_PP_GRID_N = 1000
+_PP_SEED = 42
+
+
+def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_SEED):
+    """Compute posterior predictive summaries from an MCMCResult.
+
+    Returns a dict with keys:
+        x_grid, median, q16, q84, q025, q975
+    all arrays of length *n_grid* spanning the data range.
+    """
+    likelihood = result._likelihood
+    x, y_err = likelihood.x, likelihood.y_err
+    samples = result.samples
+
+    margin = 0.05 * (np.max(x) - np.min(x))
+    x_grid = np.linspace(np.min(x) - margin, np.max(x) + margin, n_grid)
+    order = np.argsort(x)
+    sigma_grid = np.interp(x_grid, x[order], y_err[order])
+
+    rng = np.random.default_rng(seed)
+    step = max(len(samples) // n_draws, 1)
+    pool = samples[::step]
+    if len(pool) > n_draws:
+        pool = pool[rng.choice(len(pool), size=n_draws, replace=False)]
+
+    mean_draws = np.empty((len(pool), n_grid))
+    pred_draws = np.empty_like(mean_draws)
+    for i, (a, b, log10_sig) in enumerate(pool):
+        mu = a * x_grid + b
+        sigma_pred = np.sqrt(sigma_grid**2 + (10.0**log10_sig)**2)
+        mean_draws[i] = mu
+        pred_draws[i] = rng.normal(mu, sigma_pred)
+
+    return {
+        "x_grid": x_grid,
+        "median": np.median(mean_draws, axis=0),
+        "q16": np.quantile(pred_draws, 0.16, axis=0),
+        "q84": np.quantile(pred_draws, 0.84, axis=0),
+        "q025": np.quantile(pred_draws, 0.025, axis=0),
+        "q975": np.quantile(pred_draws, 0.975, axis=0),
+    }
+
+
 def plot_posterior_predictive(result, *, color="C0", data_label="Data", ax=None):
     """Posterior predictive: data + median line + 68%/95% credible bands.
 
@@ -157,44 +190,21 @@ def plot_posterior_predictive(result, *, color="C0", data_label="Data", ax=None)
     """
     likelihood = result._likelihood
     x, y, y_err = likelihood.x, likelihood.y, likelihood.y_err
-    samples = result.samples
+    pp = predict_posterior(result)
+    x_grid = pp["x_grid"]
 
     if ax is None:
         fig, ax = textwidth_figure(8)
-
-    x_grid = np.linspace(np.min(x), np.max(x), _PP_GRID_N)
-    order = np.argsort(x)
-    sigma_grid = np.interp(x_grid, x[order], y_err[order])
-
-    rng = np.random.default_rng(_PP_SEED)
-    step = max(len(samples) // _PP_N_DRAWS, 1)
-    pool = samples[::step]
-    if len(pool) > _PP_N_DRAWS:
-        pool = pool[rng.choice(len(pool), size=_PP_N_DRAWS, replace=False)]
-
-    mean_draws = np.empty((len(pool), len(x_grid)))
-    pred_draws = np.empty_like(mean_draws)
-    for i, (a, b, log10_sig) in enumerate(pool):
-        mu = a * x_grid + b
-        sigma_pred = np.sqrt(sigma_grid**2 + (10.0**log10_sig)**2)
-        mean_draws[i] = mu
-        pred_draws[i] = rng.normal(mu, sigma_pred)
-
-    median_line = np.median(mean_draws, axis=0)
-    q16 = np.quantile(pred_draws, 0.16, axis=0)
-    q84 = np.quantile(pred_draws, 0.84, axis=0)
-    q025 = np.quantile(pred_draws, 0.025, axis=0)
-    q975 = np.quantile(pred_draws, 0.975, axis=0)
 
     ax.errorbar(x, y, yerr=y_err, fmt="none", color=NEUTRAL_COLOR,
                 alpha=ALPHA_LIGHT, lw=LW_FINE, zorder=1)
     ax.scatter(x, y, s=SS_MICRO, color=color, alpha=ALPHA_FAINT,
                rasterized=True, zorder=2, label=data_label)
-    ax.fill_between(x_grid, q025, q975, color=color, **FILL_STYLE,
+    ax.fill_between(x_grid, pp["q025"], pp["q975"], color=color, **FILL_STYLE,
                     zorder=3, label=r"95\% predictive")
-    ax.fill_between(x_grid, q16, q84, color=color, alpha=ALPHA_FAINT,
+    ax.fill_between(x_grid, pp["q16"], pp["q84"], color=color, alpha=ALPHA_FAINT,
                     lw=LW_NONE, zorder=4, label=r"68\% predictive")
-    ax.plot(x_grid, median_line, color=color, **FIT_STYLE,
+    ax.plot(x_grid, pp["median"], color=color, **FIT_STYLE,
             zorder=5, label="Posterior median")
 
     ax.autoscale_view()

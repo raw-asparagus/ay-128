@@ -32,6 +32,7 @@ from ugdatalab.plotting import (
     NEUTRAL_COLOR,
     GUIDE_STYLE,
     FILL_STYLE,
+    FIT_STYLE,
     textwidth_figure,
     columnwidth_figure,
     subpanels,
@@ -843,13 +844,6 @@ def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deout
 # 17. Multi-sampler comparison corner plot
 # ---------------------------------------------------------------------------
 
-_CORNER_HIST_KWARGS = dict(
-    density=True, histtype="step", linewidth=LW_STANDARD, alpha=ALPHA_LIGHT,
-)
-_CORNER_CONTOUR_KWARGS = dict(linewidths=LW_STANDARD, alpha=ALPHA_LIGHT)
-_CORNER_LEVELS = (0.393, 0.865)
-
-
 def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native):
     """Overlay corner contours from MH, NUTS+Potential, and native NUTS.
 
@@ -882,12 +876,87 @@ def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native):
             fill_contours=False,
             plot_datapoints=False,
             plot_density=False,
-            levels=_CORNER_LEVELS,
+            levels=(0.393, 0.865),
             smooth=1.0,
-            hist_kwargs={**_CORNER_HIST_KWARGS},
-            contour_kwargs={**_CORNER_CONTOUR_KWARGS},
+            hist_kwargs=dict(
+                density=True, histtype="step", linewidth=LW_STANDARD, alpha=ALPHA_LIGHT,
+            ),
+            contour_kwargs=dict(linewidths=LW_STANDARD, alpha=ALPHA_LIGHT),
         )
         handles.append(Line2D([0], [0], color=color, lw=LW_STANDARD, label=name))
 
     fig.legend(handles=handles, loc="upper right", frameon=False)
     return fig
+
+
+# ---------------------------------------------------------------------------
+# 18. Optical G vs WISE W2 posterior predictive comparison
+# ---------------------------------------------------------------------------
+
+def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
+                       rrab_mean_log_p, rrc_mean_log_p):
+    """Two-panel (top/bottom) comparison of optical G and WISE W2 PL relations.
+
+    Top panel: RRab with G (C0) and W2 (C1) posterior predictives overlaid.
+    Bottom panel: RRc with G (C0) and W2 (C1) posterior predictives overlaid.
+    X-axis shows catalog period in days (log scale).
+
+    Parameters
+    ----------
+    rrab_optical, rrc_optical : MCMCResult
+        Optical G-band NUTS results for RRab and RRc.
+    rrab_w2, rrc_w2 : MCMCResult
+        WISE W2-band NUTS results for RRab and RRc.
+    rrab_mean_log_p, rrc_mean_log_p : float
+        Mean log10(P/day) used to center the predictor for RRab and RRc.
+    """
+    from ugdatalab.plotters.bayesian import predict_posterior
+
+    fig, ax_dummy = textwidth_figure(45 / 2)
+    ax_dummy.remove()
+    axes = subpanels(fig, 2, sharex=True, hspace=0.07)
+
+    for ax, optical, w2, mean_lp in [
+        (axes[0], rrab_optical, rrab_w2, rrab_mean_log_p),
+        (axes[1], rrc_optical, rrc_w2, rrc_mean_log_p),
+    ]:
+        for result, color, band_label in [
+            (optical, "C0", "Gaia $G$"),
+            (w2, "C1", r"WISE $W\!2$"),
+        ]:
+            likelihood = result._likelihood
+            x_c, y, y_err = likelihood.x, likelihood.y, likelihood.y_err
+            pp = predict_posterior(result)
+
+            periods = 10.0 ** (x_c + mean_lp)
+            p_grid = 10.0 ** (pp["x_grid"] + mean_lp)
+
+            ax.errorbar(periods, y, yerr=y_err, fmt="none", color=NEUTRAL_COLOR,
+                        alpha=ALPHA_LIGHT, lw=LW_FINE, zorder=1)
+            ax.scatter(periods, y, s=SS_MICRO, color=color, alpha=ALPHA_FAINT,
+                       rasterized=True, zorder=2,
+                       label=f"{band_label} data")
+            ax.fill_between(p_grid, pp["q025"], pp["q975"], color=color,
+                            **FILL_STYLE, zorder=3,
+                            label=rf"{band_label} 95\% predictive")
+            ax.fill_between(p_grid, pp["q16"], pp["q84"], color=color,
+                            alpha=ALPHA_FAINT, lw=LW_NONE, zorder=4,
+                            label=rf"{band_label} 68\% predictive")
+            ax.plot(p_grid, pp["median"], color=color, **FIT_STYLE, zorder=5,
+                    label=f"{band_label} median")
+
+        ax.set_xscale("log")
+        ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
+        ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+        ax.autoscale_view()
+        y0, y1 = ax.get_ylim()
+        ax.set_ylim(max(y0, y1), min(y0, y1))
+        ax.set_ylabel("Absolute magnitude [mag]")
+
+    axes[0].legend(loc="best")
+
+    axes[-1].set_xlabel(r"Catalog period $P$ [days]")
+
+    _savefig(fig, "fig_optical_ir_comparison.pdf")
+    return axes

@@ -4,7 +4,7 @@ import numpy as np
 from astropy import table
 
 from ugdatalab.models.cache import _cache_stable
-from ugdatalab.models.gaia.gaia import GaiaData, _get_gaia
+from ugdatalab.models.gaia.gaia import GaiaData, _get_gaia, _attach_rrlyrae_representative_period_column
 from ugdatalab.models.utils import _char_at, _sanitize_table
 
 
@@ -52,6 +52,7 @@ class WISEData(GaiaData):
     def __post_init__(self):
         data = _get_wise_quality(self.query)
         _sanitize_table(data, _WISE_SCHEMA)
+        _attach_rrlyrae_representative_period_column(data)
         self.data = data
 
 

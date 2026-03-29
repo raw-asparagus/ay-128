@@ -1,9 +1,3 @@
-"""Download and cache all apStar spectra for the training set.
-
-Run in a separate terminal while working elsewhere:
-    cd /Users/junruiting/GitHub/ay-128/labs/02
-    ../../.venv/bin/python download_spectra.py
-"""
 import sys
 sys.path.insert(0, "/")
 
