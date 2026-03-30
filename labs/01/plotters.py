@@ -937,13 +937,10 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
                        rasterized=True, zorder=2,
                        label=f"{band_label} data")
             ax.fill_between(p_grid, pp["q025"], pp["q975"], color=color,
-                            **FILL_STYLE, zorder=3,
-                            label=rf"{band_label} 95\% predictive")
+                            **FILL_STYLE, zorder=3)
             ax.fill_between(p_grid, pp["q16"], pp["q84"], color=color,
-                            alpha=ALPHA_FAINT, lw=LW_NONE, zorder=4,
-                            label=rf"{band_label} 68\% predictive")
-            ax.plot(p_grid, pp["median"], color=color, **FIT_STYLE, zorder=5,
-                    label=f"{band_label} median")
+                            alpha=ALPHA_FAINT, lw=LW_NONE, zorder=4)
+            ax.plot(p_grid, pp["median"], color=color, **FIT_STYLE, zorder=5)
 
         ax.set_xscale("log")
         ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
@@ -954,9 +951,351 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
         ax.set_ylim(max(y0, y1), min(y0, y1))
         ax.set_ylabel("Absolute magnitude [mag]")
 
-    axes[0].legend(loc="best")
+    handles, _ = axes[0].get_legend_handles_labels()
+    handles.extend([
+        Line2D([0], [0], color=NEUTRAL_COLOR, **FIT_STYLE, label="Median"),
+        plt.Rectangle((0, 0), 1, 1, fc=NEUTRAL_COLOR, alpha=ALPHA_FAINT, lw=0,
+                       label=r"68\% predictive"),
+        plt.Rectangle((0, 0), 1, 1, fc=NEUTRAL_COLOR, **FILL_STYLE,
+                       label=r"95\% predictive"),
+    ])
+    axes[0].legend(handles=handles, loc="best")
 
     axes[-1].set_xlabel(r"Catalog period $P$ [days]")
 
     _savefig(fig, "fig_optical_ir_comparison.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 19. Period-color posterior predictive comparison (RRab vs RRc)
+# ---------------------------------------------------------------------------
+
+def plot_period_color_comparison(rrab_result, rrc_result,
+                                rrab_mean_log_p, rrc_mean_log_p):
+    """Single-panel period-color posterior predictive with RRab and RRc overlaid.
+
+    Parameters
+    ----------
+    rrab_result, rrc_result : MCMCResult
+        Period-color NUTS results for RRab and RRc.
+    rrab_mean_log_p, rrc_mean_log_p : float
+        Mean log10(P/day) used to center the predictor.
+    """
+    from ugdatalab.plotters.bayesian import predict_posterior
+
+    fig, ax = textwidth_figure(35 / 4)
+
+    for result, mean_lp, color, class_label in [
+        (rrab_result, rrab_mean_log_p, "C0", "RRab"),
+        (rrc_result, rrc_mean_log_p, "C1", "RRc"),
+    ]:
+        likelihood = result._likelihood
+        x_c, y, y_err = likelihood.x, likelihood.y, likelihood.y_err
+        pp = predict_posterior(result)
+
+        periods = 10.0 ** (x_c + mean_lp)
+        p_grid = 10.0 ** (pp["x_grid"] + mean_lp)
+
+        ax.errorbar(periods, y, yerr=y_err, fmt="none", color=NEUTRAL_COLOR,
+                    alpha=ALPHA_LIGHT, lw=LW_FINE, zorder=1)
+        ax.scatter(periods, y, s=SS_MICRO, color=color, alpha=ALPHA_FAINT,
+                   rasterized=True, zorder=2, label=f"{class_label} data")
+        ax.fill_between(p_grid, pp["q025"], pp["q975"], color=color,
+                        **FILL_STYLE, zorder=3)
+        ax.fill_between(p_grid, pp["q16"], pp["q84"], color=color,
+                        alpha=ALPHA_FAINT, lw=LW_NONE, zorder=4)
+        ax.plot(p_grid, pp["median"], color=color, **FIT_STYLE, zorder=5)
+
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
+    ax.xaxis.set_minor_formatter(mticker.NullFormatter())
+    ax.autoscale_view()
+    ax.set_xlabel(r"Catalog period $P$ [days]")
+    ax.set_ylabel(r"$G_{\rm BP} - G_{\rm RP}$ [mag]")
+
+    handles, _ = ax.get_legend_handles_labels()
+    handles.extend([
+        Line2D([0], [0], color=NEUTRAL_COLOR, **FIT_STYLE, label="Median"),
+        plt.Rectangle((0, 0), 1, 1, fc=NEUTRAL_COLOR, alpha=ALPHA_FAINT, lw=0,
+                       label=r"68\% predictive"),
+        plt.Rectangle((0, 0), 1, 1, fc=NEUTRAL_COLOR, **FILL_STYLE,
+                       label=r"95\% predictive"),
+    ])
+    ax.legend(handles=handles, loc="best")
+
+    _savefig(fig, "fig_period_color.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 20. Empirical vs catalog extinction comparison
+# ---------------------------------------------------------------------------
+
+def plot_empirical_vs_catalog_extinction(catalog_ag, empirical_ag):
+    """Scatter comparison of empirical A_G vs Gaia g_absorption with residual.
+
+    Parameters
+    ----------
+    catalog_ag : array-like
+        Gaia DR3 ``g_absorption`` values (finite, quality-filtered).
+    empirical_ag : array-like
+        Empirical A_G derived from the period-color relation.
+
+    Returns
+    -------
+    axes : ndarray
+        Array [ax_scatter, ax_residual].
+    """
+    catalog_ag = np.asarray(catalog_ag, dtype=float)
+    empirical_ag = np.asarray(empirical_ag, dtype=float)
+    residual = empirical_ag - catalog_ag
+
+    fig, ax_dummy = textwidth_figure(35 / 4)
+    ax_dummy.remove()
+    axes = subpanels(fig, 2, height_ratios=(4, 1), hspace=0.07)
+
+    ax_main, ax_resid = axes
+
+    # --- main scatter ---
+    ax_main.scatter(
+        catalog_ag, empirical_ag,
+        s=SS_MICRO, alpha=ALPHA_FAINT, color=_CLASS_COLORS["RRab"],
+        rasterized=True, zorder=2, label="RRab",
+    )
+    lo = min(catalog_ag.min(), empirical_ag.min())
+    hi = max(catalog_ag.max(), empirical_ag.max())
+    ax_main.plot([lo, hi], [lo, hi], **GUIDE_STYLE, label="1:1")
+    ax_main.set_aspect("equal", adjustable="datalim")
+    ax_main.set_ylabel(r"Empirical $A_G$ [mag]")
+    plt.setp(ax_main.get_xticklabels(), visible=False)
+    ax_main.legend(loc="upper left")
+
+    # --- residual ---
+    ax_resid.scatter(
+        catalog_ag, residual,
+        s=SS_MICRO, alpha=ALPHA_FAINT, color=_CLASS_COLORS["RRab"],
+        rasterized=True, zorder=2,
+    )
+    zero_line(ax_resid)
+    resid_lim = 1.1 * np.nanpercentile(np.abs(residual), 99)
+    ax_resid.set_ylim(-resid_lim, resid_lim)
+    ax_resid.set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
+    ax_resid.set_ylabel("Res.")
+
+    _savefig(fig, "fig_extinction_comparison.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 21. Aitoff reddening map
+# ---------------------------------------------------------------------------
+
+def _aitoff_coords(l_deg, b_deg):
+    """Convert Galactic (l, b) in degrees to Aitoff-ready radians."""
+    l_wrap = np.where(l_deg > 180, l_deg - 360, l_deg)
+    return np.deg2rad(l_wrap), np.deg2rad(b_deg)
+
+
+def plot_aitoff_reddening(l_deg, b_deg, values, vmin=None, vmax=None):
+    """Aitoff projection of RR Lyrae color excess.
+
+    Parameters
+    ----------
+    l_deg, b_deg : array-like
+        Galactic coordinates in degrees.
+    values : array-like
+        Color excess values to map.
+    vmin, vmax : float, optional
+        Colorbar limits.
+    """
+    fig = plt.figure(figsize=(TEXTWIDTH_IN, TEXTWIDTH_IN * 0.5), dpi=300)
+    ax = fig.add_subplot(111, projection="aitoff")
+
+    l_rad, b_rad = _aitoff_coords(l_deg, b_deg)
+    sc = ax.scatter(
+        l_rad, b_rad, c=values,
+        s=SS_MICRO, alpha=ALPHA_FAINT, cmap="magma",
+        vmin=vmin, vmax=vmax, rasterized=True, lw=LW_NONE,
+    )
+    fig.colorbar(
+        sc, ax=ax, orientation="horizontal", pad=0.08, shrink=0.8,
+        label=r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]",
+    )
+    ax.grid(True, lw=LW_FINE, alpha=ALPHA_FAINT)
+    ax.set_xlabel(r"Galactic longitude $l$")
+    ax.set_ylabel(r"Galactic latitude $b$")
+
+    _savefig(fig, "fig_reddening_map.pdf")
+    return fig, ax
+
+
+# ---------------------------------------------------------------------------
+# 22. Reddening quality diagnostics (sigma_E + BP/RP excess)
+# ---------------------------------------------------------------------------
+
+def plot_reddening_quality_diagnostics(
+    bp_rp, excess_factor, sigma_e, max_sigma_e,
+):
+    """Two-panel diagnostic: sigma_E histogram and BP/RP excess envelope.
+
+    Parameters
+    ----------
+    bp_rp : array-like
+        Observed BP - RP color.
+    excess_factor : array-like
+        ``phot_bp_rp_excess_factor`` from Gaia.
+    sigma_e : array-like
+        Propagated reddening uncertainty.
+    max_sigma_e : float
+        Adopted sigma_E cutoff.
+    """
+    fig, ax_dummy = textwidth_figure(29 / 4)
+    ax_dummy.remove()
+    axes = subpanels(fig, 1, ncols=2, sharex=False, sharey=False, wspace=0.35)
+
+    # --- left: sigma_E histogram ---
+    finite = np.isfinite(sigma_e)
+    axes[0].hist(
+        sigma_e[finite], bins=100, range=(0, 0.5),
+        color="C0", alpha=ALPHA_STANDARD, edgecolor="none",
+    )
+    axes[0].axvline(max_sigma_e, **GUIDE_STYLE, label=rf"$\sigma_E = {max_sigma_e}$")
+    axes[0].set_xlabel(r"$\sigma_E$ [mag]")
+    axes[0].set_ylabel("Count")
+    axes[0].legend(loc="upper right")
+
+    # --- right: BP/RP excess envelope ---
+    bp_rp_grid = np.linspace(-0.5, 4.0, 300)
+    lo_env = 1.0 + 0.015 * bp_rp_grid**2
+    hi_env = 1.3 + 0.06 * bp_rp_grid**2
+    in_envelope = (excess_factor > 1.0 + 0.015 * bp_rp**2) & \
+                  (excess_factor < 1.3 + 0.06 * bp_rp**2)
+
+    rng = np.random.default_rng(7)
+    n_plot = min(25_000, len(bp_rp))
+    idx = rng.choice(len(bp_rp), n_plot, replace=False) if len(bp_rp) > n_plot else np.arange(len(bp_rp))
+
+    axes[1].scatter(
+        bp_rp[idx[~in_envelope[idx]]], excess_factor[idx[~in_envelope[idx]]],
+        s=SS_MICRO, alpha=ALPHA_FAINT, color="C3", rasterized=True, zorder=1,
+        label="Fails",
+    )
+    axes[1].scatter(
+        bp_rp[idx[in_envelope[idx]]], excess_factor[idx[in_envelope[idx]]],
+        s=SS_MICRO, alpha=ALPHA_FAINT, color="C0", rasterized=True, zorder=2,
+        label="Passes",
+    )
+    axes[1].plot(bp_rp_grid, lo_env, **MODEL_STYLE, color="C7")
+    axes[1].plot(bp_rp_grid, hi_env, **MODEL_STYLE, color="C7")
+    axes[1].set_xlabel(r"$G_{\mathrm{BP}} - G_{\mathrm{RP}}$ [mag]")
+    axes[1].set_ylabel("BP/RP excess factor")
+    axes[1].set_xlim(-0.5, 4.0)
+    axes[1].set_ylim(0.5, 3.5)
+    axes[1].legend(loc="upper left")
+
+    _savefig(fig, "fig_reddening_diagnostics.pdf")
+    return axes
+
+
+# ---------------------------------------------------------------------------
+# 23. SFD vs empirical hexbin comparison
+# ---------------------------------------------------------------------------
+
+def plot_sfd_comparison(sfd_ebv, empirical, bin_count=18):
+    """Density hexbin of SFD E(B-V) vs empirical E(BP-RP) with median trend.
+
+    Parameters
+    ----------
+    sfd_ebv : array-like
+        SFD E(B-V) values.
+    empirical : array-like
+        Empirical E(BP-RP) values.
+    bin_count : int
+        Number of bins for the median trend line.
+    """
+    sfd_ebv = np.asarray(sfd_ebv, dtype=float)
+    empirical = np.asarray(empirical, dtype=float)
+
+    fig, ax = textwidth_figure(35 / 4)
+
+    hb = ax.hexbin(
+        sfd_ebv, empirical, gridsize=80, cmap="Blues",
+        mincnt=1, rasterized=True,
+    )
+    fig.colorbar(hb, ax=ax, label="Stars per bin")
+
+    # binned median trend
+    edges = np.linspace(np.nanpercentile(sfd_ebv, 0.5),
+                        np.nanpercentile(sfd_ebv, 99.5), bin_count + 1)
+    centers, medians = [], []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        sel = (sfd_ebv >= lo) & (sfd_ebv < hi)
+        if sel.sum() >= 10:
+            centers.append(0.5 * (lo + hi))
+            medians.append(float(np.nanmedian(empirical[sel])))
+    ax.plot(centers, medians, color="C1", **FIT_STYLE, label="Binned median")
+
+    ax.set_xlabel(r"SFD $E(B-V)$ [mag]")
+    ax.set_ylabel(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+    ax.legend(loc="upper left")
+
+    _savefig(fig, "fig_sfd_comparison.pdf")
+    return fig, ax
+
+
+# ---------------------------------------------------------------------------
+# 24. SFD regime decomposition (similar-scale vs large-SFD)
+# ---------------------------------------------------------------------------
+
+def plot_sfd_regime_decomposition(
+    sfd_ebv, empirical, similar_mask, large_mask,
+    slope, intercept, r2,
+    similar_scale_max=2.0, large_sfd_min=10.0,
+):
+    """Two-panel scatter: similar-scale regime with linear fit, large-SFD regime.
+
+    Parameters
+    ----------
+    sfd_ebv, empirical : array-like
+        Full arrays (masks select subsets).
+    similar_mask, large_mask : array-like of bool
+        Boolean masks for each regime.
+    slope, intercept, r2 : float
+        Linear fit parameters for the similar-scale regime.
+    similar_scale_max, large_sfd_min : float
+        Regime boundaries in SFD E(B-V) mag.
+    """
+    fig, ax_dummy = textwidth_figure(29 / 4)
+    ax_dummy.remove()
+    axes = subpanels(fig, 1, ncols=2, sharex=False, sharey=False, wspace=0.35)
+
+    # --- left: similar scale ---
+    x_sim = np.asarray(sfd_ebv)[similar_mask]
+    y_sim = np.asarray(empirical)[similar_mask]
+    axes[0].scatter(
+        x_sim, y_sim,
+        s=SS_MICRO, alpha=ALPHA_FAINT, color="C0", rasterized=True,
+    )
+    x_fit = np.linspace(0, similar_scale_max, 100)
+    axes[0].plot(x_fit, slope * x_fit + intercept, color="C1", **FIT_STYLE,
+                 label=rf"$y = {slope:.2f}\,x {intercept:+.2f}$, $R^2 = {r2:.3f}$")
+    axes[0].set_xlabel(r"SFD $E(B-V)$ [mag]")
+    axes[0].set_ylabel(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+    axes[0].set_title(rf"SFD $\leq$ {similar_scale_max} mag")
+    axes[0].legend(loc="upper left")
+
+    # --- right: large SFD ---
+    x_lg = np.asarray(sfd_ebv)[large_mask]
+    y_lg = np.asarray(empirical)[large_mask]
+    axes[1].scatter(
+        x_lg, y_lg,
+        s=SS_MICRO, alpha=ALPHA_FAINT, color="C3", rasterized=True,
+    )
+    axes[1].set_xlabel(r"SFD $E(B-V)$ [mag]")
+    axes[1].set_ylabel(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
+    axes[1].set_title(rf"SFD $>$ {large_sfd_min} mag")
+
+    _savefig(fig, "fig_regime_decomposition.pdf")
     return axes
