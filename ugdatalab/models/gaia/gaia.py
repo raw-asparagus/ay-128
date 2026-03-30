@@ -21,13 +21,18 @@ from ugdatalab.models.utils import _sanitize_table
 def _attach_rrlyrae_representative_period_column(data: table.Table) -> None:
     cf = data["best_classification"]
 
-    period = np.full(len(data), np.nan, dtype=float)
     fundamental = cf == "RRab"
     first_overtone = (cf == "RRc") | (cf == "RRd")
 
+    period = np.full(len(data), np.nan, dtype=float)
     period[fundamental] = data["pf"][fundamental]
     period[first_overtone] = data["p1_o"][first_overtone]
     data["rrlyrae_representative_period"] = period
+
+    err = np.full(len(data), np.nan, dtype=float)
+    err[fundamental] = data["pf_error"][fundamental]
+    err[first_overtone] = data["p1_o_error"][first_overtone]
+    data["rrlyrae_representative_period_error"] = err
 
 
 _GAIA_SCHEMA = {
@@ -90,6 +95,7 @@ class GaiaData:
         data = _get_gaia(self.query)
         _sanitize_table(data, _GAIA_SCHEMA)
         _attach_rrlyrae_representative_period_column(data)
+
         self.data = data
         self._load_lightcurves()
 
@@ -112,6 +118,7 @@ class GaiaQuality(GaiaData):
         data = _get_gaia_quality(self.query)
         _sanitize_table(data, _GAIA_SCHEMA)
         _attach_rrlyrae_representative_period_column(data)
+
         self.data = data
         self._load_lightcurves()
 
@@ -199,11 +206,15 @@ class Deoutlier(GaiaData):
             subset = source.data[mask]
             if len(subset) == 0:
                 continue
-            log_p = np.log10(subset["rrlyrae_representative_period"])
+            period = subset["rrlyrae_representative_period"]
+            period_err = subset["rrlyrae_representative_period_error"]
+            log_p = np.log10(period)
+            sigma_logp = np.array(period_err / (period * np.log(10)), dtype=float)
             likelihood = LinearGaussianLikelihood(
                 x=log_p - np.mean(log_p),
                 y=subset["M_G"],
                 y_err=subset["sigma_M"],
+                x_err=sigma_logp,
             )
             result = mixture_contamination(likelihood)
             inlier_probs[mask] = result.inlier_prob

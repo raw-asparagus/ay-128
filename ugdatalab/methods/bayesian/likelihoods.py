@@ -12,7 +12,7 @@ class LinearGaussianLikelihood(GaussianLikelihood):
     """Linear model with Gaussian noise and intrinsic scatter.
 
     Model: y = a*x + b
-    Noise: V_i = sigma_i^2 + sigma_s^2
+    Noise: V_i = sigma_yi^2 + sigma_s^2 + (a * sigma_xi)^2
 
     Parameters: a (slope), b (intercept), log10(sigma_s) (intrinsic scatter).
 
@@ -22,11 +22,13 @@ class LinearGaussianLikelihood(GaussianLikelihood):
     x: np.ndarray
     y: np.ndarray
     y_err: np.ndarray
+    x_err: np.ndarray = None
 
     def __post_init__(self):
         self.x = np.asarray(self.x, dtype=float)
         self.y = np.asarray(self.y, dtype=float)
         self.y_err = np.asarray(self.y_err, dtype=float)
+        self.x_err = np.asarray(self.x_err, dtype=float) if self.x_err is not None else np.zeros_like(self.x)
 
     @property
     def param_labels(self) -> list[str]:
@@ -37,8 +39,8 @@ class LinearGaussianLikelihood(GaussianLikelihood):
         return a * np.asarray(x, dtype=float) + b
 
     def _inlier_variance(self, theta):
-        _, _, log10_sig = theta
-        return self.y_err**2 + (10.0**log10_sig)**2
+        a, _, log10_sig = theta
+        return self.y_err**2 + (10.0**log10_sig)**2 + (a * self.x_err)**2
 
     def _initial_guess(self):
         A = np.column_stack([self.x, np.ones_like(self.x)])
@@ -68,7 +70,8 @@ class LinearGaussianLikelihood(GaussianLikelihood):
         b = pm.Normal("b", mu=guess[1], sigma=scales[1])
         log10_sig = pm.Normal("log10_sig", mu=guess[2], sigma=scales[2])
         mu_in = a * x + b
-        var_in = y_err**2 + (10.0**log10_sig)**2
+        x_err = pt.as_tensor_variable(self.x_err)
+        var_in = y_err**2 + (10.0**log10_sig)**2 + (a * x_err)**2
         return mu_in, var_in
 
     def build_pymc(self):

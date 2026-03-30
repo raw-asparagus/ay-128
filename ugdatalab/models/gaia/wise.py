@@ -16,7 +16,8 @@ _WISE_SCHEMA = {
     np.int64: ["source_id"],
     str: ["best_classification"],
     float: [
-        "l", "b", "pf", "p1_o", "parallax", "parallax_error",
+        "l", "b", "pf", "pf_error", "p1_o", "p1_o_error",
+        "parallax", "parallax_error",
         "phot_g_mean_mag", "bp_rp", "w2mpro", "w2mpro_error",
     ],
 }

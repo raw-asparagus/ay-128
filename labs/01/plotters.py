@@ -1064,10 +1064,9 @@ def plot_empirical_vs_catalog_extinction(catalog_ag, empirical_ag):
         s=SS_MICRO, alpha=ALPHA_FAINT, color=_CLASS_COLORS["RRab"],
         rasterized=True, zorder=2, label="RRab",
     )
-    lo = min(catalog_ag.min(), empirical_ag.min())
+    lo = 0.0
     hi = max(catalog_ag.max(), empirical_ag.max())
     ax_main.plot([lo, hi], [lo, hi], **GUIDE_STYLE, label="1:1")
-    ax_main.set_aspect("equal", adjustable="datalim")
     ax_main.set_ylabel(r"Empirical $A_G$ [mag]")
     plt.setp(ax_main.get_xticklabels(), visible=False)
     ax_main.legend(loc="upper left")
