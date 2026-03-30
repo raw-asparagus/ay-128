@@ -99,7 +99,6 @@ mpl.rcParams.update(
         "legend.fontsize": LEGEND_SIZE,
         # Axes
         "axes.linewidth": LW_LIGHT,
-        "axes.axisbelow": True,
         "axes.grid": True,
         # Ticks
         "xtick.direction": "in",

@@ -141,13 +141,12 @@ def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_S
     all arrays of length *n_grid* spanning the data range.
     """
     likelihood = result._likelihood
-    x, y_err = likelihood.x, likelihood.y_err
+    x = likelihood.x
     samples = result.samples
 
     margin = 0.05 * (np.max(x) - np.min(x))
     x_grid = np.linspace(np.min(x) - margin, np.max(x) + margin, n_grid)
     order = np.argsort(x)
-    sigma_grid = np.interp(x_grid, x[order], y_err[order])
 
     rng = np.random.default_rng(seed)
     step = max(len(samples) // n_draws, 1)
@@ -157,9 +156,9 @@ def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_S
 
     mean_draws = np.empty((len(pool), n_grid))
     pred_draws = np.empty_like(mean_draws)
-    for i, (a, b, log10_sig) in enumerate(pool):
-        mu = a * x_grid + b
-        sigma_pred = np.sqrt(sigma_grid**2 + (10.0**log10_sig)**2)
+    for i, theta in enumerate(pool):
+        mu = likelihood._predict(x_grid, theta)
+        sigma_pred = np.sqrt(np.interp(x_grid, x[order], likelihood._inlier_variance(theta)[order]))
         mean_draws[i] = mu
         pred_draws[i] = rng.normal(mu, sigma_pred)
 
