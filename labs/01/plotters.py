@@ -3,11 +3,13 @@ from pathlib import Path
 import corner
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 import numpy as np
 
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
 from ugdatalab.methods.cross_validate import HoldoutResult, holdout_validate
+from ugdatalab.plotters.bayesian import predict_posterior
 from ugdatalab.methods.periodogram import PeriodogramResult
 from ugdatalab.models.gaia import Deoutlier, GaiaData
 from ugdatalab.plotting import (
@@ -43,9 +45,10 @@ from ugdatalab.plotting import (
 
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 _CLASS_COLORS = {"RRab": "C0", "RRc": "C1", "RRd": "C2"}
+_ERRBAR_KW = dict(fmt="none", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
 
 
-def _savefig(fig, name):
+def savefig(fig, name):
     _FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(_FIGURES_DIR / name)
 
@@ -63,15 +66,13 @@ def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
     epoch = data["g_transit_time"]
     mag = data["g_transit_mag"]
     mag_err = data["g_transit_mag_err"]
-    phase = (epoch % period) / period
+    phase = phase_fold(epoch, period)
 
     fig, ax = columnwidth_figure(33 / 4)
     ax.remove()
     axes = subpanels(fig, 2, hspace=0.42, sharex=False, sharey=True)
 
-    err_kw = dict(fmt="none", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
-
-    axes[0].errorbar(epoch, mag, yerr=mag_err, ecolor="C0", **err_kw)
+    axes[0].errorbar(epoch, mag, yerr=mag_err, ecolor="C0", **_ERRBAR_KW)
     axes[0].scatter(epoch, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C0",
                     zorder=2, rasterized=True, label="Raw light curve")
     axes[0].invert_yaxis()
@@ -79,7 +80,7 @@ def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
     axes[0].set_ylabel(r"$G$ [mag]")
     axes[0].legend(loc="best")
 
-    axes[1].errorbar(phase, mag, yerr=mag_err, ecolor="C1", **err_kw)
+    axes[1].errorbar(phase, mag, yerr=mag_err, ecolor="C1", **_ERRBAR_KW)
     axes[1].scatter(phase, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C1",
                     zorder=2, rasterized=True, label="Phase-folded light curve")
     axes[1].invert_yaxis()
@@ -87,7 +88,7 @@ def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
     axes[1].set_ylabel(r"$G$ [mag]")
     axes[1].legend(loc="best")
 
-    _savefig(fig, "fig_lc_raw_phased.pdf")
+    savefig(fig, "fig_lc_raw_phased.pdf")
     return axes
 
 
@@ -111,7 +112,7 @@ def plot_lomb_scargle_periodogram(result):
     ax.set_ylabel("Lomb-Scargle power")
     ax.legend()
 
-    _savefig(fig, "fig_periodogram.pdf")
+    savefig(fig, "fig_periodogram.pdf")
     return ax
 
 
@@ -194,7 +195,7 @@ def plot_vari_rrlyrae_period_comparison(rrlyrae):
     ax_o.set_ylabel(r"L-S period $P_{\rm LS}$ [days]")
     ax_o.set_aspect("equal", adjustable="box")
 
-    _savefig(fig, "fig_period_comparison.pdf")
+    savefig(fig, "fig_period_comparison.pdf")
     return axes
 
 
@@ -262,7 +263,7 @@ def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
         else:
             ax_r.tick_params(axis="x", bottom=False, labelbottom=False)
 
-    _savefig(fig, "fig_fourier_harmonics.pdf")
+    savefig(fig, "fig_fourier_harmonics.pdf")
     return axes
 
 
@@ -300,7 +301,7 @@ def plot_fourier_cross_validation(result):
                  loc="left", fontsize="small")
     ax.legend()
 
-    _savefig(fig, "fig_crossval.pdf")
+    savefig(fig, "fig_crossval.pdf")
     return ax
 
 
@@ -351,7 +352,7 @@ def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, bes
     axes[1].set_ylabel("Density")
     axes[1].legend(loc="best")
 
-    _savefig(fig, "fig_fourier_cv_residuals.pdf")
+    savefig(fig, "fig_fourier_cv_residuals.pdf")
     return axes
 
 
@@ -387,10 +388,10 @@ def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_
                    color="C0", rasterized=True, label="Training")
         ax.scatter(cv_phase, mags[cv], s=SS_MICRO, alpha=ALPHA_FAINT,
                    color="C1", rasterized=True, label="CV")
-        ax.errorbar(train_phase, mags[train], yerr=errs[train], fmt="none",
-                    ecolor="C0", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
-        ax.errorbar(cv_phase, mags[cv], yerr=errs[cv], fmt="none",
-                    ecolor="C1", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax.errorbar(train_phase, mags[train], yerr=errs[train],
+                    ecolor="C0", **_ERRBAR_KW)
+        ax.errorbar(cv_phase, mags[cv], yerr=errs[cv],
+                    ecolor="C1", **_ERRBAR_KW)
         ax.plot(phase_grid, fit.predict(epoch_grid), color=NEUTRAL_COLOR,
                 lw=LW_STANDARD, alpha=ALPHA_STANDARD, label="Model")
         ax.set_ylim(y_lim)
@@ -403,7 +404,7 @@ def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_
     axes[1].set_ylabel(r"$G$ [mag]")
     axes[0].legend(loc="best")
 
-    _savefig(fig, "fig_fourier_cv_phase.pdf")
+    savefig(fig, "fig_fourier_cv_phase.pdf")
     return axes
 
 
@@ -456,8 +457,8 @@ def plot_mean_g_catalog_comparison(rrlyrae):
     ]
 
     for ax_m, ax_r, y, y_err, resid, r_err, valid, color, ylabel in panels:
-        ax_m.errorbar(int_g[valid], y[valid], yerr=y_err[valid], fmt="none", ms=MS_FINE,
-                      ecolor=color, elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax_m.errorbar(int_g[valid], y[valid], yerr=y_err[valid], ms=MS_FINE,
+                      ecolor=color, **_ERRBAR_KW)
         ax_m.scatter(int_g[valid], y[valid], s=SS_FINE, alpha=ALPHA_STANDARD,
                      color=color, rasterized=True)
         ax_m.plot([mag_lo, mag_hi], [mag_lo, mag_hi], **GUIDE_STYLE)
@@ -466,8 +467,8 @@ def plot_mean_g_catalog_comparison(rrlyrae):
         ax_m.set_ylabel(ylabel)
         plt.setp(ax_m.get_xticklabels(), visible=False)
 
-        ax_r.errorbar(int_g[valid], resid[valid], yerr=r_err[valid], fmt="none", ms=MS_FINE,
-                      ecolor=color, elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
+        ax_r.errorbar(int_g[valid], resid[valid], yerr=r_err[valid], ms=MS_FINE,
+                      ecolor=color, **_ERRBAR_KW)
         ax_r.scatter(int_g[valid], resid[valid], s=SS_FINE, alpha=ALPHA_STANDARD,
                      color=color, rasterized=True)
         ax_r.axhline(0.0, **GUIDE_STYLE)
@@ -476,7 +477,7 @@ def plot_mean_g_catalog_comparison(rrlyrae):
         ax_r.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
         ax_r.set_ylabel("Res.")
 
-    _savefig(fig, "fig_mean_g_comparison.pdf")
+    savefig(fig, "fig_mean_g_comparison.pdf")
     return axes
 
 
@@ -527,7 +528,7 @@ def plot_fourier_extrapolation(fit):
     ax.set_ylabel(r"$G$ [mag]")
     ax.legend(ncols=2, loc="upper right")
 
-    _savefig(fig, "fig_fourier_extrapolation.pdf")
+    savefig(fig, "fig_fourier_extrapolation.pdf")
     return ax
 
 
@@ -653,7 +654,7 @@ def plot_rrlyrae_shape_comparison(rrab, rrc):
 
         axes[0, col, 0].legend(loc="best")
 
-    _savefig(fig, "fig_rrab_rrc.pdf")
+    savefig(fig, "fig_rrab_rrc.pdf")
     return axes
 
 
@@ -696,7 +697,7 @@ def plot_aitoff_diff(source: GaiaData, filtered: GaiaData):
     ax.set_ylabel(r"Galactic latitude $b$")
     ax.legend(loc="upper right")
 
-    _savefig(fig, "fig_calibration_sky_c12.pdf")
+    savefig(fig, "fig_calibration_sky_c12.pdf")
     return ax
 
 
@@ -733,7 +734,7 @@ def plot_period_abs_mag(data):
     ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     ax.legend(loc="lower right")
 
-    _savefig(fig, "fig_clean_period_abs_mag.pdf")
+    savefig(fig, "fig_clean_period_abs_mag.pdf")
     return ax
 
 
@@ -796,7 +797,7 @@ def plot_period_abs_mag_c12_comparison(source: GaiaData, filtered: GaiaData):
                           ms=MS_FINE, label="Removed"))
     ax.legend(handles=handles, loc="lower right")
 
-    _savefig(fig, "fig_period_abs_mag_c12_comparison.pdf")
+    savefig(fig, "fig_period_abs_mag_c12_comparison.pdf")
     return ax
 
 
@@ -837,7 +838,7 @@ def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deout
     ax.set_ylabel(r"$M_{\rm G}$ [mag]")
     ax.legend(loc="lower right")
 
-    _savefig(fig, "fig_inlier_prob_period_luminosity_comparison.pdf")
+    savefig(fig, "fig_inlier_prob_period_luminosity_comparison.pdf")
     return ax
 
 
@@ -845,7 +846,7 @@ def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deout
 # 17. Multi-sampler comparison corner plot
 # ---------------------------------------------------------------------------
 
-def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native):
+def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native, output_name):
     """Overlay corner contours from MH, NUTS+Potential, and native NUTS.
 
     Parameters
@@ -856,6 +857,8 @@ def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native):
         NUTS with pm.Potential result.
     nuts_native : MCMCResult
         Native PyMC NUTS result.
+    output_name : str
+        Filename for the saved figure (e.g., ``"fig_methods_corner_rrab.pdf"``).
     """
     labels = [r"$a$", r"$b$", r"$\log_{10}\,\sigma_s$"]
     samplers = {
@@ -887,6 +890,7 @@ def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native):
         handles.append(Line2D([0], [0], color=color, lw=LW_STANDARD, label=name))
 
     fig.legend(handles=handles, loc="upper right", frameon=False)
+    savefig(fig, output_name)
     return fig
 
 
@@ -911,8 +915,6 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean log10(P/day) used to center the predictor for RRab and RRc.
     """
-    from ugdatalab.plotters.bayesian import predict_posterior
-
     fig, ax_dummy = textwidth_figure(45 / 2)
     ax_dummy.remove()
     axes = subpanels(fig, 2, sharex=True, hspace=0.07)
@@ -964,7 +966,7 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
 
     axes[-1].set_xlabel(r"Catalog period $P$ [days]")
 
-    _savefig(fig, "fig_optical_ir_comparison.pdf")
+    savefig(fig, "fig_optical_ir_comparison.pdf")
     return axes
 
 
@@ -983,8 +985,6 @@ def plot_period_color_comparison(rrab_result, rrc_result,
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean log10(P/day) used to center the predictor.
     """
-    from ugdatalab.plotters.bayesian import predict_posterior
-
     fig, ax = textwidth_figure(35 / 4)
 
     for result, mean_lp, color, class_label in [
@@ -1026,7 +1026,7 @@ def plot_period_color_comparison(rrab_result, rrc_result,
     ])
     ax.legend(handles=handles, loc="best")
 
-    _savefig(fig, "fig_period_color.pdf")
+    savefig(fig, "fig_period_color.pdf")
     return ax
 
 
@@ -1065,7 +1065,7 @@ def plot_empirical_vs_catalog_extinction(population):
     ax.set_ylabel(r"Empirical $A_G$ [mag]")
     ax.legend(loc="upper left")
 
-    _savefig(fig, "fig_extinction_comparison.pdf")
+    savefig(fig, "fig_extinction_comparison.pdf")
     return ax
 
 
@@ -1116,7 +1116,7 @@ def plot_aitoff_reddening(l_deg, b_deg, values):
     ax.set_xlabel(r"Galactic longitude $l$")
     ax.set_ylabel(r"Galactic latitude $b$")
 
-    _savefig(fig, "fig_reddening_map.pdf")
+    savefig(fig, "fig_reddening_map.pdf")
     return fig, ax
 
 
@@ -1149,7 +1149,7 @@ def plot_aitoff_sfd(l_deg, b_deg, sfd_ebv):
     ax.set_xlabel(r"Galactic longitude $l$")
     ax.set_ylabel(r"Galactic latitude $b$")
 
-    _savefig(fig, "fig_sfd_map.pdf")
+    savefig(fig, "fig_sfd_map.pdf")
     return fig, ax
 
 
@@ -1185,7 +1185,6 @@ def plot_sfd_regime_decomposition(
     # --- left: similar scale (hexbin + fit + binned median) ---
     x_sim = sfd_ebv[similar_mask]
     y_sim = empirical[similar_mask]
-    from matplotlib.colors import LogNorm
     hb = axes[0].hexbin(
         x_sim, y_sim, gridsize=80, cmap="viridis",
         mincnt=1, rasterized=True, norm=LogNorm(),
@@ -1224,5 +1223,5 @@ def plot_sfd_regime_decomposition(
     axes[1].set_ylabel(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
     axes[1].legend(loc="upper right")
 
-    _savefig(fig, "fig_regime_decomposition.pdf")
+    savefig(fig, "fig_regime_decomposition.pdf")
     return axes

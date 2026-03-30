@@ -43,17 +43,6 @@ We present a comprehensive analysis using Gaia DR3 RR Lyrae variable stars as ph
 \vspace{2.5\baselineskip}
 \end{abstract}
 
-% \setcounter{tocdepth}{1}
-% \tableofcontents
-
-% \section*{Preface}
-
-% I would like to apologize for this late work but I had
-% a lot of fun doing it and I hope you enjoy reading it as
-% much as I enjoyed going in a deep-dive into period-luminosity relations, colour-excess relations and dust extinction. It devolved into a passion
-% project of sorts and I took way too long in writing it. I will do my best
-% to juggle this and AY-121 for the next two labs.
-
 %%% ---------------------------------------------------------------
 \section{Introduction}
 \label{sec:intro}
@@ -509,32 +498,6 @@ The $\mathrm{HalfNormal}$ prior for $\sigma_{\rm scatter}$ is chosen because int
 
 We implemented three MCMC methods for the RRab PL fit and compared their results:
 
-% \textbf{M-H sampler validation.} Before applying any of the three methods to the calibration data, we validated the hand-written M-H implementation on an analytically tractable toy problem: $x_{\rm obs} = 1.0$ observed with $\sigma_{\rm obs} = 0.1$, so the exact posterior is $\mu \mid x \sim \mathcal{N}(1.0,\,0.1^2)$. Table~\ref{tab:mh_proposal_scan} reports the proposal-width scan; width $\sigma_{\rm prop} = 0.20$ gives $\approx$50\% acceptance---a commonly cited target for pedagogical 1-D examples, though not a universal optimum---and is selected for the final chain. After 10,000 steps (1,000 discarded as burn-in) the chain recovers $\hat{\mu} = 1.0005$ and $\hat{\sigma} = 0.1029$, matching the analytic values $\mu = 1.0000$ and $\sigma = 0.1000$ to better than 0.5\% (Figure~\ref{fig:mh_validation_posterior}).
-
-% \begin{deluxetable}{cc}
-% \tablewidth{0pt}
-% \tablecaption{M-H Proposal-Width Scan on 1-D Gaussian Toy Problem\label{tab:mh_proposal_scan}}
-% \tablecolumns{2}
-% \tablehead{
-%   \colhead{$\sigma_{\rm prop}$} & \colhead{Acceptance rate}
-% }
-% \startdata
-% 0.05 & 0.839 \\
-% 0.10 & 0.719 \\
-% 0.15 & 0.606 \\
-% 0.18 & 0.547 \\
-% 0.20 & 0.513 \\
-% 0.25 & 0.443 \\
-% \enddata
-% \end{deluxetable}
-
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=\columnwidth]{figures/fig_mh_validation_posterior.pdf}
-%   \caption{Validation of the custom Metropolis-Hastings sampler on an analytically known 1-D posterior $\mu \mid x \sim \mathcal{N}(1.0,\,0.1^2)$. Blue histogram shows post-burn samples; the orange curve is the analytic Gaussian. The recovered mean and standard deviation (1.0005, 0.1029) match analytic values (1.0000, 0.1000) to better than 0.5\%.}
-%   \label{fig:mh_validation_posterior}
-% \end{figure}
-
 \textbf{Method 1 (M-H):} Custom Metropolis-Hastings with diagonal Gaussian proposal. We ran 25,000 steps, discarding the first 5,000 as burn-in. The proposal widths are tuned by scanning a discrete grid; the achieved acceptance rate was 0.549.
 
 \textbf{Method 2 (NUTS + Potential):} The gradient-based NUTS sampler in PyMC, with the log-likelihood encoded as a \texttt{Potential} term. We ran 1,500 tuning steps and 3,000 draw steps.
@@ -549,20 +512,6 @@ We implemented three MCMC methods for the RRab PL fit and compared their results
 \end{figure*}
 
 Figures~\ref{fig:methods_corner_rrab} and \ref{fig:methods_corner_rrc} overlay all three methods for direct comparison of the RRab and RRc posteriors respectively. All methods converge to consistent posterior means, but NUTS-based methods achieve much lower autocorrelation.
-
-% \begin{table}[ht!]
-% \centering
-% \caption{MCMC Method Comparison for RRab G-band PL Fit\label{tab:mcmc_compare}}
-% \begin{tabular}{lcccc}
-% \hline\hline
-% Method & Accept.\ rate & $a$ & $b$ & $\sigma_{\rm scatter}$ \\
-% \hline
-% M-H                & 0.549 & $-2.27\pm0.12$ & $0.653\pm0.009$ & $0.176\pm0.008$ \\
-% NUTS+Potential     & N/A   & $-2.23\pm0.13$ & $0.653\pm0.009$ & $0.176\pm0.008$ \\
-% Native PyMC        & N/A   & $-2.23\pm0.13$ & $0.653\pm0.009$ & $0.176\pm0.008$ \\
-% \hline\hline
-% \end{tabular}
-% \end{table}
 
 \subsection{RRab Results}
 
@@ -726,30 +675,7 @@ To ensure a clean reddening map, we applied the following quality cuts to the fu
   \item $0 \leq E(G_{\rm BP}-G_{\rm RP}) \leq 10$ mag (exclude unphysical negative reddening): removes 38,582 stars (15.2\%), primarily low-latitude stars with negative empirical reddening. The upper bound sanity cap of 10 mag affects no stars passing the preceding quality cuts
 \end{enumerate}
 
-% Figure~\ref{fig:quality_diagnostics} shows the two photometric diagnostics that motivate cuts~(3) and~(4): the $\sigma_E$ histogram with the 0.15 mag threshold and the BP/RP excess factor scatter plot with the Gaia magnitude-dependent envelope. Figure~\ref{fig:reddening_distribution} shows the $E(G_{\rm BP}-G_{\rm RP})$ distribution in the stage-5 sample (after $\sigma_E$ cut), illustrating the negative tail and upper tail that motivate cut~(5).
-
-% \begin{figure*}[t]
-%   \centering
-%   \includegraphics[width=\textwidth]{figures/fig_quality_diagnostics.pdf}
-%   \caption{\textit{Left:} Distribution of propagated reddening uncertainty $\sigma_E$ for the full catalog. The dashed red line marks the $\sigma_E = 0.15$ mag cut threshold; stars to the right are removed by cut~(4). \textit{Right:} BP/RP photometric excess factor vs. $G_{\rm BP}-G_{\rm RP}$ color. Grey points lie within the Gaia magnitude-dependent envelope (blue dashed curves); red points fall outside and are removed by cut~(3). Concentration at redder colors reflects blended sources in high-extinction regions.}
-%   \label{fig:quality_diagnostics}
-% \end{figure*}
-
-% \begin{figure}[H]
-%   \centering
-%   \includegraphics[width=\columnwidth]{figures/fig_reddening_distribution.pdf}
-%   \caption{Distribution of $E(G_{\rm BP}-G_{\rm RP})$ in the stage-5 sample (after the $\sigma_E$ cut). The bulk of the distribution is positive and moderate, as expected. The dashed lines mark the $E = 0.0$ and $E = 10.0$ mag thresholds applied as cut~(5); stars outside this range are removed as physically unreasonable.}
-%   \label{fig:reddening_distribution}
-% \end{figure}
-
 After these cuts, 130,877 stars (48.5\% of the initial catalog) remained for the sky map. The removed stars are not random but concentrated toward the Galactic plane and other crowded or high-extinction regions.
-
-% \begin{figure*}[t]
-%   \centering
-%   \includegraphics[width=\textwidth]{figures/fig_removed_stars_map.pdf}
-%   \caption{Aitoff sky map of the 138,826 stars removed by the five quality cuts. Points are colored by $E(G_{\rm BP}-G_{\rm RP})$ on the same scale as Figure~\ref{fig:reddening_map}. Removals are concentrated toward the Galactic plane ($|b| \lesssim 20^\circ$), the Galactic center, and high-density satellite fields (LMC/SMC region), where Gaia BP/RP photometry is most susceptible to blending. High-latitude rejections ($|b| > 30^\circ$) are sparse and reflect individual photometric outliers rather than coherent dust structure.}
-%   \label{fig:removed_stars_map}
-% \end{figure*}
 
 \subsection{All-Sky Reddening Map}
 
@@ -790,20 +716,6 @@ This non-uniform sampling is an inherent limitation of using RR Lyrae as dust tr
 We compared our RR Lyrae-based reddening to the SFD dust map \citep{SFD1998} by evaluating the SFD $E(B-V)$ at the sky position of each RR Lyrae star.
 
 We quantify agreement between the two maps using the Pearson $R^2$ coefficient, which measures the fraction of variance in one reddening estimate explained by a linear fit to the other. Since, $R^2$ is invariant to rescaling of either axis, the Gaia-band conversion factor $R_{BP-RP} \approx 1.3$ between $E(G_{\rm BP}-G_{\rm RP})$ and $E(B-V)$ should not affect the result.
-
-% Figure~\ref{fig:sfd_comparison} shows the comparison, and Table~\ref{tab:sfd_latitudes} summarizes the Spearman rank correlation coefficient $\rho$ in different latitude bins.
-
-% \clearpage
-% \newgeometry{left=0.75in, right=0.75in, top=0.75in, bottom=0.75in}
-% \begin{landscape}
-% \begin{figure}[p]
-%   \centering
-%   \includegraphics[width=\textheight, height=\textwidth, keepaspectratio]{figures/fig_sfd_comparison.pdf}
-%   \caption{Hexbin density plot of RR Lyrae-derived $E(G_{\rm BP}-G_{\rm RP})$ (this work) vs.\ SFD $E(B-V)$ for the 130,877 cleaned map stars. Color encodes $\log_{10}$(count per bin); the white/red curve is the binned median trend. No unit conversion is applied; the Spearman rank correlation $\rho = 0.913$ is computed directly between the two quantities.}
-%   \label{fig:sfd_comparison}
-% \end{figure}
-% \end{landscape}
-% \restoregeometry
 
 \begin{table}[ht!]
 \centering
@@ -885,10 +797,6 @@ Lastly, we also note that the maps look patchy with missing gaps of data. With 1
 
 Despite these limitations, the strong $R^2$ with SFD demonstrates that RR Lyrae are effective dust tracers.
 
-% \subsection{Additional Astrometric Cuts}
-
-% \textbf{Additional astrometric cuts:} Beyond the Lindegren C1/C2 filters, Gaia DR3 provides further astrometric diagnostics that could tighten the calibration sample. Literature-motivated cuts include RUWE $< 1.4$, astrometric goodness-of-fit \texttt{astrometric\_gof\_al} $< 12.5$, a parallax-bias inflation correction \citep{Lindegren2021}, and a transition-window correction for bright stars ($G \approx 11$--12) where Gaia's readout mode switches. Applying these to the 884-star mixture-cleaned sample reduces it to $\sim$706 stars (a further 20\% reduction), but the mean per-star parallax uncertainty counterintuitively \textit{increases} (0.1124 $\to$ 0.1196 mag), because the cuts preferentially remove bright, nearby stars for instrumental reasons rather than poor astrometry. The PL slopes and intercepts remain consistent within uncertainties. We therefore retain the 884-star sample as the primary calibration set, but note these additional filters as a natural avenue for future systematic-error studies.
-
 %%% ---------------------------------------------------------------
 \section{Conclusions}
 \label{sec:conclusions}
@@ -921,19 +829,6 @@ with vetting phrasing and checking the report writeup.
 \section{Reproducibility Notes}
 
 All code, notebooks, cached analysis products, and report sources used for this lab are version-controlled at \url{https://github.com/raw-asparagus/ay-128}.
-
-% \clearpage
-% \newgeometry{left=0.75in, right=0.75in, top=0.75in, bottom=0.75in}
-% \begin{landscape}
-% \thispagestyle{plain}
-% \begin{figure}[p]
-%   \centering
-%   \includegraphics[width=\dimexpr\paperheight-1.5in\relax]{figures/fig_reddening_map_dark.pdf}
-%   \caption{A \textit{cooler} looking all-sky reddening map rendered on a black background using the \texttt{inferno} colorscale, mapping zero reddening to black and increasing dust columns to progressively brighter orange and yellow. Same 130,877 stars as Figure~\ref{fig:reddening_map}. The dark background suppresses empty sky and makes the filamentary structure of nearby dust clouds and the Galactic warp visually prominent.}
-%   \label{fig:reddening_map_dark}
-% \end{figure}
-% \end{landscape}
-% \restoregeometry
 
 % \includepdf[pages=-]{preface}
 
