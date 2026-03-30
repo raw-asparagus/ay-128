@@ -293,7 +293,6 @@ class GaiaReddening(GaiaData):
 
             parts.append(out)
 
-        from astropy import table
         self.data = table.vstack(parts)
 
 
