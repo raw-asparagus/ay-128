@@ -152,6 +152,15 @@ def columnwidth_figure(height_out_of_7_5, subfigures=None):
     return _make_figure(COLUMNWIDTH_IN, 7.5, height_out_of_7_5, subfigures)
 
 
+def landscapewidth_figure(height_out_of_10, subfigures=None):
+    """Create a figure spanning the A4 usable height (landscape width).
+
+    Returns (fig, ax) for a single panel, or (fig, subfigs) when
+    subfigures=(nrows, ncols).
+    """
+    return _make_figure(A4_USABLE_HEIGHT_IN, 10, height_out_of_10, subfigures)
+
+
 def corner_figure():
     """Create a square figure at 0.7x text width for corner plots."""
     side = 0.7 * TEXTWIDTH_IN
