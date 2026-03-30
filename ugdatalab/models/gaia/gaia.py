@@ -71,7 +71,7 @@ def _get_gaia(query):
 
 
 @_cache_stable(module="ugdatalab.gaia")
-def _get_gaia_quality(query):
+def _get_gaia_sample(query):
     raw = _get_gaia(query)
     poe = raw["parallax_over_error"]
     b = raw["b"]
@@ -111,11 +111,11 @@ class GaiaData:
         self.lightcurves = lightcurves
 
 
-class GaiaQuality(GaiaData):
+class GaiaSample(GaiaData):
     """Fetches and caches the quality-filtered Gaia sample with photometry-derived columns."""
 
     def __post_init__(self):
-        data = _get_gaia_quality(self.query)
+        data = _get_gaia_sample(self.query)
         _sanitize_table(data, _GAIA_SCHEMA)
         _attach_rrlyrae_representative_period_column(data)
 
@@ -123,41 +123,52 @@ class GaiaQuality(GaiaData):
         self._load_lightcurves()
 
 
-class Local(GaiaQuality):
-    def __init__(self, source: GaiaQuality):
+class Local(GaiaData):
+    def __init__(self, source: GaiaData):
         self.query = source.query
         self.include_lightcurve = False
         self.data = source.data[source.data["parallax"] > 0.25]
         self.lightcurves = None
 
 
-class StrictGBPRP(GaiaQuality):
-    """Strict BP/RP signal-to-noise cut.
+class StrictG(GaiaData):
+    """G-band signal-to-noise cut.
 
     Accepts sources satisfying:
       phot_g_mean_flux_over_error > 5
-      phot_bp_mean_flux_over_error > 5
-      phot_rp_mean_flux_over_error > 5
     """
-    def __init__(self, source: GaiaQuality):
+    def __init__(self, source: GaiaData):
         self.query = source.query
         self.include_lightcurve = False
-        mask       = (
-            (source.data["phot_g_mean_flux_over_error"] > 5) &
-            (source.data["phot_bp_mean_flux_over_error"] > 5) &
-            (source.data["phot_rp_mean_flux_over_error"] > 5)
-        )
-        self.data  = source.data[mask]
+        self.data = source.data[source.data["phot_g_mean_flux_over_error"] > 5]
         self.lightcurves = None
 
 
-class LindegrenC1(GaiaQuality):
+class StrictBPRP(GaiaData):
+    """BP/RP signal-to-noise cut.
+
+    Accepts sources satisfying:
+      phot_bp_mean_flux_over_error > 5
+      phot_rp_mean_flux_over_error > 5
+    """
+    def __init__(self, source: GaiaData):
+        self.query = source.query
+        self.include_lightcurve = False
+        mask = (
+            (source.data["phot_bp_mean_flux_over_error"] > 5) &
+            (source.data["phot_rp_mean_flux_over_error"] > 5)
+        )
+        self.data = source.data[mask]
+        self.lightcurves = None
+
+
+class LindegrenC1(GaiaData):
     """RUWE quality cut (Lindegren et al. 2021, A&A 649, A2).
 
     Accepts sources satisfying:
       ruwe < 1.2 * max(1, exp(-0.2 * (G - 19.5)))
     """
-    def __init__(self, source: GaiaQuality):
+    def __init__(self, source: GaiaData):
         self.query = source.query
         self.include_lightcurve = False
         G = source.data["phot_g_mean_mag"]
@@ -167,13 +178,13 @@ class LindegrenC1(GaiaQuality):
         self.lightcurves = None
 
 
-class LindegrenC2(GaiaQuality):
+class LindegrenC2(GaiaData):
     """BP/RP flux excess factor quality cut (Lindegren et al. 2021, A&A 649, A2).
 
     Accepts sources satisfying:
       1.0 + 0.015*(bp_rp)^2 < phot_bp_rp_excess_factor < 1.3 + 0.06*(bp_rp)^2
     """
-    def __init__(self, source: GaiaQuality):
+    def __init__(self, source: GaiaData):
         self.query = source.query
         self.include_lightcurve = False
         bp_rp = source.data["bp_rp"]
@@ -186,14 +197,45 @@ class LindegrenC2(GaiaQuality):
         self.lightcurves = None
 
 
-class Deoutlier(GaiaData):
+class StrictReddening(GaiaData):
+    """Reddening quality cut on propagated uncertainty and physical bounds.
+
+    Accepts sources satisfying:
+      sigma_E <= max_sigma_e
+      min_ebprp <= E_bprp <= max_ebprp
+
+    Requires columns ``E_bprp`` and ``sigma_E`` to already exist on the
+    input table (added by the notebook's ``compute_extinction`` helper).
+    """
+    def __init__(
+        self,
+        source: GaiaData,
+        max_sigma_e: float = 0.15,
+        min_ebprp: float = 0.0,
+        max_ebprp: float = 10.0,
+    ):
+        self.query = source.query
+        self.include_lightcurve = False
+        e = np.array(source.data["E_bprp"], dtype=float)
+        sigma_e = np.array(source.data["sigma_E"], dtype=float)
+        mask = (
+            np.isfinite(e) & np.isfinite(sigma_e)
+            & (sigma_e <= max_sigma_e)
+            & (e >= min_ebprp)
+            & (e <= max_ebprp)
+        )
+        self.data = source.data[mask]
+        self.lightcurves = None
+
+
+class Deoutlier(GaiaSample):
     """Bayesian mixture-model outlier removal per RR Lyrae subclass.
 
     Fits a linear-Gaussian mixture contamination model to each subclass
     (RRab, RRc, RRd) in the period–luminosity plane, then keeps sources
     whose posterior inlier probability exceeds the threshold.
     """
-    def __init__(self, source: GaiaData, prob_threshold: float = 0.95):
+    def __init__(self, source: GaiaSample, prob_threshold: float = 0.95):
         from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
         from ugdatalab.methods.bayesian.mixture import mixture_contamination
 

@@ -6,11 +6,13 @@ Submodules are imported on demand to avoid pulling heavy dependencies
 
 from ugdatalab.models.gaia import (
     GaiaData,
-    GaiaQuality,
+    GaiaSample,
     Local,
-    StrictGBPRP,
+    StrictG,
+    StrictBPRP,
     LindegrenC1,
     LindegrenC2,
+    StrictReddening,
     Deoutlier,
     WISEData,
     WISESample,

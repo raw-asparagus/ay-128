@@ -33,7 +33,7 @@ def _add_wise_photometry_columns(data: table.Table) -> None:
 
 
 @_cache_stable(module="ugdatalab.wise")
-def _get_wise_quality(query):
+def _get_wise_sample(query):
     raw = _get_gaia(query)
     poe = raw["parallax_over_error"]
     b = raw["b"]
@@ -51,7 +51,7 @@ class WISEData(GaiaData):
     """Fetches and caches the WISE quality-filtered sample with photometry-derived columns."""
 
     def __post_init__(self):
-        data = _get_wise_quality(self.query)
+        data = _get_wise_sample(self.query)
         _sanitize_table(data, _WISE_SCHEMA)
         _attach_rrlyrae_representative_period_column(data)
         self.data = data

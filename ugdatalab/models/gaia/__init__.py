@@ -1,10 +1,12 @@
 from ugdatalab.models.gaia.gaia import (
     GaiaData,
-    GaiaQuality,
+    GaiaSample,
     Local,
-    StrictGBPRP,
+    StrictG,
+    StrictBPRP,
     LindegrenC1,
     LindegrenC2,
+    StrictReddening,
     Deoutlier,
 )
 from ugdatalab.models.gaia.wise import (

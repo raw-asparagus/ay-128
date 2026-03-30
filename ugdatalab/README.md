@@ -24,7 +24,7 @@ ugdatalab/
         utils.py                 — Table sanitization helpers
         gaia/
             constants.py         — Gaia zero-point data
-            gaia.py              — GaiaData, GaiaQuality, filter classes
+            gaia.py              — GaiaData, GaiaSample, filter classes
             wise.py              — WISEData, WISESample
             lightcurves.py       — Epoch photometry I/O and derived columns
 ```
@@ -66,7 +66,7 @@ from ugdatalab.methods.bayesian.mixture import mixture_contamination
 result = mixture_contamination(lk)
 
 # Gaia data models
-from ugdatalab.models.gaia import GaiaData, GaiaQuality, LindegrenC1
+from ugdatalab.models.gaia import GaiaData, GaiaSample, LindegrenC1
 ```
 
 ## Architecture
@@ -86,7 +86,7 @@ Generic, reusable analysis routines.
 
 Data access and caching for specific surveys.
 
-- **Gaia pipeline** — `GaiaData` → `GaiaQuality` → `Local`, `StrictGBPRP`, `LindegrenC1`, `LindegrenC2` for progressive query, quality filtering, and caching.
+- **Gaia pipeline** — `GaiaData` → `GaiaSample` → `Local`, `StrictG`, `StrictBPRP`, `LindegrenC1`, `LindegrenC2`, `StrictReddening` for progressive query, quality filtering, and caching.
 - **`WISEData` / `WISESample`** — Gaia–AllWISE cross-match with photometric quality cuts.
 
 ### Plotting
