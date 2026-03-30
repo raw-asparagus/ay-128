@@ -6,6 +6,7 @@ from ugdatalab.models.gaia.gaia import (
     StrictBPRP,
     LindegrenC1,
     LindegrenC2,
+    GaiaReddening,
     StrictReddening,
     Deoutlier,
 )

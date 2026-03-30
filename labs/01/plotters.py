@@ -1034,7 +1034,7 @@ def plot_period_color_comparison(rrab_result, rrc_result,
 # ---------------------------------------------------------------------------
 
 def plot_empirical_vs_catalog_extinction(catalog_ag, empirical_ag):
-    """Scatter comparison of empirical A_G vs Gaia g_absorption with residual.
+    """Square scatter comparison of empirical A_G vs Gaia g_absorption.
 
     Parameters
     ----------
@@ -1042,49 +1042,29 @@ def plot_empirical_vs_catalog_extinction(catalog_ag, empirical_ag):
         Gaia DR3 ``g_absorption`` values (finite, quality-filtered).
     empirical_ag : array-like
         Empirical A_G derived from the period-color relation.
-
-    Returns
-    -------
-    axes : ndarray
-        Array [ax_scatter, ax_residual].
     """
     catalog_ag = np.asarray(catalog_ag, dtype=float)
     empirical_ag = np.asarray(empirical_ag, dtype=float)
-    residual = empirical_ag - catalog_ag
 
-    fig, ax_dummy = textwidth_figure(35 / 4)
-    ax_dummy.remove()
-    axes = subpanels(fig, 2, height_ratios=(4, 1), hspace=0.07)
+    fig, ax = columnwidth_figure(7.5)
 
-    ax_main, ax_resid = axes
-
-    # --- main scatter ---
-    ax_main.scatter(
+    ax.scatter(
         catalog_ag, empirical_ag,
-        s=SS_MICRO, alpha=ALPHA_FAINT, color=_CLASS_COLORS["RRab"],
+        s=SS_MICRO, alpha=ALPHA_EXTRA_LIGHT, color=_CLASS_COLORS["RRab"],
         rasterized=True, zorder=2, label="RRab",
     )
-    lo = 0.0
-    hi = max(catalog_ag.max(), empirical_ag.max())
-    ax_main.plot([lo, hi], [lo, hi], **GUIDE_STYLE, label="1:1")
-    ax_main.set_ylabel(r"Empirical $A_G$ [mag]")
-    plt.setp(ax_main.get_xticklabels(), visible=False)
-    ax_main.legend(loc="upper left")
-
-    # --- residual ---
-    ax_resid.scatter(
-        catalog_ag, residual,
-        s=SS_MICRO, alpha=ALPHA_FAINT, color=_CLASS_COLORS["RRab"],
-        rasterized=True, zorder=2,
-    )
-    zero_line(ax_resid)
-    resid_lim = 1.1 * np.nanpercentile(np.abs(residual), 99)
-    ax_resid.set_ylim(-resid_lim, resid_lim)
-    ax_resid.set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
-    ax_resid.set_ylabel("Res.")
+    lo = min(catalog_ag.min(), empirical_ag.min())
+    margin = 0.05 * (20.0 - lo)
+    ax.plot([lo - margin, 20.0], [lo - margin, 20.0], **GUIDE_STYLE, label="1:1")
+    ax.set_xlim(lo - margin, 20.0)
+    ax.set_ylim(lo - margin, 20.0)
+    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
+    ax.set_ylabel(r"Empirical $A_G$ [mag]")
+    ax.legend(loc="upper left")
 
     _savefig(fig, "fig_extinction_comparison.pdf")
-    return axes
+    return ax
 
 
 # ---------------------------------------------------------------------------
@@ -1214,9 +1194,6 @@ def plot_sfd_comparison(sfd_ebv, empirical, bin_count=18):
     bin_count : int
         Number of bins for the median trend line.
     """
-    sfd_ebv = np.asarray(sfd_ebv, dtype=float)
-    empirical = np.asarray(empirical, dtype=float)
-
     fig, ax = textwidth_figure(35 / 4)
 
     hb = ax.hexbin(

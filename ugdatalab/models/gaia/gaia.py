@@ -197,37 +197,6 @@ class LindegrenC2(GaiaData):
         self.lightcurves = None
 
 
-class StrictReddening(GaiaData):
-    """Reddening quality cut on propagated uncertainty and physical bounds.
-
-    Accepts sources satisfying:
-      sigma_E <= max_sigma_e
-      min_ebprp <= E_bprp <= max_ebprp
-
-    Requires columns ``E_bprp`` and ``sigma_E`` to already exist on the
-    input table (added by the notebook's ``compute_extinction`` helper).
-    """
-    def __init__(
-        self,
-        source: GaiaData,
-        max_sigma_e: float = 0.15,
-        min_ebprp: float = 0.0,
-        max_ebprp: float = 10.0,
-    ):
-        self.query = source.query
-        self.include_lightcurve = False
-        e = np.array(source.data["E_bprp"], dtype=float)
-        sigma_e = np.array(source.data["sigma_E"], dtype=float)
-        mask = (
-            np.isfinite(e) & np.isfinite(sigma_e)
-            & (sigma_e <= max_sigma_e)
-            & (e >= min_ebprp)
-            & (e <= max_ebprp)
-        )
-        self.data = source.data[mask]
-        self.lightcurves = None
-
-
 class Deoutlier(GaiaSample):
     """Bayesian mixture-model outlier removal per RR Lyrae subclass.
 
@@ -251,7 +220,7 @@ class Deoutlier(GaiaSample):
             period = subset["rrlyrae_representative_period"]
             period_err = subset["rrlyrae_representative_period_error"]
             log_p = np.log10(period)
-            sigma_logp = np.array(period_err / (period * np.log(10)), dtype=float)
+            sigma_logp = period_err / (period * np.log(10))
             likelihood = LinearGaussianLikelihood(
                 x=log_p - np.mean(log_p),
                 y=subset["M_G"],
@@ -264,3 +233,83 @@ class Deoutlier(GaiaSample):
         self.inlier_probs = inlier_probs
         self.data = source.data[inlier_probs >= prob_threshold]
         self.lightcurves = None
+
+
+class GaiaReddening(GaiaData):
+    """Compute empirical E(BP-RP) and A_G from period-color MCMC results.
+
+    Adds columns ``E_bprp``, ``A_G``, and ``sigma_E`` to the data table
+    using class-specific period-color fits for RRab and RRc.
+
+    Parameters
+    ----------
+    source : GaiaData
+        Input catalog with ``rrlyrae_representative_period``, ``bp_rp``,
+        ``phot_bp_mean_flux_over_error``, ``phot_rp_mean_flux_over_error``,
+        and ``best_classification`` columns.
+    rrab_pc : MCMCResult
+        Period-color NUTS result for RRab.
+    rrc_pc : MCMCResult
+        Period-color NUTS result for RRc.
+    rrab_mean_log_p : float
+        Mean log10(P/day) used to center the RRab fit.
+    rrc_mean_log_p : float
+        Mean log10(P/day) used to center the RRc fit.
+    r_g : float
+        Reddening-to-extinction ratio (default 2.0).
+    """
+    def __init__(
+        self,
+        source: GaiaData,
+        rrab_pc,
+        rrc_pc,
+        rrab_mean_log_p: float,
+        rrc_mean_log_p: float,
+        r_g: float = 2.0,
+    ):
+        self.query = source.query
+        self.include_lightcurve = False
+        self.lightcurves = None
+
+        pc_map = {"RRab": (rrab_pc, rrab_mean_log_p), "RRc": (rrc_pc, rrc_mean_log_p)}
+        parts = []
+        for rr_class, (pc_result, mean_lp) in pc_map.items():
+            mask = source.data["best_classification"] == rr_class
+            subset = source.data[mask]
+            out = subset.copy()
+
+            log_p = np.log10(subset["rrlyrae_representative_period"])
+            bp_rp_obs = subset["bp_rp"]
+            bp_rp_int = pc_result.predict(log_p - mean_lp)
+
+            out["E_bprp"] = bp_rp_obs - bp_rp_int
+            out["A_G"] = r_g * (bp_rp_obs - bp_rp_int)
+
+            sigma_color = ((2.5 / np.log(10)) *
+                           np.sqrt(1 / subset["phot_bp_mean_flux_over_error"]**2 +
+                                   1 / subset["phot_rp_mean_flux_over_error"]**2))
+            sigma_intrinsic = 10.0 ** pc_result.theta[2]
+            out["sigma_E"] = np.sqrt(sigma_color**2 + sigma_intrinsic**2)
+
+            parts.append(out)
+
+        from astropy import table
+        self.data = table.vstack(parts)
+
+
+class StrictReddening(GaiaReddening):
+    """Reddening quality cut on propagated uncertainty and physical bounds."""
+    def __init__(self, source: GaiaReddening):
+        self.query = source.query
+        self.include_lightcurve = False
+        self.lightcurves = None
+
+        e = source.data["E_bprp"]
+        sigma_e = source.data["sigma_E"]
+        mask = (
+            np.isfinite(e) & np.isfinite(sigma_e)
+            & (sigma_e <= 0.15)
+            & (e >= 0.0)
+            & (e <= 10.0)
+        )
+        self.data = source.data[mask]
