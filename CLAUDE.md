@@ -87,6 +87,8 @@ When the user says "audit lab NN completeness" (e.g., "audit lab 01 completeness
 8. **Section–notebook mapping** — each report section maps to one or more notebooks; no section draws from undocumented analysis
 9. **Figure ordering** — figures appear in the report in the same logical order as the notebook progression
 10. **Caption accuracy** — figure captions describe what is actually plotted (correct axes, correct sample, correct model)
+11. **Numerical claim coverage** — extract every computed numerical value from the report (sample sizes, fit parameters, RMS values, R² correlations, rejection rates, percentages, quality cut counts) and verify each one appears in a notebook cell output; present a table of report claim vs notebook cell for every value
+12. **Notebook as single source of truth** — for every numerical claim where the report and notebook both cover the same quantity, the notebook value (computed from data) is authoritative; if the report value disagrees, update the report to match the notebook; common sources of drift include stale query caches producing different sample sizes, MCMC sampling variability in fit parameters, and report text citing tuning/draw counts that don't match code defaults
 
 ### Report vs lab manual completeness
 

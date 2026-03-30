@@ -985,7 +985,7 @@ def plot_period_color_comparison(rrab_result, rrc_result,
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean log10(P/day) used to center the predictor.
     """
-    fig, ax = textwidth_figure(35 / 4)
+    fig, ax = textwidth_figure(33 / 4)
 
     for result, mean_lp, color, class_label in [
         (rrab_result, rrab_mean_log_p, "C0", "RRab"),

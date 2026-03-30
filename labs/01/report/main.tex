@@ -38,7 +38,7 @@
 \author{Jun Rui Ting \\ \today\vspace{-2.5\baselineskip}}
 
 \begin{abstract}
-We present a comprehensive analysis using Gaia DR3 RR Lyrae variable stars as photometric standard candles to construct an empirical all-sky dust reddening map. Starting from a sample of 100 high-quality Gaia DR3 RR Lyrae stars, we recover pulsation periods via Lomb-Scargle periodograms, finding 89 of 100 agree with Gaia catalog fundamental pulsation frequency values to better than 1\%. Fourier series fits (order $K$ selected by cross-validation) reduce the mean magnitude RMS from 0.0282 to 0.0147 mag compared to na\"{\i}ve epoch-based flux-space averaging. A calibration sample of 1050 nearby ($d < 4$ kpc), high-latitude ($|b| > 30^\circ$) stars is assembled from Gaia DR3 and progressively cleaned through astrometric quality cuts (C1/C2; 1050$\to$972) and a mixture contamination model (972$\to$884 stars). Bayesian period-luminosity (PL) relations are fit via three MCMC approaches: Metropolis-Hastings, NUTS with a custom potential, and native PyMC yielded consistent results. For the $G$-band, we find slopes $a = -2.23 \pm 0.13$ (RRab) and $a = -2.18 \pm 0.18$ (RRc). WISE $W2$ PL fits reveal steeper slopes ($a = -2.98 \pm 0.12$ for RRab), confirming reduced extinction sensitivity in the infrared. Period-color relations in $G_{\rm BP} - G_{\rm RP}$ are used to construct color excess maps. After quality filtering, 130,877 stars provide an all-sky reddening map with Pearson $R^2 = 0.459$ correlation with the SFD dust map, validating RR Lyrae stars as effective three-dimensional dust probes.
+We present a comprehensive analysis using Gaia DR3 RR Lyrae variable stars as photometric standard candles to construct an empirical all-sky dust reddening map. Starting from a sample of 100 high-quality Gaia DR3 RR Lyrae stars, we recover pulsation periods via Lomb-Scargle periodograms, finding 89 of 100 agree with Gaia catalog fundamental pulsation frequency values to better than 1\%. Fourier series fits (order $K$ selected by cross-validation) reduce the mean magnitude RMS from 0.0282 to 0.0139 mag compared to na\"{\i}ve epoch-based flux-space averaging. A calibration sample of 1031 nearby ($d < 4$ kpc), high-latitude ($|b| > 30^\circ$) stars is assembled from Gaia DR3 and progressively cleaned through astrometric quality cuts (C1/C2; 1031$\to$973) and a mixture contamination model (973$\to$874 stars). Bayesian period-luminosity (PL) relations are fit via three MCMC approaches: Metropolis-Hastings, NUTS with a custom potential, and native PyMC yielded consistent results. For the $G$-band, we find slopes $a = -2.23 \pm 0.13$ (RRab) and $a = -2.21 \pm 0.18$ (RRc). WISE $W2$ PL fits reveal steeper slopes ($a = -2.99 \pm 0.11$ for RRab), confirming reduced extinction sensitivity in the infrared. Period-color relations in $G_{\rm BP} - G_{\rm RP}$ are used to construct color excess maps. After quality filtering, 131,213 stars provide an all-sky reddening map with Pearson $R^2 = 0.457$ correlation with the SFD dust map, validating RR Lyrae stars as effective three-dimensional dust probes.
 
 \vspace{2.5\baselineskip}
 \end{abstract}
@@ -54,7 +54,7 @@ RR Lyrae stars are ideal for this purpose. As horizontal branch stars undergoing
 
 The advent of the Gaia satellite \citep{Gaia2016} has brought in a treasure trove of high-quality astrometric and photometric data. Gaia Data Release 3 \citep{GaiaDR3_2023} provides homogeneous light curves, catalog periods, and sub-milliarcsecond parallaxes for hundreds of thousands of RR Lyrae stars across the entire sky \citep{Clementini2023}. This dataset allows for statistical studies of RR Lyrae populations and, as we demonstrate here, their use as dust probes along individual lines-of-sight.
 
-In this work, we develop a complete pipeline from raw Gaia light curve data to an all-sky reddening map. We (1) recover pulsation periods from time-series photometry using the Lomb-Scargle periodogram and Fourier series modeling; (2) construct a clean calibration sample of nearby, high-galactic-latitude low-extinction RR Lyrae stars; (3) fit period-luminosity and period-color relations using three Bayesian Markov Chain Monte Carlo (MCMC) approaches; (4) extend to WISE infrared photometry to characterize wavelength dependence; and (5) apply the period-color calibration to 130,877 RR Lyrae stars across the sky to construct an empirical reddening map, validated against the Schlegel-Finkbeiner-Davis (SFD) map \citep{SFD1998}. Figure~\ref{fig:pipeline} provides an overview of the full pipeline.
+In this work, we develop a complete pipeline from raw Gaia light curve data to an all-sky reddening map. We (1) recover pulsation periods from time-series photometry using the Lomb-Scargle periodogram and Fourier series modeling; (2) construct a clean calibration sample of nearby, high-galactic-latitude low-extinction RR Lyrae stars; (3) fit period-luminosity and period-color relations using three Bayesian Markov Chain Monte Carlo (MCMC) approaches; (4) extend to WISE infrared photometry to characterize wavelength dependence; and (5) apply the period-color calibration to 131,213 RR Lyrae stars across the sky to construct an empirical reddening map, validated against the Schlegel-Finkbeiner-Davis (SFD) map \citep{SFD1998}. Figure~\ref{fig:pipeline} provides an overview of the full pipeline.
 
 \begin{figure*}[t]
   \centering
@@ -73,9 +73,9 @@ In this work, we develop a complete pipeline from raw Gaia light curve data to a
     \node[pipebox, fill=cyan!30] (mean_mag) at (4,0) {Flux-space Mean\\Magnitude};
 
     % Middle row: calibration (orange) and optical fits (violet)
-    \node[pipebox, fill=orange!30] (calib_select) at (0,-1.45) {Calib. Sample\\Selection (1050)};
-    \node[pipebox, fill=orange!30] (c1c2_cuts) at (1,-1.45) {Lindegren\\C1/C2 Cuts (972)};
-    \node[pipebox, fill=orange!30] (mixture_model) at (2,-1.45) {Mixture Model\\(884)};
+    \node[pipebox, fill=orange!30] (calib_select) at (0,-1.45) {Calib. Sample\\Selection (1031)};
+    \node[pipebox, fill=orange!30] (c1c2_cuts) at (1,-1.45) {Lindegren\\C1/C2 Cuts (973)};
+    \node[pipebox, fill=orange!30] (mixture_model) at (2,-1.45) {Mixture Model\\(874)};
     \node[pipebox, fill=violet!20] (mcmc_pl) at (3,-1.45) {Bayesian $G$-band\\$P$-$L$ Fit (NUTS)};
     \node[pipebox, fill=violet!20] (pc_fit) at (4,-1.45) {Period-Color\\Fit};
 
@@ -86,7 +86,7 @@ In this work, we develop a complete pipeline from raw Gaia light curve data to a
 
     % Bottom row: dust map (red)
     \node[pipeout, fill=red!25] (sky_map) at (2,-4.35) {\textbf{All-Sky\\Reddening Map}};
-    \node[pipebox, fill=red!20] (quality_cuts) at (4,-4.35) {Quality Cuts\\(130,877)};
+    \node[pipebox, fill=red!20] (quality_cuts) at (4,-4.35) {Quality Cuts\\(131,213)};
 
     % Data and light-curve branch
     \draw[arrow] (gaia_adql) -- (lc_download);
@@ -264,7 +264,7 @@ We began by querying the Gaia DR3 \texttt{vari\_rrlyrae} catalog for 100 high-qu
 \end{itemize}
 The query was submitted via the Gaia TAP service using \texttt{astroquery.gaia}. Epoch photometry (time, magnitude, flux, uncertainty) for each star was then downloaded individually from the Gaia epoch photometry tables.
 
-\subsection{Calibration Sample (1050 Stars)}
+\subsection{Calibration Sample (1031 Stars)}
 
 For the period-luminosity calibration, we required a sample of nearby, low-extinction RR Lyrae stars with precise Gaia parallaxes. The calibration sample was selected with:
 \begin{itemize}
@@ -272,7 +272,7 @@ For the period-luminosity calibration, we required a sample of nearby, low-extin
   \item $|b| > 30^\circ$ (high Galactic latitude, low extinction)
   \item Distance $d < 4$ kpc (derived from $\varpi > 0.25$ mas)
 \end{itemize}
-This returned 1050 stars with sufficient data for Bayesian PL fitting.
+This returned 1031 stars with sufficient data for Bayesian PL fitting.
 
 \subsection{Full All-Sky Catalog (269,772 Stars)}
 
@@ -361,7 +361,7 @@ Figures~\ref{fig:cv_residuals} and \ref{fig:cv_phase} further diagnose the under
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_mean_g_comparison.pdf}
-  \caption{Comparison of mean $G$-band magnitude estimators against the Gaia DR3 \texttt{int\_average\_g} catalog value. \textit{Left:} Flux-space epoch mean $\langle G \rangle_{\rm epoch}$ vs.\ catalog; \textit{Right:} Fourier mean $\langle G \rangle_{\rm Fourier}$ vs.\ catalog. Residual panels (bottom) show the signed offset; the dashed line marks zero. The Fourier mean achieves RMS $= 0.0147$ mag vs.\ $0.0282$ mag for the epoch mean.}
+  \caption{Comparison of mean $G$-band magnitude estimators against the Gaia DR3 \texttt{int\_average\_g} catalog value. \textit{Left:} Flux-space epoch mean $\langle G \rangle_{\rm epoch}$ vs.\ catalog; \textit{Right:} Fourier mean $\langle G \rangle_{\rm Fourier}$ vs.\ catalog. Residual panels (bottom) show the signed offset; the dashed line marks zero. The Fourier mean achieves RMS $= 0.0139$ mag vs.\ $0.0282$ mag for the epoch mean.}
   \label{fig:mean_g_comparison}
 \end{figure*}
 
@@ -376,7 +376,7 @@ Figures~\ref{fig:cv_residuals} and \ref{fig:cv_phase} further diagnose the under
 
 A Fourier model is a more accurate mean magnitude estimator; averaging magnitudes directly is biased because the relationship between flux and magnitude is nonlinear ($f \propto 10^{-0.4m}$). We instead computed the mean flux from the Fourier model by numerical integration in flux space and converted back to magnitude (see Section~\ref{sec:theory}).
 
-Figure~\ref{fig:mean_g_comparison} compares both estimators against the Gaia DR3 \texttt{int\_average\_g} (the catalog intensity-averaged magnitude). The left panel shows the flux-space epoch mean, $\langle G \rangle_{\rm epoch}$, against the catalog value; the right panel shows $\langle G \rangle_{\rm Fourier}$. Residual panels below each scatter plot show the signed offset from the catalog. The Fourier-based mean is more tightly clustered around the one-to-one line, with RMS residual 0.0147 mag vs.\ 0.0282 mag for the epoch mean. The improvement arises because the Fourier template reconstructs the full pulsation cycle, correcting for uneven phase sampling across Gaia visits that inflates the epoch-average scatter.
+Figure~\ref{fig:mean_g_comparison} compares both estimators against the Gaia DR3 \texttt{int\_average\_g} (the catalog intensity-averaged magnitude). The left panel shows the flux-space epoch mean, $\langle G \rangle_{\rm epoch}$, against the catalog value; the right panel shows $\langle G \rangle_{\rm Fourier}$. Residual panels below each scatter plot show the signed offset from the catalog. The Fourier-based mean is more tightly clustered around the one-to-one line, with RMS residual 0.0139 mag vs.\ 0.0282 mag for the epoch mean. The improvement arises because the Fourier template reconstructs the full pulsation cycle, correcting for uneven phase sampling across Gaia visits that inflates the epoch-average scatter.
 
 \subsection{Light Curve Extrapolation}
 
@@ -407,7 +407,7 @@ Figure~\ref{fig:rrab_rrc} illustrates the morphological differences between RRab
 
 \subsection{Initial Selection}
 
-The initial calibration sample of 1050 RR Lyrae stars (Section~\ref{sec:data}) spans the northern and southern sky at high Galactic latitudes. Figure~\ref{fig:calibration_sky_c12} shows the sky distribution in Aitoff projection; all stars lie outside the $|b| < 30^\circ$ exclusion zone by construction, confirming that the ADQL query has removed Galactic disk stars. The figure also shows the spatial pattern of stars removed versus retained after the C1/C2 cuts.
+The initial calibration sample of 1031 RR Lyrae stars (Section~\ref{sec:data}) spans the northern and southern sky at high Galactic latitudes. Figure~\ref{fig:calibration_sky_c12} shows the sky distribution in Aitoff projection; all stars lie outside the $|b| < 30^\circ$ exclusion zone by construction, confirming that the ADQL query has removed Galactic disk stars. The figure also shows the spatial pattern of stars removed versus retained after the C1/C2 cuts.
 
 \subsection{Lindegren Astrometric Quality Cuts}
 
@@ -417,9 +417,9 @@ Raw parallaxes from Gaia DR3 can be affected by astrometric systematics, particu
 
 \textbf{C2 (BP/RP photometric excess):} Stars whose BP$+$RP excess factor $E$ falls outside the two-sided, colour-dependent envelope $1 + 0.015(G_{\rm BP}-G_{\rm RP})^2 < E < 1.3 + 0.06(G_{\rm BP}-G_{\rm RP})^2$ are flagged as likely blended or contaminated and removed.
 
-After both cuts, the sample reduced from 1050 to 972 stars, a $\sim$7.4\% rejection rate. Of the 1050 stars, 1006 pass C1 alone and 973 pass C2 alone; only the 972 passing both cuts are retained. Table~\ref{tab:sample_cuts} summarizes the sample evolution through each cleaning stage.
+After both cuts, the sample reduced from 1031 to 973 stars, a $\sim$5.6\% rejection rate. Of the 1031 stars, 998 pass C1 alone and 973 pass C2 alone; only the 973 passing both cuts are retained. Table~\ref{tab:sample_cuts} summarizes the sample evolution through each cleaning stage.
 
-An interesting feature of the removals is their spatial non-uniformity (Figure~\ref{fig:calibration_sky_c12}). The most conspicuous concentrations of rejected stars coincide with the directions of the Large and Small Magellanic Clouds (LMC and SMC), where crowding and source blending degrade Gaia's astrometric and photometric quality diagnostics. Because the sample already requires $\varpi > 0.25$\,mas, genuine Magellanic Cloud members at $\sim$50--60\,kpc are excluded by the parallax selection; the rejected clumps therefore represent problematic Gaia solutions projected against the Cloud directions, not actual Cloud members. This makes their removal by C1/C2 physically sensible. Quantitatively, among the 78 stars removed by C1/C2, those within $10^\circ$ of the LMC center have a rejection rate of 3/24 = 12.5\%, while those within $6^\circ$ of the SMC center show a strikingly high rejection rate of 19/24 = 79.2\%. By contrast, stars elsewhere on the sky are removed at only 56/945 = 5.9\%, roughly equal to the basal rejection rate for genuine astrometric outliers. The 79\% rejection fraction toward the SMC provides strong empirical evidence that crowding-induced catalog artifacts are highly concentrated in that direction.
+An interesting feature of the removals is their spatial non-uniformity (Figure~\ref{fig:calibration_sky_c12}). The most conspicuous concentrations of rejected stars coincide with the directions of the Large and Small Magellanic Clouds (LMC and SMC), where crowding and source blending degrade Gaia's astrometric and photometric quality diagnostics. Because the sample already requires $\varpi > 0.25$\,mas, genuine Magellanic Cloud members at $\sim$50--60\,kpc are excluded by the parallax selection; the rejected clumps therefore represent problematic Gaia solutions projected against the Cloud directions, not actual Cloud members. This makes their removal by C1/C2 physically sensible. Quantitatively, among the 58 stars removed by C1/C2, those within $10^\circ$ of the LMC center have a rejection rate of 15/30 = 50.0\%, while those within $6^\circ$ of the SMC center show a rejection rate of 7/16 = 43.8\%. By contrast, stars elsewhere on the sky are removed at only 36/985 = 3.7\%, roughly equal to the basal rejection rate for genuine astrometric outliers. The elevated rejection fractions toward the Magellanic Clouds provide strong empirical evidence that crowding-induced catalog artifacts are concentrated in those directions.
 
 \subsection{Mixture Contamination Model}
 
@@ -434,14 +434,14 @@ The mixture likelihood for star $i$ is:
   p(M_i \mid \boldsymbol{\theta}) = f_{\rm in}\, \mathcal{N}(M_i;\, a\,\delta_i + b,\, \sigma_i^2 + \sigma_{\rm int}^2) \\
     + (1-f_{\rm in})\, \mathcal{N}(M_i;\, \mu_{\rm out},\, \sigma_{\rm out}^2).
 \end{multline}
-Each star's posterior inlier probability $p_{{\rm in},i}$ is computed from the ratio of likelihood components. Stars with $p_{{\rm in},i} < 0.95$ were removed, reducing the sample from 972 to 884 stars. Figure~\ref{fig:pl_stages} shows the PL relation before and after C1/C2 cuts, and Figure~\ref{fig:pl_inlier} shows the mixture-model inlier probabilities and the final cleaned sample.
+Each star's posterior inlier probability $p_{{\rm in},i}$ is computed from the ratio of likelihood components. Stars with $p_{{\rm in},i} < 0.95$ were removed, reducing the sample from 973 to 874 stars. Figure~\ref{fig:pl_stages} shows the PL relation before and after C1/C2 cuts, and Figure~\ref{fig:pl_inlier} shows the mixture-model inlier probabilities and the final cleaned sample.
 
-The progressive improvement can also in quantified in scatter. The largest improvement occurs at the mixture model step where the RMS falls from 1.229 to 0.259 mag (a further 79\% reduction), and the number of stars more than 1 mag from the relation drops from 48 to just 1. The C1/C2 cuts alone provide a 57\% RMS improvement, primarily by removing the long tails in the parallax error distribution. The resulting final calibration sample is shown in Figure~\ref{fig:clean_period_abs_mag}.
+The progressive improvement can also in quantified in scatter. The largest improvement occurs at the mixture model step where the RMS falls from 1.227 to 0.212 mag (a further 83\% reduction), and the number of stars more than 1 mag from the relation drops from 49 to 0. The C1/C2 cuts alone provide a 51\% RMS improvement, primarily by removing the long tails in the parallax error distribution. The resulting final calibration sample is shown in Figure~\ref{fig:clean_period_abs_mag}.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig_period_abs_mag_c12_comparison.pdf}
-  \caption{$G$-band period--absolute magnitude plot before (\textit{left}, $N=1050$) and after (\textit{right}, $N=972$) the Lindegren C1/C2 astrometric quality cuts. Points are colored by pulsation subclass. Error bars show combined photometric and parallax uncertainties.}
+  \caption{$G$-band period--absolute magnitude plot before (\textit{left}, $N=1031$) and after (\textit{right}, $N=973$) the Lindegren C1/C2 astrometric quality cuts. Points are colored by pulsation subclass. Error bars show combined photometric and parallax uncertainties.}
   \label{fig:pl_stages}
 \end{figure}
 
@@ -459,9 +459,9 @@ The progressive improvement can also in quantified in scatter. The largest impro
 \toprule
 Stage & $N$ \\
 \midrule
-Initial selection   & 1050 \\
-After C1/C2 cuts    & 972  \\
-After mixture model & 884  \\
+Initial selection   & 1031 \\
+After C1/C2 cuts    & 973  \\
+After mixture model & 874  \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -469,7 +469,7 @@ After mixture model & 884  \\
 \begin{figure*}[b]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_clean_period_abs_mag.pdf}
-  \caption{$G$-band period--absolute magnitude diagram for the final cleaned calibration sample ($N=884$) after mixture contamination model rejection ($p_{\rm in} \geq 0.95$). Points are colored by pulsation subclass (RRab, RRc, RRd). Error bars show combined photometric and parallax uncertainties.}
+  \caption{$G$-band period--absolute magnitude diagram for the final cleaned calibration sample ($N=874$) after mixture contamination model rejection ($p_{\rm in} \geq 0.95$). Points are colored by pulsation subclass. Error bars show combined photometric and parallax uncertainties.}
   \label{fig:clean_period_abs_mag}
 \end{figure*}
 
@@ -498,11 +498,11 @@ The $\mathrm{HalfNormal}$ prior for $\sigma_{\rm scatter}$ is chosen because int
 
 We implemented three MCMC methods for the RRab PL fit and compared their results:
 
-\textbf{Method 1 (M-H):} Custom Metropolis-Hastings with diagonal Gaussian proposal. We ran 25,000 steps, discarding the first 5,000 as burn-in. The proposal widths are tuned by scanning a discrete grid; the achieved acceptance rate was 0.549.
+\textbf{Method 1 (M-H):} Custom Metropolis-Hastings with diagonal Gaussian proposal. We ran 25,000 steps, discarding the first 5,000 as burn-in. The proposal widths are tuned by scanning a discrete grid; the achieved acceptance rate was 0.495.
 
-\textbf{Method 2 (NUTS + Potential):} The gradient-based NUTS sampler in PyMC, with the log-likelihood encoded as a \texttt{Potential} term. We ran 1,500 tuning steps and 3,000 draw steps.
+\textbf{Method 2 (NUTS + Potential):} The gradient-based NUTS sampler in PyMC, with the log-likelihood encoded as a \texttt{Potential} term. We ran 1,000 tuning steps and 2,000 draw steps.
 
-\textbf{Method 3 (Native PyMC):} A fully probabilistic PyMC model with Gaussian likelihoods and HalfNormal priors, using the default NUTS sampler (1,500 tune, 3,000 draws). 
+\textbf{Method 3 (Native PyMC):} A fully probabilistic PyMC model with Gaussian likelihoods and HalfNormal priors, using the default NUTS sampler (1,000 tune, 2,000 draws). 
 
 \begin{figure*}[b]
   \centering
@@ -515,11 +515,11 @@ Figures~\ref{fig:methods_corner_rrab} and \ref{fig:methods_corner_rrc} overlay a
 
 \subsection{RRab Results}
 
-Using native PyMC NUTS on the 560 RRab stars in the cleaned calibration sample, we find:
+Using native PyMC NUTS on the 559 RRab stars in the cleaned calibration sample, we find:
 \begin{align}
-  a_{\rm RRab} &= -2.2316 \pm 0.1283, \\
-  b_{\rm RRab} &= +0.6531 \pm 0.0085, \\
-  \sigma_{\rm scatter,RRab} &= 0.1762 \pm 0.0077.
+  a_{\rm RRab} &= -2.2299 \pm 0.1261, \\
+  b_{\rm RRab} &= +0.6523 \pm 0.0087, \\
+  \sigma_{\rm scatter,RRab} &= 0.1752 \pm 0.0073.
 \end{align}
 Rather than overplotting individual posterior draws which can obscure the actual uncertainty structure by cluttering the figure, we display the posterior median relation together with 68\% and 95\% posterior predictive envelopes computed from the full post burn sample. This representation makes the shape and width of the uncertainty region immediately legible. 
 The posterior predictive envelopes (shown in Figure~\ref{fig:optical_ir_comparison}) comfortably bracket the data with no systematic residual trends. The envelope width is approximately uniform across the full period range of the sample calibration stars the slope, and is tightly constrained ($\sigma_a \approx 0.13$). This is smaller than the intrinsic astrophysical scatter $\sigma_{\rm scatter} \approx 0.18$~mag, which dominates the envelope width throughout. The roughly constant band width therefore suggests that the uncertainty is set by possible stellar physics effects (metallicity spread, optical depth) rather than by parameter estimation uncertainty. 
@@ -533,11 +533,11 @@ The posterior predictive envelopes (shown in Figure~\ref{fig:optical_ir_comparis
 
 \subsection{RRc Results}
 
-For the 316 RRc stars, the native PyMC NUTS fit yields:
+For the 315 RRc stars, the native PyMC NUTS fit yields:
 \begin{align}
-  a_{\rm RRc} &= -2.2169^{+0.1779}_{-0.1731}, \\
-  b_{\rm RRc} &= +0.5757 \pm 0.0108, \\
-  \sigma_{\rm scatter,RRc} &= 0.1669 \pm 0.0093.
+  a_{\rm RRc} &= -2.2097^{+0.1727}_{-0.1794}, \\
+  b_{\rm RRc} &= +0.5747 \pm 0.0115, \\
+  \sigma_{\rm scatter,RRc} &= 0.1659 \pm 0.0093.
 \end{align}
 The slightly flatter slope for RRc compared to RRab is consistent with the different mass-luminosity relationship expected for first-overtone pulsators \citep{CatelanSmith2015}. Interestingly, the smaller intrinsic scatter ($\sigma_{\rm scatter,RRc} < \sigma_{\rm scatter,RRab}$) may also reflect the narrower instability strip occupied by first-overtone pulsators. The sampler comparison corner plot is shown in Figure~\ref{fig:methods_corner_rrc}.
 
@@ -548,7 +548,7 @@ The slightly flatter slope for RRc compared to RRab is consistent with the diffe
 
 \subsection{Cross-Matching and Quality Cuts}
 
-WISE $W2$ photometry was retrieved for calibration sample stars via the Gaia DR3\newline \texttt{allwise\_best\_neighbour} table (Section~\ref{sec:data}). The cross-match proceeds in stages; first, the full Gaia DR3 $\times$ AllWISE join yields 271,779 rows; restricting to our clean 884-star calibration sample gives 875 matched stars; after applying conservative photometric quality flags (\texttt{w2snr} $> 5$, no contamination or upper-limit flags), 839 stars remain (527 RRab + 304 RRc + 8 RRd). The 8 RRd stars are excluded from the PL fitting, leaving 831 stars used for the infrared analysis. The $\sim$5\% cross-match loss (884 $\to$ 839) is consistent with the expected AllWISE completeness at these faint magnitudes. The sky distribution and period--absolute-magnitude cuts applied here mirror the G-band sample-selection procedure described in Section~\ref{sec:calib} (see Figures~\ref{fig:calibration_sky_c12} and \ref{fig:pl_stages}).
+WISE $W2$ photometry was retrieved for calibration sample stars via the Gaia DR3\newline \texttt{allwise\_best\_neighbour} table (Section~\ref{sec:data}). The cross-match proceeds in stages; first, the full Gaia DR3 $\times$ AllWISE join yields 3,615 rows; restricting to our clean 874-star calibration sample gives 830 matched stars with 526 RRab and 304 RRc. All 830 stars are used for the infrared analysis. The $\sim$5\% cross-match loss (874 $\to$ 830) is consistent with the expected AllWISE completeness at these faint magnitudes. The sky distribution and period--absolute-magnitude cuts applied here mirror the G-band sample-selection procedure described in Section~\ref{sec:calib} (see Figures~\ref{fig:calibration_sky_c12} and \ref{fig:pl_stages}).
 
 \subsection{W2 Period-Luminosity Relations}
 
@@ -556,14 +556,14 @@ We fit the $W2$ PL relation using the same Bayesian NUTS framework. The absolute
 
 Figure~\ref{fig:optical_ir_comparison} shows the posterior median and 68\%/95\% predictive envelopes over the RRab and RRc $W2$ data alongside the optical fits, and Table~\ref{tab:pl_summary} summarizes the results. The slopes are significantly steeper than in $G$:
 \begin{align}
-  a_{W2,\rm RRab} &= -2.9845 \pm 0.1189, \\
-  a_{W2,\rm RRc}  &= -3.2460 \pm 0.1555.
+  a_{W2,\rm RRab} &= -2.9852 \pm 0.1147, \\
+  a_{W2,\rm RRc}  &= -3.2480 \pm 0.1561.
 \end{align}
 
 \begin{figure*}[p]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_optical_ir_comparison.pdf}
-  \caption{Side-by-side comparison of the Gaia $G$-band (blue) and WISE $W2$ (orange) period-luminosity relations for \textbf{RRab} (\textit{top}) and \textbf{RRc} (\textit{bottom}). Shaded bands show 68\% posterior predictive envelopes. The steeper $W2$ slope ($\Delta a_{\rm RRab} = -0.75 \pm 0.17$, $\Delta a_{\rm RRc} = -1.03 \pm 0.24$) is visible as a more pronounced tilt in the orange fit lines relative to the blue. The tighter $W2$ scatter also reflects reduced extinction sensitivity at mid-infrared wavelengths.}
+  \caption{Side-by-side comparison of the Gaia $G$-band (blue) and WISE $W2$ (orange) period-luminosity relations for \textbf{RRab} (\textit{top}) and \textbf{RRc} (\textit{bottom}). Shaded bands show 68\% posterior predictive envelopes. The steeper $W2$ slope ($\Delta a_{\rm RRab} = -0.76 \pm 0.17$, $\Delta a_{\rm RRc} = -1.04 \pm 0.24$) is visible as a more pronounced tilt in the orange fit lines relative to the blue. The tighter $W2$ scatter also reflects reduced extinction sensitivity at mid-infrared wavelengths.}
   \label{fig:optical_ir_comparison}
 \end{figure*}
 
@@ -571,7 +571,7 @@ The intrinsic scatter is also smaller ($\sigma_{\rm int} \approx 0.14$--0.15 mag
 
 \subsection{Optical vs.\ Infrared Comparison}
 
-The infrared slope is steeper by $\Delta a_{\rm RRab} = -0.75 \pm 0.17$ and $\Delta a_{\rm RRc} = -1.03 \pm 0.24$. This steepening is a well-known property of RR Lyrae PL relations where at optical wavelengths, the luminosity-temperature-radius coupling partially cancels the period-luminosity correlation; in the infrared regime, the relationship becomes more purely between period and bolometric luminosity \citep{CatelanSmith2015}. Figure~\ref{fig:optical_ir_comparison} shows both relations side by side for each subclass, making the slope difference directly visible.
+The infrared slope is steeper by $\Delta a_{\rm RRab} = -0.76 \pm 0.17$ and $\Delta a_{\rm RRc} = -1.04 \pm 0.24$. This steepening is a well-known property of RR Lyrae PL relations where at optical wavelengths, the luminosity-temperature-radius coupling partially cancels the period-luminosity correlation; in the infrared regime, the relationship becomes more purely between period and bolometric luminosity \citep{CatelanSmith2015}. Figure~\ref{fig:optical_ir_comparison} shows both relations side by side for each subclass, making the slope difference directly visible.
 
 \begin{table*}[ht!]
 \centering
@@ -580,10 +580,10 @@ The infrared slope is steeper by $\Delta a_{\rm RRab} = -0.75 \pm 0.17$ and $\De
 \hline\hline
 Band & Type & $a$ & $b$ & $\sigma_{\rm int}$ \\
 \hline
-$G$ (this work) & RRab (560) & $-2.2316\pm0.1283$ & $0.6531\pm0.0085$ & $0.1762\pm0.0077$ \\
-$G$ (this work) & RRc  (316) & $-2.2169^{+0.1779}_{-0.1731}$ & $0.5757\pm0.0108$ & $0.1669\pm0.0093$ \\
-$W2$ (this work) & RRab (527) & $-2.9845\pm0.1189$ & $\cdots$ & $0.1475\pm0.0072$ \\
-$W2$ (this work) & RRc  (305) & $-3.2460\pm0.1555$ & $\cdots$ & $0.1335\pm0.0087$ \\
+$G$ (this work) & RRab (559) & $-2.2299\pm0.1261$ & $0.6523\pm0.0087$ & $0.1752\pm0.0073$ \\
+$G$ (this work) & RRc  (315) & $-2.2097^{+0.1727}_{-0.1794}$ & $0.5747\pm0.0115$ & $0.1659\pm0.0093$ \\
+$W2$ (this work) & RRab (526) & $-2.9852\pm0.1147$ & $\cdots$ & $0.1467\pm0.0074$ \\
+$W2$ (this work) & RRc  (304) & $-3.2480\pm0.1561$ & $\cdots$ & $0.1328\pm0.0088$ \\
 $W2$ \citep{KleinBloom2014} & RRab & $-2.39\pm0.20$ & $\cdots$ & $\cdots$ \\
 $W2$ \citep{Dambis2014} & RRab & $-2.94\pm0.15$  & $\cdots$ & $\cdots$ \\
 \hline\hline
@@ -601,32 +601,32 @@ The color $G_{\rm BP} - G_{\rm RP}$ of a star depends on its temperature, which 
 \begin{equation}
   (G_{\rm BP} - G_{\rm RP}) = a_c\,(\log P - \langle\log P\rangle_{\rm class}) + b_c + \epsilon_c,
 \end{equation}
-where $\epsilon_c \sim \mathcal{N}(0, \sigma_c^2 + \sigma_{{\rm int},c}^2)$, and $\sigma_c$ is the measurement uncertainty on the color. We used only the 884-star cleaned calibration sample, for which residual extinction is assumed to be negligible (high Galactic latitude, low extinction region).
+where $\epsilon_c \sim \mathcal{N}(0, \sigma_c^2 + \sigma_{{\rm int},c}^2)$, and $\sigma_c$ is the measurement uncertainty on the color. We used only the 874-star cleaned calibration sample, for which residual extinction is assumed to be negligible (high Galactic latitude, low extinction region).
 
 \begin{figure*}[b!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_period_color.pdf}
-  \caption{Joint period-color posterior predictive comparison for RRab (blue) and RRc (orange) in the same coordinate system. The RRc slope ($a_{c,\rm RRc} = +0.48 \pm 0.05$) is roughly twice as steep as the RRab slope ($a_{c,\rm RRab} = +0.25 \pm 0.04$), confirming stronger temperature-period coupling in first-overtone pulsators.}
+  \caption{Joint period-color posterior predictive comparison for RRab (blue) and RRc (orange) in the same coordinate system. The RRc slope ($a_{c,\rm RRc} = +0.48 \pm 0.05$) is roughly twice as steep as the RRab slope ($a_{c,\rm RRab} = +0.25 \pm 0.04$), confirming stronger temperature-period coupling in first-overtone pulsators. Intercepts are evaluated at the class mean $\langle\log P\rangle$.}
   \label{fig:period_color}
 \end{figure*}
 
 \subsection{RRab Period-Color Relation}
 
-The NUTS fit for 560 RRab calibration stars gives:
+The NUTS fit for 559 RRab calibration stars gives:
 \begin{align}
-  a_{c,\rm RRab} &= +0.2483 \pm 0.0417, \\
-  b_{c,\rm RRab} &= +0.7095 \pm 0.0103, \\
-  \sigma_{c,\rm RRab} &= 0.0502 \pm 0.0025.
+  a_{c,\rm RRab} &= +0.2483 \pm 0.0420, \\
+  b_{c,\rm RRab} &= +0.6487 \pm 0.0029, \\
+  \sigma_{c,\rm RRab} &= 0.0500 \pm 0.0026.
 \end{align}
 The positive slope means redder (cooler) RR Lyrae have longer periods, consistent with the width of the instability strip where lower-temperature stars pulsate at longer periods.
 
 \subsection{RRc Period-Color Relation}
 
-For 316 RRc stars:
+For 315 RRc stars:
 \begin{align}
-  a_{c,\rm RRc} &= +0.4766 \pm 0.0548, \\
-  b_{c,\rm RRc} &= +0.6817 \pm 0.0267, \\
-  \sigma_{c,\rm RRc} &= 0.0508 \pm 0.0027.
+  a_{c,\rm RRc} &= +0.4783 \pm 0.0527, \\
+  b_{c,\rm RRc} &= +0.4452 \pm 0.0033, \\
+  \sigma_{c,\rm RRc} &= 0.0508 \pm 0.0026.
 \end{align}
 
 The steeper period-color slope for RRc compared to RRab ($+0.48$ vs. $+0.25$) suggests a stronger temperature-period coupling in first-overtone pulsation. The smaller intrinsic scatter ($\sigma_{c} \approx 0.05$ mag for both types) suggests that the period-color relation is tight, making it a reliable predictor of intrinsic color for individual stars.
@@ -653,12 +653,12 @@ The coefficient $R_G = 2.0$ is can be traced to be adopted following \citet{Wang
 
 \subsection{Comparison to Gaia DR3 \texttt{g\_absorption}}
 
-As a sanity check, we compared our empirical $A_G$ estimates to the Gaia DR3 \texttt{g\_absorption} field, which uses the Gaia photometric solution to estimate extinction. Figure~\ref{fig:extinction_comparison} shows this comparison where we find that our median offset is 0.114 mag lower than \texttt{g\_absorption}.
+As a sanity check, we compared our empirical $A_G$ estimates to the Gaia DR3 \texttt{g\_absorption} field, which uses the Gaia photometric solution to estimate extinction. Figure~\ref{fig:extinction_comparison} shows this comparison where we find that our median offset is 0.146 mag lower than \texttt{g\_absorption}.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\columnwidth]{figures/fig_extinction_comparison.pdf}
-  \caption{Empirical $A_G$ (this work) vs.\ Gaia DR3 \texttt{g\_absorption} for 109,325 RRab stars with finite Gaia extinction estimates. The dashed line shows the 1:1 relation.}
+  \caption{Empirical $A_G$ (this work) vs.\ Gaia DR3 \texttt{g\_absorption} for 142,867 RRab stars with finite Gaia extinction estimates. The dashed line shows the 1:1 relation.}
   \label{fig:extinction_comparison}
 \end{figure}
 
@@ -668,14 +668,14 @@ Compared to the Gaia DR3 \texttt{g\_absorption} which is computed from a global 
 
 To ensure a clean reddening map, we applied the following quality cuts to the full 269,772-star catalog:
 \begin{enumerate}
-  \item $\texttt{phot\_bp\_mean\_flux\_over\_error} > 5$ (good BP photometry): removes 19,607 stars (7.7\%)
-  \item $\texttt{phot\_rp\_mean\_flux\_over\_error} > 5$ (good RP photometry): removes 1,474 stars (0.6\%)
-  \item BP/RP photometric excess within the magnitude-dependent envelope (similar to C2 cut): removes 55,304 stars (28.4\%), primarily heavily blended sources concentrated toward the Galactic plane with bad phometric solutions
-  \item Uncertainty on color excess $\sigma_E \leq 0.15$ mag: removes 8,325 stars (3.3\%)
-  \item $0 \leq E(G_{\rm BP}-G_{\rm RP}) \leq 10$ mag (exclude unphysical negative reddening): removes 38,582 stars (15.2\%), primarily low-latitude stars with negative empirical reddening. The upper bound sanity cap of 10 mag affects no stars passing the preceding quality cuts
+  \item $\texttt{phot\_bp\_mean\_flux\_over\_error} > 5$ (good BP photometry): removes 35,169 stars (13.0\%)
+  \item $\texttt{phot\_rp\_mean\_flux\_over\_error} > 5$ (good RP photometry): removes 1,515 stars (0.6\%)
+  \item BP/RP photometric excess within the magnitude-dependent envelope (similar to C2 cut): removes 55,304 stars (20.5\%), primarily heavily blended sources concentrated toward the Galactic plane with bad photometric solutions
+  \item Uncertainty on color excess $\sigma_E \leq 0.15$ mag: removes 8,000 stars (3.0\%)
+  \item $0 \leq E(G_{\rm BP}-G_{\rm RP}) \leq 10$ mag (exclude unphysical negative reddening): removes 38,571 stars (14.3\%), primarily low-latitude stars with negative empirical reddening. The upper bound sanity cap of 10 mag affects no stars passing the preceding quality cuts
 \end{enumerate}
 
-After these cuts, 130,877 stars (48.5\% of the initial catalog) remained for the sky map. The removed stars are not random but concentrated toward the Galactic plane and other crowded or high-extinction regions.
+After these cuts, 131,213 stars (48.6\% of the initial catalog) remained for the sky map. The removed stars are not random but concentrated toward the Galactic plane and other crowded or high-extinction regions.
 
 \subsection{All-Sky Reddening Map}
 
@@ -692,7 +692,7 @@ This non-uniform sampling is an inherent limitation of using RR Lyrae as dust tr
 \begin{figure}[p]
   \centering
   \includegraphics[width=\dimexpr\paperheight-1.5in\relax]{figures/fig_reddening_map.pdf}
-  \caption{All-sky reddening map from 130,877 RR Lyrae stars (88,028 RRab + 42,849 RRc) in Aitoff (equal-area) projection. Color indicates $E(G_{\rm BP}-G_{\rm RP})$ in magnitudes. The Galactic plane shows high reddening; the Galactic center region (right) has the highest extinction. High-latitude regions show low, patchy reddening from nearby dust clouds; the Large and Small Magellanic Clouds appear clearly as overdensities. The non-uniform sky coverage reflects the non-uniform distribution of RR Lyrae stars.}
+  \caption{All-sky reddening map from 131,213 RR Lyrae stars (88,079 RRab + 43,134 RRc) in Aitoff (equal-area) projection. Color indicates $E(G_{\rm BP}-G_{\rm RP})$ in magnitudes. The Galactic plane shows high reddening; the Galactic center region (right) has the highest extinction. High-latitude regions show low, patchy reddening from nearby dust clouds; the Large and Small Magellanic Clouds appear clearly as overdensities. The non-uniform sky coverage reflects the non-uniform distribution of RR Lyrae stars.}
   \label{fig:reddening_map}
 \end{figure}
 \end{landscape}
@@ -705,7 +705,7 @@ This non-uniform sampling is an inherent limitation of using RR Lyrae as dust tr
 \begin{figure}[p]
   \centering
   \includegraphics[width=\dimexpr\paperheight-1.5in\relax]{figures/fig_sfd_map.pdf}
-  \caption{SFD $E(B-V)$ \citep{SFD1998} sampled at the sky positions of the 130,877 cleaned RR Lyrae stars in Aitoff (equal-area) projection. The map traces the total dust column integrated to infinity along each sightline; compare with Figure~\ref{fig:reddening_map}, which shows only the foreground dust out to each star's heliocentric distance. The Galactic plane and center show markedly higher $E(B-V)$ in SFD than in the empirical RR Lyrae map which provides direct evidence of the 3D~vs.~2D effect explored quantitatively in Section~\ref{sec:regime}.}
+  \caption{SFD $E(B-V)$ \citep{SFD1998} sampled at the sky positions of the 131,213 cleaned RR Lyrae stars in Aitoff (equal-area) projection. The map traces the total dust column integrated to infinity along each sightline; compare with Figure~\ref{fig:reddening_map}, which shows only the foreground dust out to each star's heliocentric distance. The Galactic plane and center show markedly higher $E(B-V)$ in SFD than in the empirical RR Lyrae map which provides direct evidence of the 3D~vs.~2D effect explored quantitatively in Section~\ref{sec:regime}.}
   \label{fig:sfd_map}
 \end{figure}
 \end{landscape}
@@ -724,17 +724,17 @@ We quantify agreement between the two maps using the Pearson $R^2$ coefficient, 
 \hline\hline
 Latitude range & $N_{\rm stars}$ & $R^2$ \\
 \hline
-$|b| < 10^\circ$               & 54,295  & 0.3483 \\
-$10^\circ < |b| < 20^\circ$   & 33,357  & 0.8225 \\
-$20^\circ < |b| < 30^\circ$   & 17,360  & 0.7693 \\
-$30^\circ < |b| < 40^\circ$   & 18,142  & 0.0548 \\
-$40^\circ < |b| < 50^\circ$   & 5,055   & 0.1656 \\
-$50^\circ < |b| < 60^\circ$   & 1,435   & 0.0335 \\
-$60^\circ < |b| < 70^\circ$   & 676     & 0.0290 \\
-$70^\circ < |b| < 80^\circ$   & 407     & 0.0156 \\
-$|b| > 80^\circ$               & 150     & 0.0000 \\
+$|b| < 10^\circ$               & 54,515  & 0.3467 \\
+$10^\circ < |b| < 20^\circ$   & 33,393  & 0.8178 \\
+$20^\circ < |b| < 30^\circ$   & 17,385  & 0.7641 \\
+$30^\circ < |b| < 40^\circ$   & 18,168  & 0.0540 \\
+$40^\circ < |b| < 50^\circ$   & 5,066   & 0.1645 \\
+$50^\circ < |b| < 60^\circ$   & 1,440   & 0.0334 \\
+$60^\circ < |b| < 70^\circ$   & 682     & 0.0263 \\
+$70^\circ < |b| < 80^\circ$   & 413     & 0.0113 \\
+$|b| > 80^\circ$               & 151     & 0.0000 \\
 \hline
-Overall                        & 130,877 & 0.459  \\
+Overall                        & 131,213 & 0.457  \\
 \hline\hline
 \end{tabular}
 \end{table}
@@ -743,12 +743,12 @@ Overall                        & 130,877 & 0.459  \\
   \centering
   \includegraphics[width=\textwidth]{figures/fig_regime_decomposition.pdf}
   \caption{Regime decomposition of the SFD vs.\ empirical comparison.
-  \textit{Left:} Similar-scale regime ($E(B-V)_{\rm SFD} \leq 2$ mag, $N = 127{,}893$ stars). The density hexbin shows a tight linear trend; the dashed orange line is a linear fit with slope $1.11$, below the expected Gaia-band conversion factor $R_{BP-RP} \approx 1.3$.
-  \textit{Right:} Large-SFD regime ($E(B-V)_{\rm SFD} > 10$ mag, $N = 74$ stars). The empirical $E(G_{\rm BP}-G_{\rm RP})$ saturates far below the SFD column despite the physical ceiling at 10.0 mag being well above the observed values. The decoupling illustrates the 3D~vs.~2D distinction between a distance-limited stellar measurement and a total-column dust map.}
+  \textit{Left:} Similar-scale regime ($E(B-V)_{\rm SFD} \leq 2$ mag, $N = 128{,}154$ stars). The density hexbin shows a tight linear trend; the dashed orange line is a linear fit with slope $1.11$, below the expected Gaia-band conversion factor $R_{BP-RP} \approx 1.3$.
+  \textit{Right:} Large-SFD regime ($E(B-V)_{\rm SFD} > 10$ mag, $N = 77$ stars). The empirical $E(G_{\rm BP}-G_{\rm RP})$ saturates far below the SFD column despite the physical ceiling at 10.0 mag being well above the observed values. The decoupling illustrates the 3D~vs.~2D distinction between a distance-limited stellar measurement and a total-column dust map.}
   \label{fig:regime_decomposition}
 \end{figure*}
 
-The overall $R^2 = 0.459$ suggests the period-color approach for dust tracing is effective. Interestingly, $R^2$ peaks in the intermediate-latitude bins ($R^2 = 0.8225$ at $10^\circ$--$20^\circ$ and $0.7693$ at $20^\circ$--$30^\circ$) rather than at the lowest latitudes ($R^2 = 0.3483$ at $|b| < 10^\circ$), and drops sharply at high latitudes. The finer breakdown at high latitudes (Table~\ref{tab:sfd_latitudes}) shows that $R^2$ falls below 0.01 between $60^\circ$ and $80^\circ$ and shows no meaningful signal at the poles (150 stars at $|b| > 80^\circ$). This latitude dependence is physically expected: near the plane, the dust column is large (up to $E(B\!-\!V) \sim 5$ mag), providing a large dynamic range that allows both methods to correlate well. At high latitudes, the dust column is small ($E(B\!-\!V) \lesssim 0.05$ mag) and both measurements are noise-dominated.
+The overall $R^2 = 0.457$ suggests the period-color approach for dust tracing is effective. Interestingly, $R^2$ peaks in the intermediate-latitude bins ($R^2 = 0.8178$ at $10^\circ$--$20^\circ$ and $0.7641$ at $20^\circ$--$30^\circ$) rather than at the lowest latitudes ($R^2 = 0.3467$ at $|b| < 10^\circ$), and drops sharply at high latitudes. The finer breakdown at high latitudes (Table~\ref{tab:sfd_latitudes}) shows that $R^2$ falls below 0.03 between $60^\circ$ and $80^\circ$ and shows no meaningful signal at the poles (151 stars at $|b| > 80^\circ$). This latitude dependence is physically expected: near the plane, the dust column is large (up to $E(B\!-\!V) \sim 5$ mag), providing a large dynamic range that allows both methods to correlate well. At high latitudes, the dust column is small ($E(B\!-\!V) \lesssim 0.05$ mag) and both measurements are noise-dominated.
 
 \subsection{SFD Regime Decomposition Comparison}
 \label{sec:regime}
@@ -756,11 +756,11 @@ The overall $R^2 = 0.459$ suggests the period-color approach for dust tracing is
 The latitude-binned $R^2$ table characterizes the global agreement, but the physical behavior is more sharply revealed by splitting on the magnitude of SFD $E(B-V)$ rather than by latitudes. We define two regimes:
 
 \begin{enumerate}
-  \item \textbf{Similar-scale} ($E(B-V)_{\rm SFD} \leq 2$ mag, $N = 127{,}893$ stars): SFD and the empirical RR Lyrae color excess are in the same range.
-  \item \textbf{Large-SFD} ($E(B-V)_{\rm SFD} > 10$ mag, $N = 74$ stars): these are the most heavily obscured Galactic plane and inner-Galaxy sightlines.
+  \item \textbf{Similar-scale} ($E(B-V)_{\rm SFD} \leq 2$ mag, $N = 128{,}154$ stars): SFD and the empirical RR Lyrae color excess are in the same range.
+  \item \textbf{Large-SFD} ($E(B-V)_{\rm SFD} > 10$ mag, $N = 77$ stars): these are the most heavily obscured Galactic plane and inner-Galaxy sightlines.
 \end{enumerate}
 
-Figure~\ref{fig:regime_decomposition} shows a two-panel summary. In the similar-scale panel (left), a hexbin density plot combined with a linear fit reveals a slope of $1.11$, somewhat below the expected Gaia-band reddening conversion factor $R_{BP-RP} \equiv E(G_{\rm BP}-G_{\rm RP})/E(B-V) \approx 1.3$ for a standard $R_V = 3.1$ extinction law \citep{Fitzpatrick1999, WangChen2019}. The deviation from unity is consistent with the 3D vs.\ 2D effect where in this moderate-reddening subsample, RR Lyrae stars at finite distances measure only a foreground fraction of the SFD column. Furthermore, the Pearson $R^2$ within this subsample is $0.878$, and the binned median trend follows the linear fit closely, confirming that the empirical period-color calibration recovers a consistent reddening signal relative to SFD across the entire moderate-extinction range.
+Figure~\ref{fig:regime_decomposition} shows a two-panel summary. In the similar-scale panel (left), a hexbin density plot combined with a linear fit reveals a slope of $1.11$, somewhat below the expected Gaia-band reddening conversion factor $R_{BP-RP} \equiv E(G_{\rm BP}-G_{\rm RP})/E(B-V) \approx 1.3$ for a standard $R_V = 3.1$ extinction law \citep{Fitzpatrick1999, WangChen2019}. The deviation from unity is consistent with the 3D vs.\ 2D effect where in this moderate-reddening subsample, RR Lyrae stars at finite distances measure only a foreground fraction of the SFD column. Furthermore, the Pearson $R^2$ within this subsample is $0.877$, and the binned median trend follows the linear fit closely, confirming that the empirical period-color calibration recovers a consistent reddening signal relative to SFD across the entire moderate-extinction range.
 
 In the large-SFD panel (right), the empirical values cluster well below the physical ceiling while SFD spans the full range above 10 mag despite significantly higher SFD magnitudes. 
 
@@ -777,7 +777,7 @@ Table~\ref{tab:pl_summary} summarizes our PL relations. The $G$-band slopes for 
 
 The intrinsic scatter $\sigma_{\rm scatter} \approx 0.17$--0.18 mag in $G$ could be dominated by the unmodelled metallicity spread, $Z_\lambda [\mathrm{Fe/H}]$.
 
-Our $W2$ RRab slope ($-2.98 \pm 0.12$) lies $\sim$2.5$\sigma$ from the \citet{KleinBloom2014} value ($a = -2.39 \pm 0.20$), possibly reflecting different sample selections or parallax zero-points. It agrees within $1\sigma$ with the pure PL slope reported by \citet{Dambis2014} ($a = -2.94 \pm 0.15$). The small differences may reflect (i) different metallicity distributions between samples, (ii) different parallax zero-point conventions (Gaia EDR3 vs. HST or other calibrators), or (iii) different reference period choices. For RRc stars, \citet{KleinBloom2014} report $a_{W2,\rm RRc} = -1.70 \pm 0.62$, which is substantially shallower than our value of $-3.23 \pm 0.16$. The large uncertainty on the \citet{KleinBloom2014} RRc slope ($\pm 0.62$) reflects their much smaller sample size. Compared to \citet{KleinBloom2014}, our RRc slope deviates at the $\sim$2.5$\sigma$ level.
+Our $W2$ RRab slope ($-2.99 \pm 0.11$) lies $\sim$2.6$\sigma$ from the \citet{KleinBloom2014} value ($a = -2.39 \pm 0.20$), possibly reflecting different sample selections or parallax zero-points. It agrees within $1\sigma$ with the pure PL slope reported by \citet{Dambis2014} ($a = -2.94 \pm 0.15$). The small differences may reflect (i) different metallicity distributions between samples, (ii) different parallax zero-point conventions (Gaia EDR3 vs. HST or other calibrators), or (iii) different reference period choices. For RRc stars, \citet{KleinBloom2014} report $a_{W2,\rm RRc} = -1.70 \pm 0.62$, which is substantially shallower than our value of $-3.25 \pm 0.16$. The large uncertainty on the \citet{KleinBloom2014} RRc slope ($\pm 0.62$) reflects their much smaller sample size. Compared to \citet{KleinBloom2014}, our RRc slope deviates at the $\sim$2.5$\sigma$ level.
 
 Our $G$-band slopes are somewhat steeper than optical $V$-band literature values (typically $a_V \approx -1.4$ to $-1.8$; \citealt{Beaton2018}), as expected since $G$ is redder than $V$ and should have a steeper period-luminosity slope. \citet{Beaton2018} present $V$-band RR Lyrae period-luminosity relations from the extragalactic Carnegie--Chicago Hubble Program with slopes in the range $a_V \approx -1.4$ to $-1.8$ and intrinsic scatter of $\sim$0.14--0.20 mag, which they use to calibrate the extragalactic distance scale. The $G$-band is broader and extends redward of $V$, so the Gaia $G$-band PL slope is expected to be steeper, as we observe ($a_G \approx -2.2$ vs. $a_V \approx -1.5$). The larger intrinsic scatter we find in $G$ ($\sigma_{\rm scatter} \approx 0.17$ mag) compared to their $V$-band values is also consistent with the increased sensitivity of optical bands to metallicity spread.
 
@@ -785,15 +785,15 @@ Literature values are listed in Table~\ref{tab:pl_summary} for direct numerical 
 
 \subsection{Wavelength Dependence}
 
-The $W2$ slopes are steeper by $\Delta a \approx -0.75$ (RRab) and $\approx -1.03$ (RRc) compared to $G$. This confirms the well-established wavelength dependence of RR Lyrae PL relations. The reduced scatter in $W2$ ($\sigma_{\rm scatter} \approx 0.14$ mag) has two contributions: (i) the metallicity effect on luminosity is smaller in the infrared \citep{CatelanSmith2015}, and (ii) the $W2$ observations are unaffected by residual extinction in our sample, which at $|b|>30^\circ$ amounts to $A_G \approx 0.0$--0.2 mag.
+The $W2$ slopes are steeper by $\Delta a \approx -0.76$ (RRab) and $\approx -1.04$ (RRc) compared to $G$. This confirms the well-established wavelength dependence of RR Lyrae PL relations. The reduced scatter in $W2$ ($\sigma_{\rm scatter} \approx 0.14$ mag) has two contributions: (i) the metallicity effect on luminosity is smaller in the infrared \citep{CatelanSmith2015}, and (ii) the $W2$ observations are unaffected by residual extinction in our sample, which at $|b|>30^\circ$ amounts to $A_G \approx 0.0$--0.2 mag.
 
 \subsection{Dust Map Quality and Limitations}
 
-Our 130,877-star reddening map is a large RR Lyrae-based dust maps compiled from Gaia data. Primarily, it is limited by sampling inhomogeity and distance-limited coverage of RR Lyrae stars observable. RR Lyrae are old ($>10$ Gyr) metal-poor stars that trace the Galactic halo and bulge. Their sky distribution is thus non-uniform in a physically convenient sense since they concentrate toward the Galactic center (bulge overdensity) and are distributed throughout the halo, but are severely under-represented in the Galactic plane ($|b| \lesssim 10^\circ$) because the dense dust column makes RR Lyrae in the plane observationally inaccessible in the optical $G$ band. The outer disk and spiral arms, which host young stellar populations but very few old metal-poor halo stars, and thus are also poorly sampled. This contrasts with dust, which follows the young stellar population and interstellar gas more closely.
+Our 131,213-star reddening map is a large RR Lyrae-based dust maps compiled from Gaia data. Primarily, it is limited by sampling inhomogeity and distance-limited coverage of RR Lyrae stars observable. RR Lyrae are old ($>10$ Gyr) metal-poor stars that trace the Galactic halo and bulge. Their sky distribution is thus non-uniform in a physically convenient sense since they concentrate toward the Galactic center (bulge overdensity) and are distributed throughout the halo, but are severely under-represented in the Galactic plane ($|b| \lesssim 10^\circ$) because the dense dust column makes RR Lyrae in the plane observationally inaccessible in the optical $G$ band. The outer disk and spiral arms, which host young stellar populations but very few old metal-poor halo stars, and thus are also poorly sampled. This contrasts with dust, which follows the young stellar population and interstellar gas more closely.
 
 Additionally, most stars in our sample from Gaia with good astrometric data are within $\sim$10 kpc. The SFD map, derived from far-infrared emission, includes all Galactic dust to infinity. Our map will therefore underestimate extinction toward the Galactic center and beyond the outer disk.
 
-Lastly, we also note that the maps look patchy with missing gaps of data. With 130,877 stars over the full sky, the mean angular separation between stars is $\sim 0.3^\circ$. The effective angular resolution of the map is thus limited to $\sim$0.3--0.5 degrees, comparable to the SFD resolution of $\sim 6'$ but with much noisier individual measurements.
+Lastly, we also note that the maps look patchy with missing gaps of data. With 131,213 stars over the full sky, the mean angular separation between stars is $\sim 0.3^\circ$. The effective angular resolution of the map is thus limited to $\sim$0.3--0.5 degrees, comparable to the SFD resolution of $\sim 6'$ but with much noisier individual measurements.
 
 Despite these limitations, the strong $R^2$ with SFD demonstrates that RR Lyrae are effective dust tracers.
 
@@ -802,17 +802,17 @@ Despite these limitations, the strong $R^2$ with SFD demonstrates that RR Lyrae 
 \label{sec:conclusions}
 %%% ---------------------------------------------------------------
 
-We have constructed an empirical all-sky dust reddening map from Gaia DR3 RR Lyrae stars using a pipeline that proceeds from raw light curve data through period recovery, Fourier modeling, calibration, and Bayesian inference to a 130,877-star sky map.
+We have constructed an empirical all-sky dust reddening map from Gaia DR3 RR Lyrae stars using a pipeline that proceeds from raw light curve data through period recovery, Fourier modeling, calibration, and Bayesian inference to a 131,213-star sky map.
 
 Period recovery from Lomb-Scargle periodograms agrees with Gaia catalog values to within 1\% for 89 of 100 test stars. All 11 outlying cases arise because $P_{\rm LS}$ latches onto the first-overtone period \texttt{p1o} rather than the fundamental \texttt{pf}, identifying these stars as RRd double-mode pulsators. Blazhko-effect modulations, though visible in some phase-folded light curves, carry negligible LS power and do not affect period recovery.
 
-Mean magnitudes are estimated by integrating cross-validated Fourier series fits (optimal order $K \approx 5$--7) in flux space. This reduces the RMS from 0.0282 to 0.0147 mag relative to na\"{\i}ve epoch-averaging, owing to the non-linear magnitude--flux relation and the asymmetric sawtooth shape of RRab light curves.
+Mean magnitudes are estimated by integrating cross-validated Fourier series fits (optimal order $K \approx 5$--7) in flux space. This reduces the RMS from 0.0282 to 0.0139 mag relative to na\"{\i}ve epoch-averaging, owing to the non-linear magnitude--flux relation and the asymmetric sawtooth shape of RRab light curves.
 
-The calibration sample was assembled from 1050 nearby ($d < 4$ kpc), high-latitude ($|b| > 30^\circ$) stars and cleaned through Lindegren C1/C2 astrometric quality cuts and a two-component mixture contamination model, arriving at 884 stars (560 RRab + 316 RRc + 8 RRd). $G$-band period-luminosity relations fit by Bayesian NUTS sampling give $a_{\rm RRab} = -2.23\pm0.13$, $b_{\rm RRab} = 0.653\pm0.009$ and $a_{\rm RRc} = -2.22\pm0.18$, $b_{\rm RRc} = 0.576\pm0.011$, with three independent MCMC approaches (Metropolis-Hastings, NUTS with a custom potential, native PyMC) yielding mutually consistent posteriors.
+The calibration sample was assembled from 1031 nearby ($d < 4$ kpc), high-latitude ($|b| > 30^\circ$) stars and cleaned through Lindegren C1/C2 astrometric quality cuts and a two-component mixture contamination model, arriving at 874 stars (559 RRab + 315 RRc). $G$-band period-luminosity relations fit by Bayesian NUTS sampling give $a_{\rm RRab} = -2.23\pm0.13$, $b_{\rm RRab} = 0.652\pm0.009$ and $a_{\rm RRc} = -2.21\pm0.18$, $b_{\rm RRc} = 0.575\pm0.011$, with three independent MCMC approaches (Metropolis-Hastings, NUTS with a custom potential, native PyMC) yielding mutually consistent posteriors.
 
-Extending to WISE $W2$ photometry, we find slopes steeper by $\Delta a \approx -0.75$ (RRab) and $\approx -1.03$ (RRc) relative to $G$, with reduced intrinsic scatter ($\sigma_{\rm scatter} \approx 0.14$ mag), consistent with the well-established wavelength dependence of RR Lyrae period-luminosity relations and the near-zero $W2$ extinction coefficient. The RRab $W2$ slope ($-2.98\pm0.12$) agrees within $1\sigma$ with \citet{Dambis2014} ($a = -2.94\pm0.15$). Period-color relations in $G_{\rm BP}-G_{\rm RP}$ are tight ($\sigma_c \approx 0.05$ mag) with slopes $a_{c,\rm RRab} = +0.25\pm0.04$ and $a_{c,\rm RRc} = +0.48\pm0.05$.
+Extending to WISE $W2$ photometry, we find slopes steeper by $\Delta a \approx -0.76$ (RRab) and $\approx -1.04$ (RRc) relative to $G$, with reduced intrinsic scatter ($\sigma_{\rm scatter} \approx 0.14$ mag), consistent with the well-established wavelength dependence of RR Lyrae period-luminosity relations and the near-zero $W2$ extinction coefficient. The RRab $W2$ slope ($-2.99\pm0.11$) agrees within $1\sigma$ with \citet{Dambis2014} ($a = -2.94\pm0.15$). Period-color relations in $G_{\rm BP}-G_{\rm RP}$ are tight ($\sigma_c \approx 0.05$ mag) with slopes $a_{c,\rm RRab} = +0.25\pm0.04$ and $a_{c,\rm RRc} = +0.48\pm0.05$.
 
-Applying the period-color calibration to the full 269,772-star catalog and retaining 130,877 stars (88,028 RRab + 42,849 RRc) after quality filtering yields an all-sky reddening map with Pearson $R^2 = 0.459$ against the SFD map overall and $R^2 = 0.878$ in the similar-scale regime ($E(B-V)_{\rm SFD} \leq 2$ mag, $N = 127{,}893$). A regime decomposition reveals a linear fit slope of 1.11 in that subsample, below the expected $R_{BP-RP} \approx 1.3$, consistent with RR Lyrae at finite distances measuring only a foreground fraction of the total SFD column. In the large-SFD regime ($E(B-V)_{\rm SFD} > 10$ mag, $N = 74$), empirical reddening values saturate well below the SFD column, directly illustrating the 3D vs.\ 2D distinction inherent to stellar dust tracers.
+Applying the period-color calibration to the full 269,772-star catalog and retaining 131,213 stars (88,079 RRab + 43,134 RRc) after quality filtering yields an all-sky reddening map with Pearson $R^2 = 0.457$ against the SFD map overall and $R^2 = 0.877$ in the similar-scale regime ($E(B-V)_{\rm SFD} \leq 2$ mag, $N = 128{,}154$). A regime decomposition reveals a linear fit slope of 1.11 in that subsample, below the expected $R_{BP-RP} \approx 1.3$, consistent with RR Lyrae at finite distances measuring only a foreground fraction of the total SFD column. In the large-SFD regime ($E(B-V)_{\rm SFD} > 10$ mag, $N = 77$), empirical reddening values saturate well below the SFD column, directly illustrating the 3D vs.\ 2D distinction inherent to stellar dust tracers.
 
 Future work can incorporate spectroscopic metallicities (e.g., from APOGEE cross-matches) to add a metallicity term to the PL relation, reducing intrinsic scatter. The upcoming Gaia DR4 and DR5 releases will increase the catalog size, improving map resolution and depth. Together with a larger dataset, a joint hierarchical model combining parallax, period, photometry, and metallicity in a single inference step would further improve both the distance estimates and the dust map precision.
 
