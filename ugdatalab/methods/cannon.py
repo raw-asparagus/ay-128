@@ -45,13 +45,15 @@ def _build_cannon_design_vector(labels: np.ndarray) -> np.ndarray:
 
 
 def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
-    """Train one pixel via profile likelihood.
+    """Train one pixel via profile likelihood with a scatter floor.
 
     For fixed s², theta is WLS: theta = (X^T W X)^{-1} X^T W f
     where W = diag(1 / (sigma² + s²)).
 
-    Optimizes over log(s²) in [-20, 2] via bounded scalar minimization,
-    solving WLS analytically at each evaluation.
+    Optimizes over log(s²) via bounded scalar minimization, solving WLS
+    analytically at each evaluation. The lower bound on s² is set to the
+    median measurement variance at this pixel, enforcing that model
+    inadequacy is at least comparable to the measurement noise floor.
 
     Parameters
     ----------
@@ -76,6 +78,9 @@ def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
     sigma2 = error_pixel[valid] ** 2
     X = design_matrix[valid]
 
+    # Scatter floor: median measurement variance at this pixel
+    log_s2_floor = np.log(np.median(sigma2))
+
     def _neg_log_likelihood(log_s2):
         s2 = np.exp(log_s2)
         var = sigma2 + s2
@@ -90,7 +95,9 @@ def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
         resid = f - X @ theta
         return 0.5 * np.sum(np.log(var) + resid ** 2 / var)
 
-    result = minimize_scalar(_neg_log_likelihood, bounds=(-20, 2), method="bounded")
+    result = minimize_scalar(
+        _neg_log_likelihood, bounds=(log_s2_floor, 2), method="bounded",
+    )
     s2_opt = np.exp(result.x)
 
     var = sigma2 + s2_opt
@@ -237,7 +244,13 @@ def train_cannon(
     theta_all = np.zeros((n_pixels, n_terms))
     scatter_all = np.full(n_pixels, np.inf)
 
+    # Skip pixels where fewer than 50% of training stars have valid data
+    valid_frac = np.mean(np.isfinite(error) & (error < np.inf), axis=0)
+    trainable = valid_frac >= 0.5
+
     for pix in range(n_pixels):
+        if not trainable[pix]:
+            continue
         theta_all[pix], scatter_all[pix] = _train_pixel(
             flux[:, pix], error[:, pix], X,
         )
@@ -269,8 +282,8 @@ def train_cannon(
 # Label fitting (inverse problem)
 # ---------------------------------------------------------------------------
 
-_LABEL_BOUNDS_LOWER = np.array([3500.0, -1.0, -2.0, -1.0, -1.0])
-_LABEL_BOUNDS_UPPER = np.array([6500.0,  5.0,  1.0,  1.0,  1.0])
+_LABEL_BOUNDS_LOWER = np.array([2800.0, -0.5, -1.5, -0.5, -0.7])
+_LABEL_BOUNDS_UPPER = np.array([6000.0,  4.5,  0.8,  0.7,  0.6])
 
 
 def _design_vector_jacobian(scaled_labels, n_labels):

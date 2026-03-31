@@ -21,6 +21,8 @@ from ugdatalab.models.gaia import (
 from ugdatalab.models.apogee import (
     APOGEEData,
     APOGEETrainingSet,
+    Spectrum,
+    APOGEESpectra,
 )
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
 from ugdatalab.methods.periodogram import PeriodogramResult, lomb_scargle

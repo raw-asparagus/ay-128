@@ -1,5 +1,6 @@
 import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from ugdatalab.models.apogee.constants import (
     APOGEE_BAD_PIXMASK_BITS,
     APOGEE_DR17_URL,
 )
+from ugdatalab.models.apogee.apogee import APOGEEData
 
 
 def _reconstruct_wavelength(header) -> np.ndarray:
@@ -68,9 +70,9 @@ def _fetch_apstar_batch(
     """Download apStar spectra for all stars in a catalog in parallel."""
     from tqdm.auto import tqdm
 
-    ids = np.asarray(catalog["apogee_id"], dtype=str)
-    telescopes = np.asarray(catalog["telescope"], dtype=str)
-    fields = np.asarray(catalog["field"], dtype=str)
+    ids = catalog["apogee_id"]
+    telescopes = catalog["telescope"]
+    fields = catalog["field"]
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
@@ -88,15 +90,24 @@ def _apply_bitmask(
     flux: np.ndarray,
     error: np.ndarray,
     bitmask: np.ndarray,
-    bad_bits: list[int] = APOGEE_BAD_PIXMASK_BITS,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Flag bad pixels by setting their errors to infinity."""
+    """Flag bad pixels by setting their errors to infinity.
+
+    In addition to bitmask-flagged pixels, errors exceeding 100x the median
+    are treated as pipeline sentinel values and set to infinity.
+    """
     flux = flux.copy()
     error = error.copy()
     bad = np.zeros(len(bitmask), dtype=bool)
-    for bit in bad_bits:
+    for bit in APOGEE_BAD_PIXMASK_BITS:
         bad |= (bitmask & (1 << bit)) != 0
     bad |= np.isnan(flux)
+
+    # Cap pipeline sentinel errors (typically ~1e6–1e13)
+    finite = error[np.isfinite(error)]
+    if len(finite) > 0:
+        bad |= error > 100 * np.median(finite)
+
     error[bad] = np.inf
     return flux, error
 
@@ -177,3 +188,74 @@ def _fetch_normalized_spectra(
         continuum_mask,
         np.array(apogee_ids),
     )
+
+
+@dataclass
+class Spectrum:
+    """Normalized APOGEE spectrum container. Always 2D: (N, n_pixels)."""
+
+    fits_path: str | Path | None = None
+    continuum_path: str | Path = ""
+    degree: int = 4
+
+    flux: np.ndarray = field(init=False, repr=False)
+    error: np.ndarray = field(init=False, repr=False)
+    wavelength: np.ndarray = field(init=False, repr=False)
+    continuum_mask: np.ndarray = field(init=False, repr=False)
+
+    def __post_init__(self):
+        hdul = fits.open(self.fits_path)
+        flux_raw = np.array(hdul[1].data, dtype=float)
+        error_raw = np.array(hdul[2].data, dtype=float)
+        bitmask = np.array(hdul[3].data, dtype=np.int16)
+        chips = _identify_chips(hdul[0].header)
+        hdul.close()
+
+        continuum_data = np.load(self.continuum_path)
+        self.wavelength = continuum_data["wavelengths"]
+        self.continuum_mask = continuum_data["continuum"].astype(bool)
+
+        flux_masked, error_masked = _apply_bitmask(flux_raw, error_raw, bitmask)
+        flux_norm, error_norm, _ = _normalize_spectrum(
+            flux_masked, error_masked, self.wavelength, self.continuum_mask,
+            chips, self.degree,
+        )
+        self.flux = flux_norm[np.newaxis, :]
+        self.error = error_norm[np.newaxis, :]
+
+    def __len__(self):
+        return self.flux.shape[0]
+
+
+@dataclass
+class APOGEESpectra(Spectrum):
+    """Batch normalized spectra tied to an APOGEEData catalog."""
+
+    source: APOGEEData | None = None
+
+    apogee_ids: np.ndarray = field(init=False, repr=False)
+
+    def __post_init__(self):
+        flux, error, wavelength, continuum_mask, apogee_ids = (
+            _fetch_normalized_spectra(
+                self.source.data,
+                self.continuum_path,
+                degree=self.degree,
+            )
+        )
+        self.flux = flux
+        self.error = error
+        self.wavelength = wavelength
+        self.continuum_mask = continuum_mask
+        self.apogee_ids = apogee_ids
+
+    def __getitem__(self, apogee_id: str):
+        """Access a single spectrum by apogee_id string."""
+        idx = int(np.where(self.apogee_ids == apogee_id)[0][0])
+        return {
+            "apogee_id": self.apogee_ids[idx],
+            "flux": self.flux[idx],
+            "error": self.error[idx],
+            "wavelength": self.wavelength,
+            "continuum_mask": self.continuum_mask,
+        }
