@@ -1,0 +1,259 @@
+\documentclass[10pt,preprint2]{aastex}
+\usepackage[a4paper,asymmetric,left=0.75in,right=0.75in,top=0.75in,bottom=0.75in]{geometry}
+\AtBeginDocument{\newgeometry{asymmetric,left=0.75in,right=0.75in,top=0.75in,bottom=0.75in}\hoffset=0pt\setlength{\columnsep}{0.3in}\pagestyle{fancy}\fancyhf{}\fancyhead[L]{\small ASTRON 128 Astronomy Data Science Laboratory}\fancyhead[R]{\small Lab 2}\fancyfoot[C]{\thepage}}
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\setlength{\headheight}{11pt}
+\addtolength{\topmargin}{-0.16pt}
+\usepackage{float}
+\usepackage{stfloats}
+\usepackage{placeins}
+
+\makeatletter\def\frontmatter@abstractheading{}\makeatother
+\renewcommand{\abstractname}{}
+
+\begin{document}
+
+\title{Modeling Stellar Spectra with The Cannon}
+\author{Jun Rui Ting \\ \today\vspace{-2.5\baselineskip}}
+
+\begin{abstract}
+We implement and evaluate The Cannon (Ness et al.\ 2015), a data-driven spectral model, using APOGEE DR17 H-band spectra of red giant stars. The model is a 2nd-order polynomial in five stellar labels ($T_{\rm eff}$, $\log g$, $[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, $[\mathrm{Si/Fe}]$) with 21 coefficients and one intrinsic scatter term per pixel, totaling 188,650 free parameters across 8575 pixels. Cross-validation on a held-out 50\% sample recovers ASPCAP labels with scatter comparable to the pipeline uncertainties. MCMC fitting of a mystery spectrum yields precise posterior constraints on all five labels. We compare the Cannon to a neural network approach and discuss the tradeoffs between interpretability and flexibility.
+\vspace{2.5\baselineskip}
+\end{abstract}
+
+%%% ---------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+%%% ---------------------------------------------------------------
+
+Stellar spectroscopy is the primary tool for measuring the physical properties of stars: effective temperature, surface gravity, and detailed chemical abundances. Traditional approaches rely on synthetic stellar atmosphere models to fit observed spectra, but these are computationally expensive and limited by the accuracy of atomic and molecular line lists.
+
+The Cannon \citep{Ness2015} offers a complementary, data-driven approach. Rather than computing spectra from first principles, it learns the mapping from stellar labels to spectra directly from a training set of well-characterized stars. The model is a per-pixel polynomial in the stellar labels, trained by maximizing the likelihood of the observed spectra. Once trained, it can rapidly predict spectra for new label combinations and, inversely, infer labels from observed spectra.
+
+In this work, we apply The Cannon to APOGEE DR17 spectra of red giant stars in the H-band (15100--17000~\AA). We train the model, validate it via cross-validation, fit a mystery spectrum using MCMC, and compare with a neural network approach.
+
+%%% ---------------------------------------------------------------
+\section{Training Set}
+\label{sec:training}
+%%% ---------------------------------------------------------------
+
+\subsection{Data Acquisition}
+\label{sec:data}
+
+We query the APOGEE DR17 allStar catalog for four fields: M15 (metal-poor globular cluster), NGC~6791 (metal-rich open cluster), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains $N$ stars (see Section~\ref{sec:summary}).
+
+Figure~\ref{fig:label_corner} shows the distribution of stellar labels in the training set.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_corner.pdf}
+  \caption{Corner plot of the five ASPCAP stellar labels in the training set, showing correlations between $T_{\rm eff}$, $\log g$, $[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, and $[\mathrm{Si/Fe}]$.}
+  \label{fig:label_corner}
+\end{figure}
+
+\subsection{Surface Gravity}
+\label{sec:logg}
+
+Surface gravity is $g = GM/R^2$. For a solar-mass star at different evolutionary stages: main sequence ($R \approx 1\,R_\odot$, $\log g \approx 4.44$), tip of the RGB ($R \approx 100\,R_\odot$, $\log g \approx 0.44$), and red clump ($R \approx 15\,R_\odot$, $\log g \approx 2.08$). The $\log g \leq 4$ cut selects giants.
+
+\subsection{Spectra and Normalization}
+\label{sec:spectra}
+
+APOGEE spectra span 15100--17000~\AA\ across three detector chips (blue, green, red) with 8575 pixels on a log-linear wavelength grid. Raw spectra are in units of $10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$ on a barycentric frame. Figure~\ref{fig:example_spectrum} shows a representative raw spectrum.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_example_spectrum.pdf}
+  \caption{Raw APOGEE spectrum before normalization, showing the broadband SED shape and absorption features.}
+  \label{fig:example_spectrum}
+\end{figure}
+
+Pixels flagged by the APOGEE bitmask (bits 0--7 for detector issues and bit 12 for unvisited pixels) have their errors set to $\infty$, giving them zero weight in subsequent fits. We normalize each spectrum by fitting an independent degree-4 Chebyshev polynomial to 529 pre-identified continuum pixels per chip, then dividing. Figure~\ref{fig:normalization} shows this process.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_normalization.pdf}
+  \caption{Normalization diagnostic for a single star: raw flux with continuum fit (top), continuum polynomial (middle), and normalized spectrum (bottom).}
+  \label{fig:normalization}
+\end{figure}
+
+Stars with similar labels produce nearly identical normalized spectra, confirming the normalization is robust (Figure~\ref{fig:similar_stars}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_similar_stars.pdf}
+  \caption{Overlay of normalized spectra for stars with similar labels, demonstrating normalization consistency.}
+  \label{fig:similar_stars}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{The Cannon}
+\label{sec:cannon}
+%%% ---------------------------------------------------------------
+
+\subsection{Model}
+\label{sec:model}
+
+The spectral model at pixel $\lambda$ is:
+\begin{equation}
+  f_\lambda = \mathbf{X}_n \cdot \boldsymbol{\theta}_\lambda
+\end{equation}
+where $\mathbf{X}_n$ is the design vector for star $n$ --- a 2nd-order polynomial in 5 centered and scaled labels, giving 21 terms (1 constant + 5 linear + 15 quadratic). The log-likelihood is:
+\begin{equation}
+  \ln \mathcal{L} = -\frac{1}{2}\sum_n \sum_\lambda \left[\ln\bigl(2\pi(\sigma_{n\lambda}^2 + s_\lambda^2)\bigr) + \frac{(f_{n\lambda} - \mathbf{X}_n \cdot \boldsymbol{\theta}_\lambda)^2}{\sigma_{n\lambda}^2 + s_\lambda^2}\right]
+\end{equation}
+where $s_\lambda^2$ is the per-pixel intrinsic scatter. We optimize via the profile likelihood: for fixed $s_\lambda^2$, $\boldsymbol{\theta}_\lambda$ is a weighted least-squares solution; we optimize the scalar $\log s_\lambda^2$ via bounded 1D minimization.
+
+The total number of free parameters is $(21 + 1) \times 8575 = 188{,}650$.
+
+\subsection{Training Validation}
+\label{sec:training_validation}
+
+Figure~\ref{fig:training_prediction} compares the Cannon prediction against the observed spectrum for a training star in the 16000--16100~\AA\ window.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_training_prediction.pdf}
+  \caption{Observed vs.\ Cannon-predicted spectrum for a training star in the 16000--16100~\AA\ window, with residuals.}
+  \label{fig:training_prediction}
+\end{figure}
+
+\subsection{Gradient Spectra}
+\label{sec:gradients}
+
+The gradient spectrum $\partial f_\lambda / \partial \ell_i$ reveals which spectral features are most sensitive to each label. Figure~\ref{fig:gradient_spectra} shows the five gradient spectra with known Mg\,I and Si\,I lines marked.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_gradient_spectra.pdf}
+  \caption{Gradient spectra for each of the five labels, evaluated at the training-set mean. Vertical lines mark known Mg\,I (on the [Mg/Fe] panel) and Si\,I lines (on the [Si/Fe] panel).}
+  \label{fig:gradient_spectra}
+\end{figure}
+
+\subsection{Intrinsic Scatter}
+\label{sec:scatter}
+
+Figure~\ref{fig:scatter_spectrum} shows the per-pixel intrinsic scatter $s_\lambda$. High-scatter regions correspond to strong absorption lines where the 2nd-order polynomial is insufficient.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_scatter_spectrum.pdf}
+  \caption{Per-pixel intrinsic scatter $s_\lambda$ as a function of wavelength.}
+  \label{fig:scatter_spectrum}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Cross-Validation}
+\label{sec:cv}
+%%% ---------------------------------------------------------------
+
+We split the training set 50/50 (seed = 42) and fit labels for the held-out CV stars using \texttt{scipy.optimize.least\_squares} with analytical Jacobians. Figure~\ref{fig:label_recovery} shows the 1-to-1 recovery.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_recovery.pdf}
+  \caption{Cross-validation label recovery: fitted vs.\ true ASPCAP labels for each of the five labels, with residuals and bias/scatter annotations.}
+  \label{fig:label_recovery}
+\end{figure}
+
+Figure~\ref{fig:outlier_spectra} shows observed vs.\ model spectra for the worst-fit CV stars, aiding diagnosis of failure modes.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_outlier_spectra.pdf}
+  \caption{Observed and Cannon-predicted spectra for the worst-fit CV stars.}
+  \label{fig:outlier_spectra}
+\end{figure}
+
+\subsection{Kiel Diagram}
+\label{sec:kiel}
+
+Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, colored by $[\mathrm{Fe/H}]$ and overlaid with MIST isochrones.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_kiel_diagram.pdf}
+  \caption{Kiel diagram ($\log g$ vs.\ $T_{\rm eff}$) of CV-set stars with Cannon-fitted labels, colored by $[\mathrm{Fe/H}]$. MIST isochrones at $[\mathrm{Fe/H}] = 0$ and $-1$ (6~Gyr) are overlaid.}
+  \label{fig:kiel_diagram}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{MCMC Label Fitting}
+\label{sec:mcmc}
+%%% ---------------------------------------------------------------
+
+We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{CannonLabelLikelihood} wrapper. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps.
+
+Formal MCMC uncertainties are likely smaller than CV scatter because the model treats pixels as independent, neglecting continuum systematics and line-blending correlations. The CV scatter provides a more realistic uncertainty estimate.
+
+%%% ---------------------------------------------------------------
+\section{Spectral Synthesis}
+\label{sec:synthesis}
+%%% ---------------------------------------------------------------
+
+\subsection{Metallicity Sequence}
+\label{sec:metallicity}
+
+Figure~\ref{fig:metallicity_sequence} shows synthetic spectra at fixed $T_{\rm eff} = 4800$~K, $\log g = 2.5$, varying $[\mathrm{Fe/H}]$ from $-1$ to $+0.5$.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_metallicity_sequence.pdf}
+  \caption{Synthetic Cannon spectra varying $[\mathrm{Fe/H}]$ at fixed $T_{\rm eff}$ and $\log g$, showing the effect of metallicity on absorption line strengths.}
+  \label{fig:metallicity_sequence}
+\end{figure}
+
+\subsection{RGB Evolution}
+\label{sec:rgb}
+
+Figure~\ref{fig:rgb_evolution} shows synthetic spectra along the RGB from a MIST isochrone ($[\mathrm{Fe/H}] = 0$, $\log g$ from 3.5 to 0.5).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_rgb_evolution.pdf}
+  \caption{Synthetic Cannon spectra along the RGB evolutionary track at solar metallicity.}
+  \label{fig:rgb_evolution}
+\end{figure}
+
+The metallicity sequence and RGB evolution produce distinguishable spectral changes: Mg/Si lines respond differently to abundance changes vs.\ temperature/gravity changes, allowing The Cannon to disentangle these effects.
+
+\subsection{Unresolved Binaries}
+\label{sec:binaries}
+
+An unresolved binary produces a composite spectrum. The Cannon fits intermediate labels: $T_{\rm eff}$ is biased high, abundances are diluted. Possible mitigations include two-component fitting and flagging via RV scatter.
+
+%%% ---------------------------------------------------------------
+\section{Neural Network Comparison}
+\label{sec:nn}
+%%% ---------------------------------------------------------------
+
+We train a simple MLP ($8575 \to 512 \to 256 \to 5$) to predict labels from spectra. Figure~\ref{fig:nn_loss} shows the training curves, and Figure~\ref{fig:nn_label_recovery} shows the CV label recovery.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_nn_loss.pdf}
+  \caption{Training and validation MSE loss vs.\ epoch for the neural network.}
+  \label{fig:nn_loss}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_nn_label_recovery.pdf}
+  \caption{Neural network CV label recovery in the same format as Figure~\ref{fig:label_recovery}.}
+  \label{fig:nn_label_recovery}
+\end{figure}
+
+The Cannon offers interpretability (gradient spectra, explicit scatter model) while the neural network can capture nonlinear relationships. The choice depends on whether physical insight or raw prediction accuracy is the priority.
+
+%%% ---------------------------------------------------------------
+\section{Summary}
+\label{sec:summary}
+%%% ---------------------------------------------------------------
+
+All numerical results are re-derived in the summary notebook (06-numerical-results.ipynb), which serves as the single source of truth for every number cited in this report. Key results include training set sizes, Cannon model parameters, CV bias/scatter per label, MCMC posterior medians and credible intervals for the mystery star, and the Cannon vs.\ NN comparison.
+
+\end{document}

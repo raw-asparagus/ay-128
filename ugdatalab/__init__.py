@@ -18,6 +18,10 @@ from ugdatalab.models.gaia import (
     WISEData,
     WISESample,
 )
+from ugdatalab.models.apogee import (
+    APOGEEData,
+    APOGEETrainingSet,
+)
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
 from ugdatalab.methods.periodogram import PeriodogramResult, lomb_scargle
 from ugdatalab.methods.cross_validate import (

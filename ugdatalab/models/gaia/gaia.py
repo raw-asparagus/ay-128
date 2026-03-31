@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 
-from astroquery.gaia import Gaia
 from astropy import table
 from ugdatalab.models.cache import _cache_stable
 
@@ -65,6 +64,8 @@ def _add_gaia_photometry_columns(data: table.Table) -> None:
 
 @_cache_stable(module="ugdatalab.gaia")
 def _get_gaia(query):
+    from astroquery.gaia import Gaia
+
     job  = Gaia.launch_job_async(query)
     data = job.get_results()
     return data
