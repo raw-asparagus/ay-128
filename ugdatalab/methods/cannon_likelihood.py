@@ -63,7 +63,7 @@ class CannonLabelLikelihood(Likelihood):
         Priors are weakly informative Normals centered on training-set
         means with width = 2 × training-set standard deviations.
         """
-        good = np.isfinite(self.y_err) & (self.y_err < np.inf) & np.isfinite(self.model.scatter)
+        good = np.isfinite(self.y_err) & (self.y_err < 1e5) & np.isfinite(self.model.scatter)
         y_obs = pt.as_tensor_variable(self.y[good])
         sigma2_obs = pt.as_tensor_variable(self.y_err[good] ** 2)
         s2 = pt.as_tensor_variable(self.model.scatter[good])

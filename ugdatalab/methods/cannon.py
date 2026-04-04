@@ -67,7 +67,7 @@ def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
     s2 : float
         Optimized intrinsic scatter variance.
     """
-    valid = np.isfinite(error_pixel) & (error_pixel < np.inf)
+    valid = np.isfinite(error_pixel) & (error_pixel < 1e5)
     n_valid = np.sum(valid)
     n_terms = design_matrix.shape[1]
 
@@ -96,7 +96,8 @@ def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
         return 0.5 * np.sum(np.log(var) + resid ** 2 / var)
 
     result = minimize_scalar(
-        _neg_log_likelihood, bounds=(log_s2_floor, 2), method="bounded",
+        _neg_log_likelihood, bounds=(log_s2_floor, log_s2_floor + 10),
+        method="bounded",
     )
     s2_opt = np.exp(result.x)
 
@@ -244,9 +245,12 @@ def train_cannon(
     theta_all = np.zeros((n_pixels, n_terms))
     scatter_all = np.full(n_pixels, np.inf)
 
-    # Skip pixels where fewer than 50% of training stars have valid data
-    valid_frac = np.mean(np.isfinite(error) & (error < np.inf), axis=0)
-    trainable = valid_frac >= 0.5
+    # Skip pixels where fewer than 99.5% of training stars have valid data.
+    # Chip boundaries vary slightly across stars, creating a ramp-down zone
+    # at each chip edge where a few stars contribute noisy edge flux that
+    # inflates the scatter estimate.
+    valid_frac = np.mean(np.isfinite(error), axis=0)
+    trainable = valid_frac >= 0.997
 
     for pix in range(n_pixels):
         if not trainable[pix]:
@@ -259,7 +263,7 @@ def train_cannon(
     predicted = X @ theta_all.T
     resid = flux - predicted
     var = error ** 2 + scatter_all
-    valid = np.isfinite(error) & (error < np.inf) & np.isfinite(scatter_all)
+    valid = np.isfinite(error) & (error < 1e5) & np.isfinite(scatter_all)
     chi2_terms = np.where(valid, resid ** 2 / var, 0.0)
     n_valid_per_star = np.sum(valid, axis=1)
     chi2_per_star = np.sum(chi2_terms, axis=1) / np.maximum(
@@ -345,7 +349,7 @@ def fit_star_labels(
         Fitted labels in original (unscaled) space.
     """
     n_labels = len(model.label_means)
-    valid = np.isfinite(error) & (error < np.inf) & np.isfinite(model.scatter)
+    valid = np.isfinite(error) & (error < 1e5) & np.isfinite(model.scatter)
     f = flux[valid]
     sigma2 = error[valid] ** 2
     s2 = model.scatter[valid]

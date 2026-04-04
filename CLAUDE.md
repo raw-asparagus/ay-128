@@ -25,6 +25,7 @@ When the user says "audit ugdatalab", perform the following checks on all `.py` 
 16. **Circular imports** — no import cycles between modules; verify with `import ugdatalab`
 17. **Signature consistency** — engines use consistent parameter names (e.g., `n_steps`, `n_burn`, `seed`); result dataclasses carry `labels`, `samples`, `trace` where applicable
 18. **Numerical stability** — no unguarded `log(0)`, `1/0`, or `10**large_number`; magnitude conversions handle edge cases
+19. **Default argument documentation** — package-level functions, factories, and classes may use default parameter values, but every default must be documented: what the value is, why it was chosen, and when a caller should override it. Defaults encoding scientific choices (e.g., `bad_bits`, `degree`, `period_min`) require especially clear documentation since a user may reasonably want a different value
 
 ### Output format
 
@@ -50,19 +51,24 @@ When the user says "audit lab NN" (e.g., "audit lab 01"), perform the following 
 9. **Savefig pattern** — all figures saved through a single `_savefig(fig, name)` helper that writes to `report/figures/`; no scattered `fig.savefig(...)` calls with inconsistent paths
 10. **No inline style overrides** — no `plt.rcParams` mutations inside plotter functions; all rcParams set once by importing `ugdatalab.plotting`
 
+### Default arguments
+
+11. **No unnecessary defaults in business code** — lab plotter functions, notebook helper functions, and other single-use/single-project code must not have default parameter values unless absolutely necessary for functional reuse; every argument should be explicit at the call site so the notebook is self-documenting (e.g., `plot_kiel_diagram(fitted_labels, isochrone_tracks, feh_values)` not `plot_kiel_diagram(fitted_labels, isochrone_tracks, feh_values=[-1, 0])`)
+12. **Structural constants are not defaults** — module-level constants like `_FIGURES_DIR` and the `savefig(fig, name)` helper are fine; the rule targets function signatures, not file-level configuration
+
 ### Notebook hygiene
 
-11. **Imports at top** — each notebook has a single import cell at the top; no mid-notebook imports
-12. **No dead cells** — no commented-out code blocks, no cells that produce no output and serve no setup purpose
-13. **Reproducibility** — all random operations use explicit seeds; no bare `np.random.rand()` or unseeded `pm.sample()`
-14. **No hardcoded source IDs or paths** — source IDs come from data queries, not magic numbers; paths use `Path(__file__).parent` or equivalent
+13. **Imports at top** — each notebook has a single import cell at the top; no mid-notebook imports
+14. **No dead cells** — no commented-out code blocks, no cells that produce no output and serve no setup purpose
+15. **Reproducibility** — all random operations use explicit seeds; no bare `np.random.rand()` or unseeded `pm.sample()`
+16. **No hardcoded source IDs or paths** — source IDs come from data queries, not magic numbers; paths use `Path(__file__).parent` or equivalent
 
 ### Report fidelity
 
-15. **Figure coverage** — every PDF in `report/figures/` is `\includegraphics`'d in the `.tex`; no orphan figures
-16. **Figure–notebook traceability** — every figure file can be traced to a specific plotter function call in a specific notebook
-17. **No stale figures** — figure files are not older than the notebook cells that generate them (check mtimes or re-run)
-18. **Numerical claims** — every number cited in the report text (sample sizes, best-fit parameters, chi-squared values) has a corresponding notebook cell that computes it
+17. **Figure coverage** — every PDF in `report/figures/` is `\includegraphics`'d in the `.tex`; no orphan figures
+18. **Figure–notebook traceability** — every figure file can be traced to a specific plotter function call in a specific notebook
+19. **No stale figures** — figure files are not older than the notebook cells that generate them (check mtimes or re-run)
+20. **Numerical claims** — every number cited in the report text (sample sizes, best-fit parameters, chi-squared values) has a corresponding notebook cell that computes it
 
 ### Output format
 

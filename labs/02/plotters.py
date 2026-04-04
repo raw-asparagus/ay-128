@@ -171,7 +171,8 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask):
     from ugdatalab.models.apogee.spectra import _apply_bitmask
 
     _, error_masked = _apply_bitmask(flux_raw, error_raw, bitmask)
-    bad = ~np.isfinite(error_masked)
+    # Affected = bitmask-flagged (error→1e6) OR negative/NaN flux (error→NaN)
+    affected = (error_masked >= 1e5) | ~np.isfinite(error_masked)
 
     # Pixel edges: halfway between neighbouring wavelength points
     dw = np.diff(wavelength)
@@ -187,16 +188,16 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask):
     ax_flux.plot(wavelength, flux_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
                  color="C0", rasterized=True, label="Raw flux")
 
-    bad_idx = np.where(bad)[0]
-    for i, idx in enumerate(bad_idx):
+    affected_idx = np.where(affected)[0]
+    for i, idx in enumerate(affected_idx):
         ax_flux.axvspan(edges[idx], edges[idx + 1], color="C3", alpha=ALPHA_FAINT,
-                        zorder=0, linewidth=0, label="Masked" if i == 0 else None)
+                        zorder=0, linewidth=0, label="Affected" if i == 0 else None)
         ax_err.axvspan(edges[idx], edges[idx + 1], color="C3", alpha=ALPHA_FAINT,
                        zorder=0, linewidth=0)
 
     ax_flux.set_ylabel(r"Flux [$10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$]")
-    ax_flux.legend(loc="upper right", fontsize="small", frameon=False,
-                   title=f"{np.sum(bad)}/{len(bad)} pixels masked",
+    ax_flux.legend(loc="upper right", fontsize="small",
+                   title=f"{np.sum(affected)}/{len(affected)} pixels affected",
                    title_fontsize="small")
 
     finite_err = error_raw[np.isfinite(error_raw)]
@@ -214,29 +215,79 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask):
 # 3b. Bitmask frequency (Problem 3)
 # ---------------------------------------------------------------------------
 
-def plot_bitmask_frequency(wavelength, flux, error):
-    """Per-pixel mask frequency across all training spectra.
+def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
+    """Per-pixel mask frequency across all training spectra, broken down by cause.
 
     Parameters
     ----------
     wavelength : ndarray, shape (n_pixels,)
-    flux : ndarray, shape (N, n_pixels)
-    error : ndarray, shape (N, n_pixels)
+    flux_raw : ndarray, shape (N, n_pixels)
+        Raw flux before bitmask application.
+    bitmask_raw : ndarray, shape (N, n_pixels)
+        Raw APOGEE pixel bitmask.
     """
-    masked = ~np.isfinite(flux) | ~np.isfinite(error)
-    mask_count = np.sum(masked, axis=0)
+    from ugdatalab.models.apogee.constants import APOGEE_BAD_PIXMASK_BITS
 
-    fig, ax = textwidth_figure(5)
-    ax.fill_between(wavelength, mask_count, step="mid",
+    # Category 1: NaN flux (inter-chip gaps, already missing in FITS)
+    nan_flux = np.isnan(flux_raw)
+
+    # Category 2: bitmask-flagged (bits 0-7, 12)
+    bm_flagged = np.zeros_like(flux_raw, dtype=bool)
+    for bit in APOGEE_BAD_PIXMASK_BITS:
+        bm_flagged |= (bitmask_raw & (1 << bit)).astype(bool)
+    bm_flagged &= ~nan_flux  # don't double-count
+
+    # Category 3: negative flux (unflagged cosmic rays / artifacts)
+    neg_flux = (flux_raw < 0) & ~nan_flux & ~bm_flagged
+
+    n_stars = flux_raw.shape[0]
+    nan_count = np.sum(nan_flux, axis=0)
+    bm_count = np.sum(bm_flagged, axis=0)
+    neg_count = np.sum(neg_flux, axis=0)
+
+    # Plot as fraction of training set
+    nan_frac = nan_count / n_stars
+    bm_frac = bm_count / n_stars
+    neg_frac = neg_count / n_stars
+
+    fig, ax = textwidth_figure(8)
+
+    # Stack: bitmask on bottom, negative flux, NaN on top
+    cum1 = bm_frac
+    cum2 = cum1 + neg_frac
+    cum3 = cum2 + nan_frac
+
+    ax.fill_between(wavelength, 0, cum1, step="mid",
+                    alpha=ALPHA_LIGHT, color="C0")
+    ax.step(wavelength, cum1, where="mid",
+            lw=LW_FINE, color="C0", label="Bitmask-flagged")
+
+    ax.fill_between(wavelength, cum1, cum2, step="mid",
                     alpha=ALPHA_LIGHT, color="C3")
-    ax.step(wavelength, mask_count, where="mid",
-            lw=LW_FINE, color="C3")
+    ax.step(wavelength, cum2, where="mid",
+            lw=LW_FINE, color="C3", label="Negative flux")
+
+    ax.fill_between(wavelength, cum2, cum3, step="mid",
+                    alpha=ALPHA_LIGHT, color=NEUTRAL_COLOR)
+    ax.step(wavelength, cum3, where="mid",
+            lw=LW_FINE, color=NEUTRAL_COLOR, label="Missing (NaN)")
+
+    # Threshold guides
+    for threshold, label in [(0.32, "68% good"), (0.05, "95% good"), (0.003, "99.7% good")]:
+        ax.axhline(threshold, ls="--", lw=LW_LIGHT, color=NEUTRAL_COLOR,
+                   alpha=ALPHA_FAINT, zorder=1)
+        ax.text(wavelength[-1], threshold, f" {label}",
+                fontsize="x-small", va="bottom", ha="left",
+                color=NEUTRAL_COLOR, alpha=ALPHA_STANDARD)
+
+    ax.set_ylim(0, min(1.0, cum3.max() * 1.1))
     ax.set_xlabel(r"Wavelength [\AA]")
-    ax.set_ylabel("Stars masked")
+    ax.set_ylabel("Fraction of stars masked")
     ax.set_title(
-        f"{flux.shape[0]} stars, {flux.shape[1]} pixels",
+        f"{n_stars} stars, {flux_raw.shape[1]} pixels",
         loc="left", fontsize="small",
     )
+    ax.legend(fontsize="small", loc="upper left")
 
     savefig(fig, "fig_bitmask_frequency.pdf")
     return ax
@@ -436,7 +487,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
 
     fig, ax = textwidth_figure(8)
     ax.remove()
-    axes = subpanels(fig, 2, height_ratios=(3, 1), hspace=0.05)
+    axes = subpanels(fig, 2, height_ratios=(3, 1))
 
     axes[0].errorbar(wl, obs_plot, yerr=err_plot, **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2, label="Observed")
@@ -559,22 +610,22 @@ def plot_scatter_spectrum(model):
 
     # Guide lines for known features
     ylo, yhi = ax.get_ylim()
-    label_y = yhi * 0.92
+    # label_y = yhi * 0.92
 
-    for name, wl in _BRACKETT.items():
-        ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
-        ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
-                color="C3", alpha=ALPHA_LIGHT, rotation=90)
-
-    for name, wl in _CO_BANDHEADS.items():
-        ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
-        ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
-                color="C2", alpha=ALPHA_LIGHT, rotation=90)
-
-    for species, wls in _ATOMIC.items():
-        for wl in wls:
-            ax.axvline(wl, color=NEUTRAL_COLOR, ls=":", lw=LW_LIGHT,
-                       alpha=ALPHA_FAINT, zorder=1)
+    # for name, wl in _BRACKETT.items():
+    #     ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
+    #     ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
+    #             color="C3", alpha=ALPHA_LIGHT, rotation=90)
+    #
+    # for name, wl in _CO_BANDHEADS.items():
+    #     ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
+    #     ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
+    #             color="C2", alpha=ALPHA_LIGHT, rotation=90)
+    #
+    # for species, wls in _ATOMIC.items():
+    #     for wl in wls:
+    #         ax.axvline(wl, color=NEUTRAL_COLOR, ls=":", lw=LW_LIGHT,
+    #                    alpha=ALPHA_FAINT, zorder=1)
 
     ax.set_xlabel(r"Wavelength [\AA]")
     ax.set_ylabel(r"Intrinsic scatter $s_\lambda$")
@@ -591,9 +642,9 @@ def plot_scatter_spectrum(model):
 def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_name):
     """Core implementation for label recovery plots."""
     n_labels = true_labels.shape[1]
-    ncols = 2
-    nrows = (n_labels + 1) // ncols
-    fig, subfigs = textwidth_figure(11 * nrows / 2, subfigures=(nrows, ncols))
+    ncols = 3
+    nrows = (n_labels + ncols - 1) // ncols
+    fig, subfigs = textwidth_figure(6 * nrows, subfigures=(nrows, ncols))
     subfigs = np.atleast_2d(subfigs)
 
     all_axes = np.empty((n_labels, 2), dtype=object)
@@ -603,12 +654,12 @@ def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_na
 
     for i in range(n_labels):
         row, col = i // ncols, i % ncols
-        ax_c, ax_r = subpanels(subfigs[row, col], 2, height_ratios=(2.5, 1))
+        ax_c, ax_r = subpanels(subfigs[row, col], 2, height_ratios=(4, 1),
+                               sharex=True)
         all_axes[i, 0] = ax_c
         all_axes[i, 1] = ax_r
 
     for i in range(n_labels):
-        is_bottom = i == col_last[i % ncols]
         ax_c, ax_r = all_axes[i]
 
         t = true_labels[:, i]
@@ -628,22 +679,18 @@ def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_na
                   zorder=3)
         ax_c.set_xlim(lo - margin, hi + margin)
         ax_c.set_ylim(lo - margin, hi + margin)
-        ax_c.set_ylabel(rf"Fitted {label_names[i]}")
+        ax_c.set_ylabel(rf"Cannon {label_names[i]}")
         ax_c.set_title(
             rf"bias$={bias:+.2f}$, $\sigma={scatter_val:.2f}$",
             loc="left", fontsize="small",
         )
-        ax_c.tick_params(axis="x", bottom=False, labelbottom=False)
 
         # Residual panel
         ax_r.scatter(t, resid, s=SS_MICRO, color="C0", alpha=ALPHA_FAINT,
                      zorder=2, rasterized=True)
         zero_line(ax_r)
         ax_r.set_ylabel("Res.")
-        if is_bottom:
-            ax_r.set_xlabel(rf"True {label_names[i]}")
-        else:
-            ax_r.tick_params(axis="x", bottom=False, labelbottom=False)
+        ax_r.set_xlabel(rf"APSCAP {label_names[i]}")
 
     # Hide unused subfigures if n_labels is odd
     if n_labels % ncols != 0:

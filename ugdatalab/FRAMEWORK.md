@@ -150,6 +150,41 @@ class PolynomialGaussianLikelihood(GaussianLikelihood):
 This plugs directly into `nuts_sample` and `mixture_contamination` with
 no changes to the engines.
 
+### Default arguments
+
+Package code and business code follow different rules for default parameter
+values.
+
+**Package code (`ugdatalab/`)** — defaults are allowed and encouraged for
+reusable APIs, since callers shouldn't need to know implementation details
+like optimal concurrency or polynomial degree. Every default must be
+documented: what the value is, why it was chosen, and when to override.
+Defaults encoding scientific choices (e.g., `bad_bits`, `degree`,
+`period_min`) require especially clear documentation.
+
+**Business code (`labs/NN/`)** — no default parameter values unless
+absolutely necessary for functional reuse. Every argument should be
+explicit at the call site so the notebook is self-documenting. Reading a
+plotter call should tell you exactly what is being plotted without chasing
+defaults in the function signature.
+
+```python
+# Package code — defaults are fine, documented in docstring
+def _normalize_spectrum(flux, error, wavelength, continuum_mask, degree=4):
+    """..., degree: Chebyshev polynomial order (default 4; reduce to 2-3
+    if residuals show overfitting)."""
+
+# Business code — no defaults, notebook call is explicit
+def plot_kiel_diagram(fitted_labels, isochrone_tracks, feh_values):
+    ...
+
+# In notebook:
+plotters.plot_kiel_diagram(fitted_cv, [iso_solar, iso_poor], [-1.0, 0.0])
+```
+
+Module-level structural constants (`_FIGURES_DIR`, `savefig`) are not
+function defaults and are fine in both layers.
+
 ## Layer 3 — Visualization
 
 Visualization has two tiers: **generic plotters** in `ugdatalab/plotters/`

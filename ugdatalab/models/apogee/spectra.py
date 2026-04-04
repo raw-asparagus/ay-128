@@ -91,24 +91,27 @@ def _apply_bitmask(
     error: np.ndarray,
     bitmask: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Flag bad pixels by setting their errors to infinity.
+    """Flag bad pixels.
 
-    In addition to bitmask-flagged pixels, errors exceeding 100x the median
-    are treated as pipeline sentinel values and set to infinity.
+    Bitmask-flagged pixels retain their raw flux but get error = 1e6
+    (APOGEE sentinel convention), giving them negligible weight in
+    downstream fits while preserving the raw values for diagnostics.
+    Negative flux (unflagged cosmic rays) and missing (NaN) pixels
+    are set to NaN in both flux and error.
     """
     flux = flux.copy()
     error = error.copy()
-    bad = np.zeros(len(bitmask), dtype=bool)
+
+    # Step 1: bitmask-flagged — keep raw flux, set error to sentinel
+    bm_bad = np.zeros(len(bitmask), dtype=bool)
     for bit in APOGEE_BAD_PIXMASK_BITS:
-        bad |= (bitmask & (1 << bit)) != 0
-    bad |= np.isnan(flux)
+        bm_bad |= (bitmask & (1 << bit)) != 0
+    error[bm_bad] = 1e6
 
-    # Cap pipeline sentinel errors (typically ~1e6–1e13)
-    finite = error[np.isfinite(error)]
-    if len(finite) > 0:
-        bad |= error > 100 * np.median(finite)
-
-    error[bad] = np.inf
+    # Step 2: negative flux and missing — set both to NaN
+    bad = (flux < 0) | np.isnan(flux)
+    flux[bad] = np.nan
+    error[bad] = np.nan
     return flux, error
 
 
@@ -133,7 +136,7 @@ def _normalize_spectrum(
         valid = np.zeros(n_pix, dtype=bool)
         valid[chip] = True
         valid &= continuum_mask
-        valid &= np.isfinite(error) & (error < np.inf)
+        valid &= np.isfinite(error) & (error < 1e5)
 
         if np.sum(valid) < degree + 1:
             error_norm[chip] = np.inf
