@@ -174,12 +174,12 @@ def _normalize_spectrum(flux, error, wavelength, continuum_mask, degree=4):
     """..., degree: Chebyshev polynomial order (default 4; reduce to 2-3
     if residuals show overfitting)."""
 
-# Business code — no defaults, notebook call is explicit
-def plot_kiel_diagram(fitted_labels, isochrone_tracks, feh_values):
+# Business code — required data first, optional overlays after
+def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
     ...
 
 # In notebook:
-plotters.plot_kiel_diagram(fitted_cv, [iso_solar, iso_poor], [-1.0, 0.0])
+plotters.plot_kiel_diagram(fitted_cv, [iso_solar, iso_poor])
 ```
 
 Module-level structural constants (`_FIGURES_DIR`, `savefig`) are not

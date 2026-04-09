@@ -6,22 +6,12 @@ from astropy import table
 from ugdatalab.models.cache import _cache_stable
 from ugdatalab.models.gaia.gaia import GaiaData, _get_gaia, _attach_rrlyrae_representative_period_column
 from ugdatalab.models.utils import _char_at, _sanitize_table
+from ugdatalab.models.gaia.constants import _WISE_SCHEMA
 
 
 # ---------------------------------------------------------------------------
 # Derived columns
 # ---------------------------------------------------------------------------
-
-_WISE_SCHEMA = {
-    np.int64: ["source_id"],
-    str: ["best_classification"],
-    float: [
-        "l", "b", "pf", "pf_error", "p1_o", "p1_o_error",
-        "parallax", "parallax_error",
-        "phot_g_mean_mag", "bp_rp", "w2mpro", "w2mpro_error",
-    ],
-}
-
 
 def _add_wise_photometry_columns(data: table.Table) -> None:
     """Attach mu, sigma_mu, M_W2, sigma_M_W2 from w2mpro and Gaia parallax."""

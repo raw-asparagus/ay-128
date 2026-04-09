@@ -44,7 +44,7 @@ In this work, we apply The Cannon to APOGEE DR17 spectra of red giant stars in t
 \subsection{Data Acquisition}
 \label{sec:data}
 
-We query the APOGEE DR17 allStar catalog for four fields: M15 (metal-poor globular cluster), NGC~6791 (metal-rich open cluster), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains $N$ stars (see Section~\ref{sec:summary}).
+We query the APOGEE DR17 allStar catalog for four fields: M15 (metal-poor globular cluster), NGC~6791 (metal-rich open cluster), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains 1886 stars.
 
 Figure~\ref{fig:label_corner} shows the distribution of stellar labels in the training set.
 
@@ -63,7 +63,7 @@ Surface gravity is $g = GM/R^2$. For a solar-mass star at different evolutionary
 \subsection{Spectra and Normalization}
 \label{sec:spectra}
 
-APOGEE spectra span 15100--17000~\AA\ across three detector chips (blue, green, red) with 8575 pixels on a log-linear wavelength grid. Raw spectra are in units of $10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$ on a barycentric frame. Figure~\ref{fig:example_spectrum} shows a representative raw spectrum.
+APOGEE spectra span 15100--17000~\AA\ across three detector chips (blue, green, red) with 8575 pixels on a log-linear wavelength grid. Raw spectra are in units of $10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$, i.e.\ spectral flux density per unit wavelength. The coadded spectra have been Doppler-shifted to the barycentric rest frame --- the frame of the Solar System barycenter --- to remove the Earth's orbital and rotational velocity components, which differ for each visit due to the changing line-of-sight velocity projection throughout the year. Figure~\ref{fig:example_spectrum} shows a representative raw spectrum.
 
 \begin{figure}[H]
   \centering
@@ -72,7 +72,23 @@ APOGEE spectra span 15100--17000~\AA\ across three detector chips (blue, green, 
   \label{fig:example_spectrum}
 \end{figure}
 
-Pixels flagged by the APOGEE bitmask (bits 0--7 for detector issues and bit 12 for unvisited pixels) have their errors set to $\infty$, giving them zero weight in subsequent fits. We normalize each spectrum by fitting an independent degree-4 Chebyshev polynomial to 529 pre-identified continuum pixels per chip, then dividing. Figure~\ref{fig:normalization} shows this process.
+Pixels flagged by the APOGEE bitmask (bits 0--7 for detector issues and bit 12 for unvisited pixels) have their errors set to a large sentinel value ($10^6$), giving them negligible weight ($\propto 1/\sigma^2$) in subsequent fits. Negative-flux pixels (unflagged cosmic rays or artifacts) are set to NaN. Figure~\ref{fig:bitmask_diagnostic} illustrates the affected pixels for an example star, and Figure~\ref{fig:bitmask_frequency} shows the per-pixel flagging frequency across the training set. The dominant bad-pixel sources are the inter-chip gaps ($\sim$15130, 15840, 16460, 16975~\AA), OH airglow ($\sim$15852~\AA), and telluric CO$_2$ absorption ($\sim$16452--16468~\AA).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_bitmask_diagnostic.pdf}
+  \caption{Raw spectrum with bitmask-flagged pixels highlighted (red shading), showing regions where the data are unreliable.}
+  \label{fig:bitmask_diagnostic}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_bitmask_frequency.pdf}
+  \caption{Per-pixel flagging frequency across the training set, stacked by cause (bitmask, negative flux, NaN). Horizontal guides mark the 68\%, 95\%, and 99.7\% good-pixel thresholds.}
+  \label{fig:bitmask_frequency}
+\end{figure}
+
+We pseudo-continuum normalize each spectrum by fitting an independent degree-4 Chebyshev polynomial to 529 pre-identified continuum pixels per chip, then dividing. This is a \emph{pseudo}-continuum because the ``continuum'' pixels are not truly line-free; they are simply wavelengths where the flux depends minimally on the stellar labels, as identified by Ness et al.\ (2015). True continuum normalization would require knowing the intrinsic stellar SED, which depends on the very labels we aim to measure. The pseudo-continuum approach removes the broadband shape while preserving the relative absorption-line depths that encode label information. Figure~\ref{fig:normalization} shows this process.
 
 \begin{figure}[H]
   \centering
@@ -186,9 +202,16 @@ Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, co
 \label{sec:mcmc}
 %%% ---------------------------------------------------------------
 
-We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{CannonLabelLikelihood} wrapper. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps.
+We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{CannonLabelLikelihood} wrapper. The likelihood at each pixel is $f_\lambda^{\rm obs} \sim \mathcal{N}(f_\lambda^{\rm model}, \sigma_\lambda^2 + s_\lambda^2)$, where $s_\lambda^2$ is the Cannon's intrinsic scatter. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps (4 chains, seed 42). Figure~\ref{fig:mcmc_corner} shows the posterior constraints.
 
-Formal MCMC uncertainties are likely smaller than CV scatter because the model treats pixels as independent, neglecting continuum systematics and line-blending correlations. The CV scatter provides a more realistic uncertainty estimate.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.7\textwidth]{figures/fig_methods_corner.pdf}
+  \caption{Corner plot of the MCMC posterior for the mystery spectrum, showing the joint and marginal distributions of the five stellar labels with 16th/50th/84th percentile quantiles.}
+  \label{fig:mcmc_corner}
+\end{figure}
+
+Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$55~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
 
 %%% ---------------------------------------------------------------
 \section{Spectral Synthesis}
@@ -224,7 +247,7 @@ The metallicity sequence and RGB evolution produce distinguishable spectral chan
 \subsection{Unresolved Binaries}
 \label{sec:binaries}
 
-An unresolved binary produces a composite spectrum. The Cannon fits intermediate labels: $T_{\rm eff}$ is biased high, abundances are diluted. Possible mitigations include two-component fitting and flagging via RV scatter.
+An unresolved binary produces a composite spectrum that is the flux-weighted sum of two stellar spectra falling within the same fiber. When The Cannon fits a single-star model to this composite, the inferred labels are biased. Specifically: (a) $T_{\rm eff}$ is biased toward an intermediate value between the two components, with the bias magnitude depending on the flux ratio; (b) $\log g$ may be biased depending on the luminosity ratio, since the secondary's contribution dilutes the pressure-sensitive features; (c) abundances are biased toward zero because the secondary's continuum fills in the primary's absorption lines, reducing equivalent widths. The bias is largest for near-equal-mass binaries and diminishes for extreme mass ratios where the secondary contributes negligible flux. Possible mitigations include two-component spectral fitting (fitting two label vectors simultaneously), flagging candidates via radial-velocity scatter across visits, and spectral disentangling techniques (El-Badry et al.\ 2018).
 
 %%% ---------------------------------------------------------------
 \section{Neural Network Comparison}
@@ -254,6 +277,14 @@ The Cannon offers interpretability (gradient spectra, explicit scatter model) wh
 \label{sec:summary}
 %%% ---------------------------------------------------------------
 
-All numerical results are re-derived in the summary notebook (06-numerical-results.ipynb), which serves as the single source of truth for every number cited in this report. Key results include training set sizes, Cannon model parameters, CV bias/scatter per label, MCMC posterior medians and credible intervals for the mystery star, and the Cannon vs.\ NN comparison.
+All numerical results are re-derived in the summary notebook (06-numerical-results.ipynb), which serves as the single source of truth. Key results:
+
+\begin{itemize}
+  \item \textbf{Training set:} 1886 stars after quality cuts, split 50/50 into training and CV sets.
+  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 0.99$.
+  \item \textbf{Cross-validation scatter:} $T_{\rm eff}$: $\sim$59~K; $\log g$: $\sim$0.13~dex; $[\mathrm{Fe/H}]$: $\sim$0.05~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.05~dex; $[\mathrm{Si/Fe}]$: $\sim$0.05~dex.
+  \item \textbf{MCMC mystery star} (posterior medians): $T_{\rm eff} \approx 4565$~K, $\log g \approx 2.01$, $[\mathrm{Fe/H}] \approx -0.61$, $[\mathrm{Mg/Fe}] \approx 0.30$, $[\mathrm{Si/Fe}] \approx 0.19$.
+  \item \textbf{Neural network:} MLP ($8575 \to 512 \to 256 \to 5$); CV scatter roughly $1.5$--$2\times$ larger than The Cannon across all labels, as expected given the limited training set size relative to model capacity.
+\end{itemize}
 
 \end{document}

@@ -6,7 +6,7 @@ from astropy import table
 from ugdatalab.models.cache import _cache_stable
 from ugdatalab.models.utils import _sanitize_table
 from ugdatalab.models.apogee.constants import (
-    FILLER_VALUE,
+    _FILLER_VALUE,
     _APOGEE_SCHEMA,
 )
 
@@ -47,7 +47,7 @@ class APOGEETrainingSet(APOGEEData):
         mask = np.ones(len(source.data), dtype=bool)
         for col in label_cols:
             vals = source.data[col]
-            mask &= np.isfinite(vals) & (vals != FILLER_VALUE)
+            mask &= np.isfinite(vals) & (vals != _FILLER_VALUE)
 
         mask &= source.data["snr"] > 50
         mask &= source.data["logg"] <= 4

@@ -479,9 +479,10 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     err = error_obs[mask]
     pred = flux_pred[mask]
 
-    good = np.isfinite(err) & (err < np.inf)
+    good = np.isfinite(err) & (err < np.inf) & np.isfinite(pred)
     obs_plot = np.where(good, obs, np.nan)
     err_plot = np.where(good, err, np.nan)
+    pred_plot = np.where(good, pred, np.nan)
     resid = obs - pred
     resid_plot = np.where(good, resid, np.nan)
 
@@ -491,7 +492,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
 
     axes[0].errorbar(wl, obs_plot, yerr=err_plot, **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2, label="Observed")
-    axes[0].plot(wl, pred, **FIT_STYLE, color="C1", zorder=3, label="Cannon model")
+    axes[0].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3, label="Cannon model")
     axes[0].set_ylabel(r"Normalized flux")
     axes[0].legend(fontsize="x-small")
     if apogee_id is not None:
@@ -610,22 +611,22 @@ def plot_scatter_spectrum(model):
 
     # Guide lines for known features
     ylo, yhi = ax.get_ylim()
-    # label_y = yhi * 0.92
+    label_y = yhi * 0.92
 
-    # for name, wl in _BRACKETT.items():
-    #     ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
-    #     ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
-    #             color="C3", alpha=ALPHA_LIGHT, rotation=90)
-    #
-    # for name, wl in _CO_BANDHEADS.items():
-    #     ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
-    #     ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
-    #             color="C2", alpha=ALPHA_LIGHT, rotation=90)
-    #
-    # for species, wls in _ATOMIC.items():
-    #     for wl in wls:
-    #         ax.axvline(wl, color=NEUTRAL_COLOR, ls=":", lw=LW_LIGHT,
-    #                    alpha=ALPHA_FAINT, zorder=1)
+    for name, wl in _BRACKETT.items():
+        ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
+        ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
+                color="C3", alpha=ALPHA_LIGHT, rotation=90)
+
+    for name, wl in _CO_BANDHEADS.items():
+        ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
+        ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
+                color="C2", alpha=ALPHA_LIGHT, rotation=90)
+
+    for species, wls in _ATOMIC.items():
+        for wl in wls:
+            ax.axvline(wl, color=NEUTRAL_COLOR, ls=":", lw=LW_LIGHT,
+                       alpha=ALPHA_FAINT, zorder=1)
 
     ax.set_xlabel(r"Wavelength [\AA]")
     ax.set_ylabel(r"Intrinsic scatter $s_\lambda$")
@@ -732,6 +733,7 @@ def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
     flux_obs : ndarray, shape (n_stars, n_pixels)
         Observed spectra of outlier stars.
     error_obs : ndarray, shape (n_stars, n_pixels)
+        Observed errors, used only to mask invalid pixels.
     flux_pred : ndarray, shape (n_stars, n_pixels)
         Cannon-predicted spectra for the outlier stars.
     apogee_ids : array-like
@@ -756,12 +758,11 @@ def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
         good = np.isfinite(err) & (err < np.inf)
 
         obs_plot = np.where(good, obs, np.nan)
-        err_plot = np.where(good, err, np.nan)
+        pred_plot = np.where(good, pred, np.nan)
 
-        axes[i].errorbar(wl, obs_plot, yerr=err_plot,
-                         **ERRORBAR_STYLE, color="C0", alpha=ALPHA_FAINT,
-                         zorder=2)
-        axes[i].plot(wl, pred, **FIT_STYLE, color="C1", zorder=3)
+        axes[i].plot(wl, obs_plot, lw=LW_FINE, color="C0",
+                     alpha=ALPHA_STANDARD, zorder=2)
+        axes[i].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3)
         axes[i].set_ylabel("Flux")
         axes[i].set_title(str(apogee_ids[i]), loc="left", fontsize="small")
 
@@ -775,15 +776,13 @@ def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
 # 10. Kiel diagram (Problem 11)
 # ---------------------------------------------------------------------------
 
-def plot_kiel_diagram(fitted_labels, label_names, isochrone_tracks=None):
+def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
     """Kiel diagram (log g vs Teff) colored by [Fe/H] with MIST isochrones.
 
     Parameters
     ----------
     fitted_labels : ndarray, shape (N, 5)
         Fitted stellar labels [Teff, logg, [Fe/H], [Mg/Fe], [Si/Fe]].
-    label_names : list of str
-        Label column names (to identify which column is which).
     isochrone_tracks : list of (label_str, DataFrame), optional
         Each entry is (label, isochrone_df) with columns ``Teff`` and ``logg``.
     """

@@ -23,7 +23,7 @@ LABEL_LATEX = [
     r"$[\mathrm{Mg/Fe}]$", r"$[\mathrm{Si/Fe}]$",
 ]
 N_LABELS = 5
-FILLER_VALUE = -9999.0  # ASPCAP NULL sentinel
+_FILLER_VALUE = -9999.0  # ASPCAP NULL sentinel
 
 APOGEE_DR17_URL = "https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars"
 
@@ -85,13 +85,7 @@ Functions:
 
 Not APOGEE-specific — lives directly in `models/`.
 
-- `_get_mist_isochrone(age_gyr: float, feh: float) -> pd.DataFrame` — `@_cache_stable`. Uses `isochrones` package (tested, works with local grid data, no web API dependency):
-  ```python
-  from isochrones import get_ichrone
-  mist = get_ichrone('mist')
-  return mist.isochrone(age=np.log10(age_gyr * 1e9), feh=feh)
-  ```
-  Returns DataFrame with columns: `logTeff`, `Teff`, `logg`, `initial_mass`, `phase`, etc.
+- `_get_mist_isochrone(age_gyr: float, feh: float) -> pd.DataFrame` — `@_cache_stable`. Reads directly from the official local MIST `MIST_v2.5_vvcrit0.0_full_isos.txz` archive, extracts only the requested metallicity member on first use, builds a tiny age-block byte-offset index, then seeks directly to the nearest available age block on later calls. No `isochrones` package dependency and no full-archive extraction. Returns DataFrame with columns: `logTeff`, `Teff`, `logg`, `initial_mass`, `phase`, etc.
 
 **Update `ugdatalab/__init__.py`** — add APOGEE imports (lazy, like Gaia).
 
@@ -504,13 +498,8 @@ The provided `continuum_wavelengths.npz` contains:
 
 ### MIST isochrones (verified working)
 
-Uses `isochrones` package with local MIST grid data — no web API dependency:
-```python
-from isochrones import get_ichrone
-mist = get_ichrone('mist')
-iso = mist.isochrone(age=np.log10(6e9), feh=0.0)  # returns DataFrame
-```
-Verified: returns DataFrame with `Teff`, `logTeff`, `logg`, `initial_mass`, etc. Both [Fe/H]=0 and [Fe/H]=-1 work. RGB region (3500 < Teff < 5700, logg < 4) has 350+ points.
+Uses the official local `MIST_v2.5_vvcrit0.0_full_isos.txz` archive directly. The reader extracts only one metallicity file at a time, builds a sidecar age index, and then seeks to the nearest age block without loading the full 7 GB archive into memory.
+Verified target behavior: `_get_mist_isochrone(6.0, 0.0)` and `_get_mist_isochrone(6.0, -1.0)` return DataFrames with `Teff`, `logTeff`, `logg`, `initial_mass`, etc. suitable for the Kiel diagram and RGB-track notebook cells.
 
 ### Mystery spectrum
 

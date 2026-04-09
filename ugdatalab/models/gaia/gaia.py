@@ -5,7 +5,7 @@ from ugdatalab.models.cache import _cache_stable
 
 import numpy as np
 
-from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G
+from ugdatalab.models.gaia.constants import ZP_ERR_G, _GAIA_SCHEMA
 from ugdatalab.models.gaia.lightcurves import (
     _fetch_joined_epoch_photometry, _attach_derived_epoch_columns,
     _attach_periodogram_periods, _attach_fourier_mean_magnitudes,
@@ -32,21 +32,6 @@ def _attach_rrlyrae_representative_period_column(data: table.Table) -> None:
     err[fundamental] = data["pf_error"][fundamental]
     err[first_overtone] = data["p1_o_error"][first_overtone]
     data["rrlyrae_representative_period_error"] = err
-
-
-_GAIA_SCHEMA = {
-    np.int64: ["source_id"],
-    int: ["num_clean_epochs_g"],
-    str: ["best_classification"],
-    float: [
-        "l", "b", "pf", "pf_error", "p1_o", "p1_o_error", "int_average_g",
-        "parallax", "parallax_error", "parallax_over_error",
-        "phot_g_mean_flux", "phot_g_mean_flux_error", "phot_g_mean_mag",
-        "bp_rp", "phot_g_mean_flux_over_error",
-        "phot_bp_mean_flux_over_error",
-        "phot_rp_mean_flux_over_error", "phot_bp_rp_excess_factor", "ruwe",
-    ],
-}
 
 
 def _add_gaia_photometry_columns(data: table.Table) -> None:

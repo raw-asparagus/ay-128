@@ -6,7 +6,8 @@ LABEL_LATEX = [
     r"$[\mathrm{Mg/Fe}]$", r"$[\mathrm{Si/Fe}]$",
 ]
 N_LABELS = 5
-FILLER_VALUE = -9999.0
+_FILLER_VALUE = -9999.0
+_APOGEE_SENTINEL_ERROR = 1e6
 
 APOGEE_DR17_URL = (
     "https://data.sdss.org/sas/dr17/apogee/spectro/redux/dr17/stars"

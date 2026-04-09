@@ -78,9 +78,12 @@ def nuts_sample(
     log_probs = trace.sample_stats["lp"].values.flatten()
 
     y_pred = likelihood._predict(likelihood.x, theta_median)
-    resid = likelihood.y - y_pred
-    nu = len(likelihood.y) - len(var_names)
-    chi2_r = float(np.sum((resid / likelihood.y_err)**2) / max(nu, 1))
+    good = (np.isfinite(likelihood.y_err) & np.isfinite(likelihood.y)
+            & np.isfinite(y_pred))
+    resid = (likelihood.y - y_pred)[good]
+    sigma = likelihood.y_err[good]
+    nu = int(good.sum()) - len(var_names)
+    chi2_r = float(np.sum((resid / sigma) ** 2) / max(nu, 1))
 
     return MCMCResult(
         theta=theta_median,

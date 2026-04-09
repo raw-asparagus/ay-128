@@ -12,6 +12,7 @@ from ugdatalab.models.cache import _cache_stable
 from ugdatalab.models.apogee.constants import (
     APOGEE_BAD_PIXMASK_BITS,
     APOGEE_DR17_URL,
+    _APOGEE_SENTINEL_ERROR
 )
 from ugdatalab.models.apogee.apogee import APOGEEData
 
@@ -102,13 +103,11 @@ def _apply_bitmask(
     flux = flux.copy()
     error = error.copy()
 
-    # Step 1: bitmask-flagged — keep raw flux, set error to sentinel
     bm_bad = np.zeros(len(bitmask), dtype=bool)
     for bit in APOGEE_BAD_PIXMASK_BITS:
         bm_bad |= (bitmask & (1 << bit)) != 0
-    error[bm_bad] = 1e6
+    error[bm_bad] = _APOGEE_SENTINEL_ERROR
 
-    # Step 2: negative flux and missing — set both to NaN
     bad = (flux < 0) | np.isnan(flux)
     flux[bad] = np.nan
     error[bad] = np.nan
@@ -129,7 +128,7 @@ def _normalize_spectrum(
     """
     n_pix = len(flux)
     flux_norm = np.full(n_pix, np.nan)
-    error_norm = np.full(n_pix, np.inf)
+    error_norm = np.full(n_pix, np.nan)
     continuum_fit = np.full(n_pix, np.nan)
 
     for chip in chips:
@@ -139,7 +138,7 @@ def _normalize_spectrum(
         valid &= np.isfinite(error) & (error < 1e5)
 
         if np.sum(valid) < degree + 1:
-            error_norm[chip] = np.inf
+            error_norm[chip] = np.nan
             continue
 
         poly = Chebyshev.fit(
@@ -251,14 +250,3 @@ class APOGEESpectra(Spectrum):
         self.wavelength = wavelength
         self.continuum_mask = continuum_mask
         self.apogee_ids = apogee_ids
-
-    def __getitem__(self, apogee_id: str):
-        """Access a single spectrum by apogee_id string."""
-        idx = int(np.where(self.apogee_ids == apogee_id)[0][0])
-        return {
-            "apogee_id": self.apogee_ids[idx],
-            "flux": self.flux[idx],
-            "error": self.error[idx],
-            "wavelength": self.wavelength,
-            "continuum_mask": self.continuum_mask,
-        }

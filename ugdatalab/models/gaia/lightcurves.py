@@ -10,15 +10,11 @@ from astropy.io.votable import parse as parse_votable
 
 from ugdatalab.models.cache import _cache_stable
 from ugdatalab.models.utils import _sanitize_table
-from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G
+from ugdatalab.models.gaia.constants import ZP_ERR_G, ZP_G, _GAIA_DATALINK_URL, DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX, \
+    _EPOCH_SCHEMA
 from ugdatalab.methods.periodogram import lomb_scargle
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, _build_design_matrix
 from ugdatalab.methods.cross_validate import holdout_validate
-
-DEFAULT_PERIOD_MIN = 0.2
-DEFAULT_PERIOD_MAX = 1.2
-
-_GAIA_DATALINK_URL = "https://gea.esac.esa.int/data-server/data"
 
 
 # ---------------------------------------------------------------------------
@@ -79,11 +75,6 @@ def _fetch_epoch_photometry(
 # ---------------------------------------------------------------------------
 # Derived columns
 # ---------------------------------------------------------------------------
-
-_EPOCH_SCHEMA = {
-    float: ["g_transit_time", "g_transit_mag", "g_transit_flux", "g_transit_flux_error"],
-}
-
 
 def _fetch_joined_epoch_photometry(catalog: table.Table) -> table.Table:
     """Fetch epoch photometry for a catalog, clean, and join on source_id."""

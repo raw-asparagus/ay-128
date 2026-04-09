@@ -1,4 +1,5 @@
 import corner
+import matplotlib.pyplot as plt
 import numpy as np
 
 from ugdatalab.plotting import (
@@ -65,14 +66,22 @@ def plot_trace(result):
 # Corner plot
 # ---------------------------------------------------------------------------
 
-def plot_corner(result):
+def plot_corner(result, *, figsize="textwidth"):
     """Corner plot of posterior samples.
 
     Parameters
     ----------
     result : MCMCResult or similar
         Must have .samples and .labels.
+    figsize : {"textwidth", "corner"}
+        ``"textwidth"`` uses the full page width (better for ≥5 parameters);
+        ``"corner"`` uses the smaller 0.7× text width square.
     """
+    if figsize == "textwidth":
+        from ugdatalab.plotting import TEXTWIDTH_IN
+        base = plt.figure(figsize=(TEXTWIDTH_IN, TEXTWIDTH_IN))
+    else:
+        base = corner_figure()
     fig = corner.corner(
         result.samples,
         labels=result.labels,
@@ -80,7 +89,7 @@ def plot_corner(result):
         title_fmt=".3f",
         quantiles=_CORNER_QUANTILES,
         color="C0",
-        fig=corner_figure(),
+        fig=base,
     )
     return fig
 

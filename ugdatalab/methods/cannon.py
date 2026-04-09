@@ -143,6 +143,11 @@ class CannonModel(Fit):
     wavelength: np.ndarray
     chi2_r: float
 
+    @property
+    def _trained_mask(self) -> np.ndarray:
+        """Boolean mask of pixels that were actually trained (finite scatter)."""
+        return np.isfinite(self.scatter)
+
     def predict(self, labels: np.ndarray) -> np.ndarray:
         """Predict spectrum for a single star.
 
@@ -154,10 +159,13 @@ class CannonModel(Fit):
         Returns
         -------
         ndarray, shape (n_pixels,)
+            NaN at untrained pixels (chip gaps, edges).
         """
         scaled = (labels - self.label_means) / self.label_stds
         dv = _build_cannon_design_vector(scaled)
-        return self.theta @ dv
+        result = self.theta @ dv
+        result[~self._trained_mask] = np.nan
+        return result
 
     def predict_batch(self, labels: np.ndarray) -> np.ndarray:
         """Predict spectra for N stars.
@@ -170,10 +178,13 @@ class CannonModel(Fit):
         Returns
         -------
         ndarray, shape (N, n_pixels)
+            NaN at untrained pixels (chip gaps, edges).
         """
         scaled = (labels - self.label_means) / self.label_stds
         X = _build_cannon_design_matrix(scaled)
-        return X @ self.theta.T
+        result = X @ self.theta.T
+        result[:, ~self._trained_mask] = np.nan
+        return result
 
     def gradient(self, label_idx: int) -> np.ndarray:
         """Gradient spectrum df/dl_i at the training-set mean.
@@ -245,7 +256,7 @@ def train_cannon(
     theta_all = np.zeros((n_pixels, n_terms))
     scatter_all = np.full(n_pixels, np.inf)
 
-    # Skip pixels where fewer than 99.5% of training stars have valid data.
+    # Skip pixels where fewer than 99.7% of training stars have valid data.
     # Chip boundaries vary slightly across stars, creating a ramp-down zone
     # at each chip edge where a few stars contribute noisy edge flux that
     # inflates the scatter estimate.
