@@ -198,7 +198,7 @@ Figure~\ref{fig:outlier_spectra} shows observed vs.\ model spectra for the worst
 \subsection{Model Selection}
 \label{sec:model_selection}
 
-To improve model performance, we test five retraining strategies after the initial cross-validation: (1) the original model with no changes, (2) label-space $3\sigma$-clipping (removing CV stars whose residual exceeds $3\sigma$ in any label, then re-splitting and retraining), (3) spectral-space $\chi^2$ filtering (removing training stars in the 95th percentile of per-star $\chi^2_r$), (4) bootstrap label-space outlier rejection (30 bootstrap iterations; flagging stars that are $3\sigma$ outliers in $> 50\%$ of OOB evaluations), and (5) bootstrap spectral-space outlier rejection (analogous using per-star $\chi^2_r$). The bootstrap label-space strategy achieves the lowest mean CV scatter across all five labels and is selected as the final model. This strategy removes $\sim$100 stars from the full training set before the final 50/50 split.
+We explore five outlier-rejection strategies to understand the sensitivity of the CV scatter to training-set composition: (1) the original model with no changes, (2) label-space $3\sigma$-clipping (removing CV stars whose residual exceeds $3\sigma$ in any label, then re-splitting and retraining), (3) spectral-space $\chi^2$ filtering (removing training stars in the 95th percentile of per-star $\chi^2_r$), (4) bootstrap label-space outlier rejection (30 bootstrap iterations; flagging stars that are $3\sigma$ outliers in $> 50\%$ of OOB evaluations), and (5) bootstrap spectral-space outlier rejection (analogous using per-star $\chi^2_r$). The bootstrap strategies achieve lower mean CV scatter, but this improvement is partly illusory: they preferentially remove stars at the edges of label space where the 2nd-order polynomial is weakest, effectively shrinking the model's coverage rather than improving its predictive power. Since the Cannon is a data-driven model, removing stars that do not fit it conflates model inadequacy with genuinely bad data, and the resulting scatter understates the true uncertainty for stars across the full label range. We therefore retain the original model for all downstream analysis and report the honest CV scatter on the full sample.
 
 \subsection{Kiel Diagram}
 \label{sec:kiel}
@@ -235,7 +235,7 @@ Figure~\ref{fig:mystery_prediction} compares the observed mystery spectrum again
   \label{fig:mystery_prediction}
 \end{figure}
 
-Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$40~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
+Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$56~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
 
 %%% ---------------------------------------------------------------
 \section{Spectral Synthesis}
@@ -305,8 +305,8 @@ All numerical results are re-derived in the summary notebook (06-numerical-resul
 
 \begin{itemize}
   \item \textbf{Training set:} 1886 stars after quality cuts, split 50/50 into training and CV sets.
-  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 0.98$.
-  \item \textbf{Cross-validation scatter} (after bootstrap-label outlier rejection): $T_{\rm eff}$: $\sim$40~K; $\log g$: $\sim$0.10~dex; $[\mathrm{Fe/H}]$: $\sim$0.033~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.036~dex; $[\mathrm{Si/Fe}]$: $\sim$0.035~dex.
+  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 0.99$.
+  \item \textbf{Cross-validation scatter:} $T_{\rm eff}$: $\sim$56~K; $\log g$: $\sim$0.14~dex; $[\mathrm{Fe/H}]$: $\sim$0.04~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.05~dex; $[\mathrm{Si/Fe}]$: $\sim$0.04~dex.
   \item \textbf{MCMC mystery star} (posterior medians): $T_{\rm eff} \approx 4552$~K, $\log g \approx 1.97$, $[\mathrm{Fe/H}] \approx -0.62$, $[\mathrm{Mg/Fe}] \approx 0.32$, $[\mathrm{Si/Fe}] \approx 0.22$.
   \item \textbf{Neural network:} MLP ($8575 \to 512 \to 256 \to 5$); CV scatter roughly $1.4$--$2.5\times$ larger than The Cannon across all labels, as expected given the limited training set size relative to model capacity.
 \end{itemize}
