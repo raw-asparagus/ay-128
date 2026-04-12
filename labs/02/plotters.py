@@ -398,7 +398,7 @@ def plot_normalization_diagnostic(
 # ---------------------------------------------------------------------------
 
 def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
-                                 apogee_ids, ref_idx, n_similar=5):
+                                 apogee_ids, ref_idx, n_similar):
     """Overlay normalized spectra of stars with similar labels.
 
     Finds the closest stars in label space (Euclidean on standardized labels)
@@ -457,7 +457,7 @@ def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
 # ---------------------------------------------------------------------------
 
 def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
-                             apogee_id=None, wl_min=16000, wl_max=16100):
+                             apogee_id, wl_min, wl_max):
     """Observed vs Cannon-predicted spectrum in a wavelength window.
 
     Parameters
@@ -512,11 +512,11 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
 
 
 def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
-                            wl_min=15200, wl_max=16900):
+                            scatter, wl_min, wl_max):
     """Observed mystery spectrum vs MCMC-fitted Cannon prediction.
 
-    Two panels: full-window comparison (top) and residuals (bottom),
-    matching the layout of ``plot_training_prediction``.
+    Three panels: spectra (top), raw residuals (middle), and pull
+    (residual / total uncertainty) (bottom).
 
     Parameters
     ----------
@@ -527,6 +527,8 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
         Observed errors (inf for masked pixels).
     flux_pred : ndarray, shape (n_pixels,)
         Cannon prediction at MCMC posterior median labels.
+    scatter : ndarray, shape (n_pixels,)
+        Cannon per-pixel intrinsic scatter (variance, s²_λ).
     wl_min, wl_max : float
         Wavelength window in Angstroms.
     """
@@ -535,17 +537,19 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
     obs = flux_obs[mask]
     err = error_obs[mask]
     pred = flux_pred[mask]
+    s2 = scatter[mask]
 
-    good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred)
+    good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred) & np.isfinite(s2)
     obs_plot = np.where(good, obs, np.nan)
-    err_plot = np.where(good, err, np.nan)
     pred_plot = np.where(good, pred, np.nan)
     resid = obs - pred
     resid_plot = np.where(good, resid, np.nan)
+    sigma_tot = np.sqrt(np.where(good, err ** 2 + s2, np.nan))
+    pull_plot = np.where(good, resid / sigma_tot, np.nan)
 
-    fig, ax = textwidth_figure(8)
+    fig, ax = textwidth_figure(10)
     ax.remove()
-    axes = subpanels(fig, 2, height_ratios=(3, 1))
+    axes = subpanels(fig, 3, height_ratios=(3, 1, 1), sharex=True)
 
     axes[0].plot(wl, obs_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
                  zorder=2, label="Mystery spectrum", rasterized=True)
@@ -562,7 +566,14 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
                  zorder=2, rasterized=True)
     zero_line(axes[1])
     axes[1].set_ylabel("Residual")
-    axes[1].set_xlabel(r"Wavelength [\AA]")
+
+    axes[2].plot(wl, pull_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
+                 zorder=2, rasterized=True)
+    zero_line(axes[2])
+    axes[2].axhline(1.0, **GUIDE_STYLE)
+    axes[2].axhline(-1.0, **GUIDE_STYLE)
+    axes[2].set_ylabel("Pull")
+    axes[2].set_xlabel(r"Wavelength [\AA]")
 
     savefig(fig, "fig_mystery_prediction.pdf")
     return axes
@@ -781,7 +792,7 @@ def plot_label_recovery(true_labels, fitted_labels, label_names):
 # ---------------------------------------------------------------------------
 
 def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
-                         wl_min=15800, wl_max=16200):
+                         wl_min, wl_max):
     """Overlay observed and model spectra for outlier stars.
 
     Parameters
@@ -878,9 +889,8 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
 # 11. Metallicity sequence (Problem 13)
 # ---------------------------------------------------------------------------
 
-def plot_metallicity_sequence(model, feh_values, teff=4800, logg=2.5,
-                              mg_fe=0.0, si_fe=0.0,
-                              wl_min=16000, wl_max=16200):
+def plot_metallicity_sequence(model, feh_values, teff, logg,
+                              mg_fe, si_fe, wl_min, wl_max):
     """Synthetic spectra at varying [Fe/H] with vertical offsets.
 
     Parameters
@@ -922,9 +932,8 @@ def plot_metallicity_sequence(model, feh_values, teff=4800, logg=2.5,
 # 12. RGB evolution (Problem 14)
 # ---------------------------------------------------------------------------
 
-def plot_rgb_evolution(model, teff_track, logg_track, feh=0.0,
-                       mg_fe=0.0, si_fe=0.0,
-                       wl_min=16000, wl_max=16200):
+def plot_rgb_evolution(model, teff_track, logg_track, feh,
+                       mg_fe, si_fe, wl_min, wl_max):
     """Synthetic spectra along the RGB evolutionary track with vertical offsets.
 
     Parameters

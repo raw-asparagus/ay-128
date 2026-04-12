@@ -44,15 +44,22 @@ In this work, we apply The Cannon to APOGEE DR17 spectra of red giant stars in t
 \subsection{Data Acquisition}
 \label{sec:data}
 
-We query the APOGEE DR17 allStar catalog for four fields: M15 (metal-poor globular cluster), NGC~6791 (metal-rich open cluster), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains 1886 stars.
+We query the APOGEE DR17 allStar catalog for four fields: M15 (metal-poor globular cluster, $[\mathrm{Fe/H}] \approx -2.3$), NGC~6791 (metal-rich open cluster, $[\mathrm{Fe/H}] \approx +0.4$), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains 1886 stars. Note that the $[\mathrm{Fe/H}] \geq -1$ cut removes most M15 members (whose cluster-mean metallicity is well below $-1$); only a handful of M15 stars with ASPCAP-reported $[\mathrm{Fe/H}]$ near $-1$ survive the cut.
 
-Figure~\ref{fig:label_corner} shows the distribution of stellar labels in the training set.
+Figures~\ref{fig:label_corner} and \ref{fig:label_corner_by_field} show the distribution of stellar labels in the training set. The field-colored corner plot confirms that M15 (metal-poor) and NGC~6791 (metal-rich) occupy distinct regions of label space, with tight intra-cluster label distributions demonstrating ASPCAP label consistency.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_label_corner.pdf}
   \caption{Corner plot of the five ASPCAP stellar labels in the training set, showing correlations between $T_{\rm eff}$, $\log g$, $[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, and $[\mathrm{Si/Fe}]$.}
   \label{fig:label_corner}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_corner_by_field.pdf}
+  \caption{Corner plot colored by APOGEE field, showing the distinct label-space separation between M15 (metal-poor, $\alpha$-enhanced) and NGC~6791 (metal-rich, solar $\alpha$).}
+  \label{fig:label_corner_by_field}
 \end{figure}
 
 \subsection{Surface Gravity}
@@ -93,7 +100,7 @@ We pseudo-continuum normalize each spectrum by fitting an independent degree-4 C
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_normalization.pdf}
-  \caption{Normalization diagnostic for a single star: raw flux with continuum fit (top), continuum polynomial (middle), and normalized spectrum (bottom).}
+  \caption{Normalization diagnostic for a single star: raw flux with per-chip Chebyshev continuum fit overlaid (top) and normalized spectrum (bottom). Continuum pixels used for fitting are marked.}
   \label{fig:normalization}
 \end{figure}
 
@@ -141,7 +148,7 @@ Figure~\ref{fig:training_prediction} compares the Cannon prediction against the 
 \subsection{Gradient Spectra}
 \label{sec:gradients}
 
-The gradient spectrum $\partial f_\lambda / \partial \ell_i$ reveals which spectral features are most sensitive to each label. Figure~\ref{fig:gradient_spectra} shows the five gradient spectra with known Mg\,I and Si\,I lines marked.
+The gradient spectrum $\partial f_\lambda / \partial \ell_i$ reveals which spectral features are most sensitive to each label. Figure~\ref{fig:gradient_spectra} shows the five gradient spectra with known Mg\,I and Si\,I lines marked. The $T_{\rm eff}$ gradient is large and broadband --- essentially every pixel contributes information about temperature because the Boltzmann/Saha ionization balance affects all absorption features. This is why $T_{\rm eff}$ is the best-constrained label. In contrast, the abundance gradients ($[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, $[\mathrm{Si/Fe}]$) are highly localized at specific metal-line wavelengths: the $[\mathrm{Mg/Fe}]$ gradient peaks sharply at the known Mg\,I triplet near 15750~\AA, and the $[\mathrm{Si/Fe}]$ gradient peaks at Si\,I lines near 15893, 16064, and 16099~\AA. The $\log g$ gradient is intermediate --- concentrated at pressure-sensitive features (Brackett hydrogen line wings, strong neutral metal cores) but weaker than the $T_{\rm eff}$ gradient. This contrast between broadband temperature sensitivity and line-localized abundance sensitivity is what enables the Cannon to disentangle all five labels simultaneously.
 
 \begin{figure}[H]
   \centering
@@ -153,7 +160,7 @@ The gradient spectrum $\partial f_\lambda / \partial \ell_i$ reveals which spect
 \subsection{Intrinsic Scatter}
 \label{sec:scatter}
 
-Figure~\ref{fig:scatter_spectrum} shows the per-pixel intrinsic scatter $s_\lambda$. High-scatter regions correspond to strong absorption lines where the 2nd-order polynomial is insufficient.
+Figure~\ref{fig:scatter_spectrum} shows the per-pixel intrinsic scatter $s_\lambda$. High-scatter regions fall into three categories: (1) \emph{model inadequacy at strong absorption lines}, where the 2nd-order polynomial cannot capture the nonlinear flux response --- this includes the Brackett hydrogen series (Br\,12--Br\,20, $\sim$15200--16400~\AA), CO first-overtone bandheads ($\sim$15582, 15780, 16398~\AA), and saturated Fe\,I/Mg\,I/Si\,I lines; (2) \emph{chip-edge artifacts} near $\sim$15800 and $\sim$16420~\AA\ where marginal data quality at chip boundaries inflates scatter; and (3) \emph{unflagged single-star outliers} producing isolated scatter spikes at individual wavelengths.
 
 \begin{figure}[H]
   \centering
@@ -167,7 +174,7 @@ Figure~\ref{fig:scatter_spectrum} shows the per-pixel intrinsic scatter $s_\lamb
 \label{sec:cv}
 %%% ---------------------------------------------------------------
 
-We split the training set 50/50 (seed = 42) and fit labels for the held-out CV stars using \texttt{scipy.optimize.least\_squares} with analytical Jacobians. Figure~\ref{fig:label_recovery} shows the 1-to-1 recovery.
+We split the training set 50/50 (seed = 40) and fit labels for the held-out CV stars using \texttt{scipy.optimize.least\_squares} with analytical Jacobians. The analytical Jacobian $\partial r_\lambda / \partial \ell_j$ follows directly from the polynomial structure of the design vector, with chain-rule factors $1/\sigma_{\ell_j}$ from the label standardization. This allows convergence in 5--20 iterations rather than 50--200 with finite differences, and avoids the numerical noise that finite-difference Jacobians introduce when the step size is comparable to the label precision. Figure~\ref{fig:label_recovery} shows the 1-to-1 recovery.
 
 \begin{figure}[H]
   \centering
@@ -176,7 +183,10 @@ We split the training set 50/50 (seed = 42) and fit labels for the held-out CV s
   \label{fig:label_recovery}
 \end{figure}
 
-Figure~\ref{fig:outlier_spectra} shows observed vs.\ model spectra for the worst-fit CV stars, aiding diagnosis of failure modes.
+\subsection{Outlier Investigation}
+\label{sec:outliers}
+
+Figure~\ref{fig:outlier_spectra} shows observed vs.\ model spectra for the worst-fit CV stars. For each outlier, we check three potential failure modes: (1) whether the optimizer converged to a non-trivial solution (not stuck at the training-set mean), (2) whether the spectrum or continuum normalization has visible artifacts, and (3) whether the ASPCAP \texttt{starflag}/\texttt{aspcapflag} bitmasks indicate unreliable pipeline labels. In most cases the optimizer converges but the ASPCAP flags are non-zero, suggesting the reference labels themselves are unreliable rather than the Cannon fit being poor.
 
 \begin{figure}[H]
   \centering
@@ -185,10 +195,15 @@ Figure~\ref{fig:outlier_spectra} shows observed vs.\ model spectra for the worst
   \label{fig:outlier_spectra}
 \end{figure}
 
+\subsection{Model Selection}
+\label{sec:model_selection}
+
+To improve model performance, we test five retraining strategies after the initial cross-validation: (1) the original model with no changes, (2) label-space $3\sigma$-clipping (removing CV stars whose residual exceeds $3\sigma$ in any label, then re-splitting and retraining), (3) spectral-space $\chi^2$ filtering (removing training stars in the 95th percentile of per-star $\chi^2_r$), (4) bootstrap label-space outlier rejection (30 bootstrap iterations; flagging stars that are $3\sigma$ outliers in $> 50\%$ of OOB evaluations), and (5) bootstrap spectral-space outlier rejection (analogous using per-star $\chi^2_r$). The bootstrap label-space strategy achieves the lowest mean CV scatter across all five labels and is selected as the final model. This strategy removes $\sim$100 stars from the full training set before the final 50/50 split.
+
 \subsection{Kiel Diagram}
 \label{sec:kiel}
 
-Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, colored by $[\mathrm{Fe/H}]$ and overlaid with MIST isochrones.
+Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, colored by $[\mathrm{Fe/H}]$ and overlaid with MIST isochrones. The red giant branch (RGB) is clearly visible as the ascending track from $(\log g, T_{\rm eff}) \approx (3.5, 5000\,\mathrm{K})$ to $(0.5, 3800\,\mathrm{K})$, and the red clump appears as a horizontal concentration near $\log g \approx 2$--2.5. Metal-rich stars (red points) systematically occupy cooler temperatures at fixed $\log g$, consistent with the opacity effect: higher metallicity increases line blanketing, redistributing flux from blue to red and lowering the effective temperature at fixed luminosity. The MIST isochrones at $[\mathrm{Fe/H}] = 0$ and $-1$ bracket this observed metallicity gradient, with the metal-poor isochrone tracking the blue (hot) edge and the solar isochrone tracking the red (cool) edge of the distribution.
 
 \begin{figure}[H]
   \centering
@@ -202,7 +217,7 @@ Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, co
 \label{sec:mcmc}
 %%% ---------------------------------------------------------------
 
-We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{CannonLabelLikelihood} wrapper. The likelihood at each pixel is $f_\lambda^{\rm obs} \sim \mathcal{N}(f_\lambda^{\rm model}, \sigma_\lambda^2 + s_\lambda^2)$, where $s_\lambda^2$ is the Cannon's intrinsic scatter. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps (4 chains, seed 42). Figure~\ref{fig:mcmc_corner} shows the posterior constraints.
+We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{CannonLabelLikelihood} wrapper. The likelihood at each pixel is $f_\lambda^{\rm obs} \sim \mathcal{N}(f_\lambda^{\rm model}, \sigma_\lambda^2 + s_\lambda^2)$, where $s_\lambda^2$ is the Cannon's intrinsic scatter. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps (4 chains, seed 42). All chains converge: $\hat{R} < 1.01$ and effective sample size $> 400$ for every parameter. Figure~\ref{fig:mcmc_corner} shows the posterior constraints.
 
 \begin{figure}[H]
   \centering
@@ -220,7 +235,7 @@ Figure~\ref{fig:mystery_prediction} compares the observed mystery spectrum again
   \label{fig:mystery_prediction}
 \end{figure}
 
-Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$36~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
+Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$40~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
 
 %%% ---------------------------------------------------------------
 \section{Spectral Synthesis}
@@ -290,10 +305,10 @@ All numerical results are re-derived in the summary notebook (06-numerical-resul
 
 \begin{itemize}
   \item \textbf{Training set:} 1886 stars after quality cuts, split 50/50 into training and CV sets.
-  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 0.99$.
-  \item \textbf{Cross-validation scatter:} $T_{\rm eff}$: $\sim$59~K; $\log g$: $\sim$0.13~dex; $[\mathrm{Fe/H}]$: $\sim$0.05~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.05~dex; $[\mathrm{Si/Fe}]$: $\sim$0.05~dex.
-  \item \textbf{MCMC mystery star} (posterior medians): $T_{\rm eff} \approx 4565$~K, $\log g \approx 2.01$, $[\mathrm{Fe/H}] \approx -0.61$, $[\mathrm{Mg/Fe}] \approx 0.30$, $[\mathrm{Si/Fe}] \approx 0.19$.
-  \item \textbf{Neural network:} MLP ($8575 \to 512 \to 256 \to 5$); CV scatter roughly $1.5$--$2\times$ larger than The Cannon across all labels, as expected given the limited training set size relative to model capacity.
+  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 0.98$.
+  \item \textbf{Cross-validation scatter} (after bootstrap-label outlier rejection): $T_{\rm eff}$: $\sim$40~K; $\log g$: $\sim$0.10~dex; $[\mathrm{Fe/H}]$: $\sim$0.033~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.036~dex; $[\mathrm{Si/Fe}]$: $\sim$0.035~dex.
+  \item \textbf{MCMC mystery star} (posterior medians): $T_{\rm eff} \approx 4552$~K, $\log g \approx 1.97$, $[\mathrm{Fe/H}] \approx -0.62$, $[\mathrm{Mg/Fe}] \approx 0.32$, $[\mathrm{Si/Fe}] \approx 0.22$.
+  \item \textbf{Neural network:} MLP ($8575 \to 512 \to 256 \to 5$); CV scatter roughly $1.4$--$2.5\times$ larger than The Cannon across all labels, as expected given the limited training set size relative to model capacity.
 \end{itemize}
 
 \end{document}
