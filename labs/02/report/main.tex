@@ -211,7 +211,16 @@ We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{Cannon
   \label{fig:mcmc_corner}
 \end{figure}
 
-Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$55~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
+Figure~\ref{fig:mystery_prediction} compares the observed mystery spectrum against the Cannon prediction at the posterior median labels. The pull distribution (residual divided by $\sqrt{\sigma_\lambda^2 + s_\lambda^2}$) is centered near zero, confirming the fit is consistent with the noise model.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_mystery_prediction.pdf}
+  \caption{Mystery spectrum vs.\ MCMC-fitted Cannon prediction. Top: observed and model spectra. Middle: raw residuals. Bottom: pull (residual normalized by total uncertainty).}
+  \label{fig:mystery_prediction}
+\end{figure}
+
+Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$36~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
 
 %%% ---------------------------------------------------------------
 \section{Spectral Synthesis}

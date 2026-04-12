@@ -511,6 +511,63 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     return axes
 
 
+def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
+                            wl_min=15200, wl_max=16900):
+    """Observed mystery spectrum vs MCMC-fitted Cannon prediction.
+
+    Two panels: full-window comparison (top) and residuals (bottom),
+    matching the layout of ``plot_training_prediction``.
+
+    Parameters
+    ----------
+    wavelength : ndarray, shape (n_pixels,)
+    flux_obs : ndarray, shape (n_pixels,)
+        Observed normalized flux.
+    error_obs : ndarray, shape (n_pixels,)
+        Observed errors (inf for masked pixels).
+    flux_pred : ndarray, shape (n_pixels,)
+        Cannon prediction at MCMC posterior median labels.
+    wl_min, wl_max : float
+        Wavelength window in Angstroms.
+    """
+    mask = (wavelength >= wl_min) & (wavelength <= wl_max)
+    wl = wavelength[mask]
+    obs = flux_obs[mask]
+    err = error_obs[mask]
+    pred = flux_pred[mask]
+
+    good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred)
+    obs_plot = np.where(good, obs, np.nan)
+    err_plot = np.where(good, err, np.nan)
+    pred_plot = np.where(good, pred, np.nan)
+    resid = obs - pred
+    resid_plot = np.where(good, resid, np.nan)
+
+    fig, ax = textwidth_figure(8)
+    ax.remove()
+    axes = subpanels(fig, 2, height_ratios=(3, 1))
+
+    axes[0].plot(wl, obs_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
+                 zorder=2, label="Mystery spectrum", rasterized=True)
+    axes[0].plot(wl, pred_plot, lw=LW_FINE, color="C1", alpha=ALPHA_STANDARD,
+                 zorder=3, label="MCMC fit")
+    axes[0].set_ylabel(r"Normalized flux")
+    axes[0].legend(fontsize="x-small")
+    axes[0].set_title(
+        rf"Mystery spectrum, {wl_min:.0f}--{wl_max:.0f}\,\AA",
+        loc="left", fontsize="small",
+    )
+
+    axes[1].plot(wl, resid_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
+                 zorder=2, rasterized=True)
+    zero_line(axes[1])
+    axes[1].set_ylabel("Residual")
+    axes[1].set_xlabel(r"Wavelength [\AA]")
+
+    savefig(fig, "fig_mystery_prediction.pdf")
+    return axes
+
+
 # ---------------------------------------------------------------------------
 # 6. Gradient spectra (Problem 8)
 # ---------------------------------------------------------------------------
