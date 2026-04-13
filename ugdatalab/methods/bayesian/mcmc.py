@@ -78,8 +78,8 @@ def nuts_sample(
     log_probs = trace.sample_stats["lp"].values.flatten()
 
     y_pred = likelihood._predict(likelihood.x, theta_median)
-    good = (np.isfinite(likelihood.y_err) & np.isfinite(likelihood.y)
-            & np.isfinite(y_pred))
+    good = (np.isfinite(likelihood.y_err) & (likelihood.y_err < 1e5)
+            & np.isfinite(likelihood.y) & np.isfinite(y_pred))
     resid = (likelihood.y - y_pred)[good]
     sigma = likelihood.y_err[good]
     nu = int(good.sum()) - len(var_names)

@@ -22,7 +22,7 @@ class CannonLabelLikelihood(Likelihood):
     y : ndarray
         Observed normalized flux, shape (n_pixels,).
     y_err : ndarray
-        Per-pixel errors, shape (n_pixels,).  inf for masked pixels.
+        Per-pixel errors, shape (n_pixels,).  1e6 sentinel for masked pixels.
     model : CannonModel
         Trained Cannon model.
     """
@@ -48,7 +48,7 @@ class CannonLabelLikelihood(Likelihood):
 
     def _build_cannon_design_vector_pytensor(self, labels_scaled):
         """Build (21,) design vector from (5,) scaled labels in PyTensor."""
-        n_labels = 5
+        n_labels = len(self.model.label_names)
         terms = [pt.ones(1)]
         for i in range(n_labels):
             terms.append(labels_scaled[i : i + 1])

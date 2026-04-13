@@ -21,7 +21,7 @@
 \author{Jun Rui Ting \\ \today\vspace{-2.5\baselineskip}}
 
 \begin{abstract}
-We implement and evaluate The Cannon (Ness et al.\ 2015), a data-driven spectral model, using APOGEE DR17 H-band spectra of red giant stars. The model is a 2nd-order polynomial in five stellar labels ($T_{\rm eff}$, $\log g$, $[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, $[\mathrm{Si/Fe}]$) with 21 coefficients and one intrinsic scatter term per pixel, totaling 188,650 free parameters across 8575 pixels. Cross-validation on a held-out 50\% sample recovers ASPCAP labels with scatter comparable to the pipeline uncertainties. MCMC fitting of a mystery spectrum yields precise posterior constraints on all five labels. We compare the Cannon to a neural network approach and discuss the tradeoffs between interpretability and flexibility.
+We implement and evaluate The Cannon \citep{Ness2015}, a data-driven spectral model, using APOGEE DR17 \citep{Ahumada2020} H-band spectra of red giant stars. The model is a 2nd-order polynomial in five stellar labels ($T_{\rm eff}$, $\log g$, $[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, $[\mathrm{Si/Fe}]$) with 21 coefficients and one intrinsic scatter term per pixel, totaling 188,650 free parameters across 8575 pixels. Cross-validation on a held-out 50\% sample recovers ASPCAP labels with scatter comparable to the pipeline uncertainties. MCMC fitting of a mystery spectrum yields precise posterior constraints on all five labels. We compare the Cannon to a neural network approach and discuss the tradeoffs between interpretability and flexibility.
 \vspace{2.5\baselineskip}
 \end{abstract}
 
@@ -44,7 +44,7 @@ In this work, we apply The Cannon to APOGEE DR17 spectra of red giant stars in t
 \subsection{Data Acquisition}
 \label{sec:data}
 
-We query the APOGEE DR17 allStar catalog for four fields: M15 (metal-poor globular cluster, $[\mathrm{Fe/H}] \approx -2.3$), NGC~6791 (metal-rich open cluster, $[\mathrm{Fe/H}] \approx +0.4$), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains 1886 stars. Note that the $[\mathrm{Fe/H}] \geq -1$ cut removes most M15 members (whose cluster-mean metallicity is well below $-1$); only a handful of M15 stars with ASPCAP-reported $[\mathrm{Fe/H}]$ near $-1$ survive the cut.
+We query the APOGEE DR17 \citep{Majewski2017,Ahumada2020} allStar catalog for four fields: M15 (metal-poor globular cluster, $[\mathrm{Fe/H}] \approx -2.3$), NGC~6791 (metal-rich open cluster, $[\mathrm{Fe/H}] \approx +0.4$), K2\_C4\_168-21 (Kepler/K2 field), and 060+00 (bulge field). This provides a training set spanning a wide range of metallicities and evolutionary states. After quality cuts (all five ASPCAP \citep{Holtzman2015} labels finite and $\neq -9999$; SNR~$> 50$; $\log g \leq 4$; $T_{\rm eff} \leq 5700$~K; $[\mathrm{Fe/H}] \geq -1$), the training set contains 1886 stars. Note that the $[\mathrm{Fe/H}] \geq -1$ cut removes most M15 members (whose cluster-mean metallicity is well below $-1$); only a handful of M15 stars with ASPCAP-reported $[\mathrm{Fe/H}]$ near $-1$ survive the cut.
 
 Figures~\ref{fig:label_corner} and \ref{fig:label_corner_by_field} show the distribution of stellar labels in the training set. The field-colored corner plot confirms that M15 (metal-poor) and NGC~6791 (metal-rich) occupy distinct regions of label space, with tight intra-cluster label distributions demonstrating ASPCAP label consistency.
 
@@ -95,7 +95,7 @@ Pixels flagged by the APOGEE bitmask (bits 0--7 for detector issues and bit 12 f
   \label{fig:bitmask_frequency}
 \end{figure}
 
-We pseudo-continuum normalize each spectrum by fitting an independent degree-4 Chebyshev polynomial to 529 pre-identified continuum pixels per chip, then dividing. This is a \emph{pseudo}-continuum because the ``continuum'' pixels are not truly line-free; they are simply wavelengths where the flux depends minimally on the stellar labels, as identified by Ness et al.\ (2015). True continuum normalization would require knowing the intrinsic stellar SED, which depends on the very labels we aim to measure. The pseudo-continuum approach removes the broadband shape while preserving the relative absorption-line depths that encode label information. Figure~\ref{fig:normalization} shows this process.
+We pseudo-continuum normalize each spectrum by fitting an independent degree-4 Chebyshev polynomial to pre-identified continuum pixels (529 total across all three chips), then dividing. This is a \emph{pseudo}-continuum because the ``continuum'' pixels are not truly line-free; they are simply wavelengths where the flux depends minimally on the stellar labels, as identified by \citet{Ness2015}. True continuum normalization would require knowing the intrinsic stellar SED, which depends on the very labels we aim to measure. The pseudo-continuum approach removes the broadband shape while preserving the relative absorption-line depths that encode label information. Figure~\ref{fig:normalization} shows this process.
 
 \begin{figure}[H]
   \centering
@@ -148,7 +148,7 @@ Figure~\ref{fig:training_prediction} compares the Cannon prediction against the 
 \subsection{Gradient Spectra}
 \label{sec:gradients}
 
-The gradient spectrum $\partial f_\lambda / \partial \ell_i$ reveals which spectral features are most sensitive to each label. Figure~\ref{fig:gradient_spectra} shows the five gradient spectra with known Mg\,I and Si\,I lines marked. The $T_{\rm eff}$ gradient is large and broadband --- essentially every pixel contributes information about temperature because the Boltzmann/Saha ionization balance affects all absorption features. This is why $T_{\rm eff}$ is the best-constrained label. In contrast, the abundance gradients ($[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, $[\mathrm{Si/Fe}]$) are highly localized at specific metal-line wavelengths: the $[\mathrm{Mg/Fe}]$ gradient peaks sharply at the known Mg\,I triplet near 15750~\AA, and the $[\mathrm{Si/Fe}]$ gradient peaks at Si\,I lines near 15893, 16064, and 16099~\AA. The $\log g$ gradient is intermediate --- concentrated at pressure-sensitive features (Brackett hydrogen line wings, strong neutral metal cores) but weaker than the $T_{\rm eff}$ gradient. This contrast between broadband temperature sensitivity and line-localized abundance sensitivity is what enables the Cannon to disentangle all five labels simultaneously.
+The gradient spectrum $\partial f_\lambda / \partial \ell_i$ reveals which spectral features are most sensitive to each label. Figure~\ref{fig:gradient_spectra} shows the five gradient spectra with known Mg\,I and Si\,I lines marked \citep{Shetrone2015}. The $T_{\rm eff}$ gradient is large and broadband --- essentially every pixel contributes information about temperature because the Boltzmann/Saha ionization balance \citep{Gray2005} affects all absorption features. This is why $T_{\rm eff}$ is the best-constrained label. In contrast, the abundance gradients ($[\mathrm{Fe/H}]$, $[\mathrm{Mg/Fe}]$, $[\mathrm{Si/Fe}]$) are highly localized at specific metal-line wavelengths: the $[\mathrm{Mg/Fe}]$ gradient peaks sharply at the known Mg\,I lines near 15741--15766~\AA, and the $[\mathrm{Si/Fe}]$ gradient peaks at Si\,I lines near 16060, 16095, and 16216~\AA. The $\log g$ gradient is intermediate --- concentrated at pressure-sensitive features \citep[Brackett hydrogen line wings, strong neutral metal cores;][]{Gray2005} but weaker than the $T_{\rm eff}$ gradient. This contrast between broadband temperature sensitivity and line-localized abundance sensitivity is what enables the Cannon to disentangle all five labels simultaneously.
 
 \begin{figure}[H]
   \centering
@@ -203,7 +203,7 @@ We explore five outlier-rejection strategies to understand the sensitivity of th
 \subsection{Kiel Diagram}
 \label{sec:kiel}
 
-Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, colored by $[\mathrm{Fe/H}]$ and overlaid with MIST isochrones. The red giant branch (RGB) is clearly visible as the ascending track from $(\log g, T_{\rm eff}) \approx (3.5, 5000\,\mathrm{K})$ to $(0.5, 3800\,\mathrm{K})$, and the red clump appears as a horizontal concentration near $\log g \approx 2$--2.5. Metal-rich stars (red points) systematically occupy cooler temperatures at fixed $\log g$, consistent with the opacity effect: higher metallicity increases line blanketing, redistributing flux from blue to red and lowering the effective temperature at fixed luminosity. The MIST isochrones at $[\mathrm{Fe/H}] = 0$ and $-1$ bracket this observed metallicity gradient, with the metal-poor isochrone tracking the blue (hot) edge and the solar isochrone tracking the red (cool) edge of the distribution.
+Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, colored by $[\mathrm{Fe/H}]$ and overlaid with MIST isochrones \citep{Choi2016}. The red giant branch (RGB) is clearly visible as the ascending track from $(\log g, T_{\rm eff}) \approx (3.5, 5000\,\mathrm{K})$ to $(0.5, 3800\,\mathrm{K})$, and the red clump appears as a horizontal concentration near $\log g \approx 2$--2.5. Metal-rich stars (red points) systematically occupy cooler temperatures at fixed $\log g$, consistent with the opacity effect: higher metallicity increases line blanketing, redistributing flux from blue to red and lowering the effective temperature at fixed luminosity. The MIST isochrones at $[\mathrm{Fe/H}] = 0$ and $-1$ bracket this observed metallicity gradient, with the metal-poor isochrone tracking the blue (hot) edge and the solar isochrone tracking the red (cool) edge of the distribution.
 
 \begin{figure}[H]
   \centering
@@ -217,7 +217,7 @@ Figure~\ref{fig:kiel_diagram} shows the Kiel diagram of Cannon-fitted labels, co
 \label{sec:mcmc}
 %%% ---------------------------------------------------------------
 
-We fit labels for a mystery spectrum via MCMC (PyMC NUTS) using a \texttt{CannonLabelLikelihood} wrapper. The likelihood at each pixel is $f_\lambda^{\rm obs} \sim \mathcal{N}(f_\lambda^{\rm model}, \sigma_\lambda^2 + s_\lambda^2)$, where $s_\lambda^2$ is the Cannon's intrinsic scatter. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps (4 chains, seed 42). All chains converge: $\hat{R} < 1.01$ and effective sample size $> 400$ for every parameter. Figure~\ref{fig:mcmc_corner} shows the posterior constraints.
+We fit labels for a mystery spectrum via MCMC using the No-U-Turn Sampler \citep[NUTS;][]{HoffmanGelman2014} in PyMC, wrapped in a \texttt{CannonLabelLikelihood} class. The likelihood at each pixel is $f_\lambda^{\rm obs} \sim \mathcal{N}(f_\lambda^{\rm model}, \sigma_\lambda^2 + s_\lambda^2)$, where $s_\lambda^2$ is the Cannon's intrinsic scatter. Priors are weakly informative Normals centered on the training-set means with width $2\sigma$. The posterior is sampled with 2000 draws after 1000 tuning steps (4 chains, seed 42). All chains converge: $\hat{R} < 1.01$ \citep{GelmanRubin1992} and effective sample size $> 400$ for every parameter. Figure~\ref{fig:mcmc_corner} shows the posterior constraints.
 
 \begin{figure}[H]
   \centering
@@ -235,7 +235,7 @@ Figure~\ref{fig:mystery_prediction} compares the observed mystery spectrum again
   \label{fig:mystery_prediction}
 \end{figure}
 
-Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$56~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
+Formal MCMC uncertainties (e.g., $\sim$3~K in $T_{\rm eff}$) are an order of magnitude smaller than the CV scatter ($\sim$60~K). This is expected: the MCMC likelihood treats pixels as independent Gaussians, neglecting (a) correlated continuum normalization residuals across neighboring pixels, (b) systematic line-blending effects where multiple labels influence the same spectral feature, and (c) model inadequacy that is only partially captured by the scalar $s_\lambda^2$ term. The CV scatter, which measures end-to-end recovery including all these systematics, provides a more realistic uncertainty estimate.
 
 %%% ---------------------------------------------------------------
 \section{Spectral Synthesis}
@@ -257,7 +257,7 @@ Figure~\ref{fig:metallicity_sequence} shows synthetic spectra at fixed $T_{\rm e
 \subsection{RGB Evolution}
 \label{sec:rgb}
 
-Figure~\ref{fig:rgb_evolution} shows synthetic spectra along the RGB from a MIST isochrone ($[\mathrm{Fe/H}] = 0$, $\log g$ from 3.5 to 0.5).
+Figure~\ref{fig:rgb_evolution} shows synthetic spectra along the RGB from a MIST isochrone \citep{Choi2016} at $[\mathrm{Fe/H}] = 0$, with $\log g$ from 3.5 to 0.5.
 
 \begin{figure}[H]
   \centering
@@ -271,7 +271,7 @@ The metallicity sequence and RGB evolution produce distinguishable spectral chan
 \subsection{Unresolved Binaries}
 \label{sec:binaries}
 
-An unresolved binary produces a composite spectrum that is the flux-weighted sum of two stellar spectra falling within the same fiber. When The Cannon fits a single-star model to this composite, the inferred labels are biased. Specifically: (a) $T_{\rm eff}$ is biased toward an intermediate value between the two components, with the bias magnitude depending on the flux ratio; (b) $\log g$ may be biased depending on the luminosity ratio, since the secondary's contribution dilutes the pressure-sensitive features; (c) abundances are biased toward zero because the secondary's continuum fills in the primary's absorption lines, reducing equivalent widths. The bias is largest for near-equal-mass binaries and diminishes for extreme mass ratios where the secondary contributes negligible flux. Possible mitigations include two-component spectral fitting (fitting two label vectors simultaneously), flagging candidates via radial-velocity scatter across visits, and spectral disentangling techniques (El-Badry et al.\ 2018).
+An unresolved binary produces a composite spectrum that is the flux-weighted sum of two stellar spectra falling within the same fiber. When The Cannon fits a single-star model to this composite, the inferred labels are biased. Specifically: (a) $T_{\rm eff}$ is biased toward an intermediate value between the two components, with the bias magnitude depending on the flux ratio; (b) $\log g$ may be biased depending on the luminosity ratio, since the secondary's contribution dilutes the pressure-sensitive features; (c) abundances are biased toward zero because the secondary's continuum fills in the primary's absorption lines, reducing equivalent widths. The bias is largest for near-equal-mass binaries and diminishes for extreme mass ratios where the secondary contributes negligible flux. Possible mitigations include two-component spectral fitting (fitting two label vectors simultaneously), flagging candidates via radial-velocity scatter across visits, and spectral disentangling techniques \citep{ElBadry2018}.
 
 %%% ---------------------------------------------------------------
 \section{Neural Network Comparison}
@@ -305,10 +305,13 @@ All numerical results are re-derived in the summary notebook (06-numerical-resul
 
 \begin{itemize}
   \item \textbf{Training set:} 1886 stars after quality cuts, split 50/50 into training and CV sets.
-  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 0.99$.
-  \item \textbf{Cross-validation scatter:} $T_{\rm eff}$: $\sim$56~K; $\log g$: $\sim$0.14~dex; $[\mathrm{Fe/H}]$: $\sim$0.04~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.05~dex; $[\mathrm{Si/Fe}]$: $\sim$0.04~dex.
-  \item \textbf{MCMC mystery star} (posterior medians): $T_{\rm eff} \approx 4552$~K, $\log g \approx 1.97$, $[\mathrm{Fe/H}] \approx -0.62$, $[\mathrm{Mg/Fe}] \approx 0.32$, $[\mathrm{Si/Fe}] \approx 0.22$.
-  \item \textbf{Neural network:} MLP ($8575 \to 512 \to 256 \to 5$); CV scatter roughly $1.4$--$2.5\times$ larger than The Cannon across all labels, as expected given the limited training set size relative to model capacity.
+  \item \textbf{Cannon model:} 21 coefficients $+$ 1 scatter term per pixel $\times$ 8575 pixels $= 188{,}650$ free parameters. Training $\chi_r^2 \approx 1.00$.
+  \item \textbf{Cross-validation scatter:} $T_{\rm eff}$: $\sim$60~K; $\log g$: $\sim$0.13~dex; $[\mathrm{Fe/H}]$: $\sim$0.05~dex; $[\mathrm{Mg/Fe}]$: $\sim$0.04~dex; $[\mathrm{Si/Fe}]$: $\sim$0.04~dex.
+  \item \textbf{MCMC mystery star:} posterior medians re-derived in 06-numerical-results.ipynb (single source of truth).
+  \item \textbf{Neural network:} MLP ($8575 \to 512 \to 256 \to 5$) trained with Adam \citep{KingmaBa2014}; CV scatter roughly $1.4$--$2.3\times$ larger than The Cannon across all labels, as expected given the limited training set size relative to model capacity.
 \end{itemize}
+
+\bibliographystyle{aasjournal}
+\bibliography{references}
 
 \end{document}

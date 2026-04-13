@@ -7,6 +7,7 @@ from ugdatalab.plotting import (
     LW_FINE,
     LW_LIGHT,
     LW_MEDIUM,
+    LW_NONE,
     LW_STANDARD,
     MS_MICRO,
     SS_MICRO,
@@ -17,6 +18,7 @@ from ugdatalab.plotting import (
     ALPHA_STANDARD,
     ALPHA_FULL,
     NEUTRAL_COLOR,
+    FILL_STYLE,
     GUIDE_STYLE,
     FIT_STYLE,
     MODEL_STYLE,
@@ -258,17 +260,17 @@ def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
     cum3 = cum2 + nan_frac
 
     ax.fill_between(wavelength, 0, cum1, step="mid",
-                    alpha=ALPHA_LIGHT, color="C0")
+                    color="C0", **FILL_STYLE)
     ax.step(wavelength, cum1, where="mid",
             lw=LW_FINE, color="C0", label="Bitmask-flagged")
 
     ax.fill_between(wavelength, cum1, cum2, step="mid",
-                    alpha=ALPHA_LIGHT, color="C3")
+                    color="C3", **FILL_STYLE)
     ax.step(wavelength, cum2, where="mid",
             lw=LW_FINE, color="C3", label="Negative flux")
 
     ax.fill_between(wavelength, cum2, cum3, step="mid",
-                    alpha=ALPHA_LIGHT, color=NEUTRAL_COLOR)
+                    color=NEUTRAL_COLOR, **FILL_STYLE)
     ax.step(wavelength, cum3, where="mid",
             lw=LW_FINE, color=NEUTRAL_COLOR, label="Missing (NaN)")
 
@@ -307,7 +309,7 @@ def plot_normalization_diagnostic(
     ----------
     wavelength : ndarray, shape (8575,)
     flux_masked, error_masked : ndarray, shape (8575,)
-        Spectrum after bitmask application (bad pixels have error=inf).
+        Spectrum after bitmask application (bad pixels have error=1e6).
     continuum_fit : ndarray, shape (8575,)
         Fitted continuum polynomial.
     flux_norm, error_norm : ndarray, shape (8575,)
@@ -320,13 +322,13 @@ def plot_normalization_diagnostic(
     ax.remove()
     ax_top, ax_bot = subpanels(fig, 2, height_ratios=(1, 1), sharex=True)
 
-    good = np.isfinite(error_masked) & (error_masked < np.inf)
+    good = np.isfinite(error_masked) & (error_masked < 1e5)
 
     # Use nan to break lines at bad/gap pixels instead of boolean indexing
     flux_plot = np.where(good, flux_masked, np.nan)
     cont_plot = np.where(np.isfinite(continuum_fit), continuum_fit, np.nan)
     norm_plot = np.where(
-        np.isfinite(flux_norm) & (error_norm < np.inf), flux_norm, np.nan,
+        np.isfinite(flux_norm) & (error_norm < 1e5), flux_norm, np.nan,
     )
 
     # Per-chip continuum with 5% extrapolation
@@ -372,10 +374,17 @@ def plot_normalization_diagnostic(
         ax_top.plot(wavelength, chip_cont,
                     lw=LW_STANDARD, alpha=ALPHA_STANDARD, color=color,
                     zorder=4, label=f"{chip_names[i]} chip")
-    cont_px = continuum_mask & good
-    ax_top.scatter(wavelength[cont_px], flux_masked[cont_px], s=SS_MICRO,
-                   alpha=ALPHA_FULL, color="C1", zorder=3,
-                   label="Continuum pixels", rasterized=True)
+    # Highlight continuum pixels used in the fit with filled bands
+    cont_px_idx = np.where(continuum_mask & good & (error_masked < 1e5))[0]
+    dw = np.diff(wavelength)
+    edges = np.empty(len(wavelength) + 1)
+    edges[1:-1] = wavelength[:-1] + dw / 2
+    edges[0] = wavelength[0] - dw[0] / 2
+    edges[-1] = wavelength[-1] + dw[-1] / 2
+    for j, idx in enumerate(cont_px_idx):
+        ax_top.axvspan(edges[idx], edges[idx + 1], color="C2", alpha=ALPHA_FAINT,
+                       zorder=0, linewidth=0,
+                       label="Continuum pixels" if j == 0 else None)
     ax_top.set_ylabel(r"Flux")
     ax_top.legend(fontsize="x-small")
     if apogee_id is not None:
@@ -424,32 +433,44 @@ def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
     dist[ref_idx] = np.inf
     neighbors = np.argsort(dist)[:n_similar]
 
-    fig, ax = textwidth_figure(5)
+    all_idx = [ref_idx] + list(neighbors)
 
-    ref_plot = np.where(
-        np.isfinite(flux_array[ref_idx]) & (error_array[ref_idx] < np.inf),
-        flux_array[ref_idx], np.nan,
-    )
-    ax.plot(wavelength, ref_plot,
-            lw=LW_FINE, alpha=ALPHA_STANDARD, color="C0", rasterized=True,
-            label=str(apogee_ids[ref_idx]))
+    fig, ax = textwidth_figure(8)
+    ax.remove()
+    ax_top, ax_bot = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
 
-    for i, idx in enumerate(neighbors):
-        flux_plot = np.where(
-            np.isfinite(flux_array[idx]) & (error_array[idx] < np.inf),
-            flux_array[idx], np.nan,
-        )
-        ax.plot(wavelength, flux_plot,
-                lw=LW_FINE, alpha=ALPHA_FAINT, color=f"C{i + 1}",
-                rasterized=True, label=str(apogee_ids[idx]))
+    # Collect good-pixel fluxes for scatter computation
+    all_flux = []
+    for i, idx in enumerate(all_idx):
+        good = np.isfinite(flux_array[idx]) & (error_array[idx] < 1e5)
+        flux_plot = np.where(good, flux_array[idx], np.nan)
+        color = "C0" if i == 0 else f"C{i}"
+        alpha = ALPHA_STANDARD if i == 0 else ALPHA_FAINT
+        ax_top.plot(wavelength, flux_plot,
+                    lw=LW_FINE, alpha=alpha, color=color, rasterized=True,
+                    label=str(apogee_ids[idx]))
+        all_flux.append(flux_plot)
 
-    ax.axhline(1.0, **GUIDE_STYLE)
-    ax.set_xlabel(r"Wavelength [\AA]")
-    ax.set_ylabel(r"Normalized flux")
-    ax.legend(fontsize="x-small", ncols=2)
+    ax_top.axhline(1.0, **GUIDE_STYLE)
+    ax_top.set_ylabel(r"Normalized flux")
+    ax_top.legend(fontsize="x-small", ncols=2)
+
+    # Bottom panel: per-pixel standard deviation across the group
+    all_flux = np.array(all_flux)
+    with np.errstate(invalid="ignore"):
+        pixel_scatter = np.nanstd(all_flux, axis=0)
+    ax_bot.plot(wavelength, pixel_scatter, lw=LW_FINE, color="C0",
+                alpha=ALPHA_STANDARD, rasterized=True)
+    median_scatter = np.nanmedian(pixel_scatter)
+    ax_bot.axhline(median_scatter, **GUIDE_STYLE)
+    ax_bot.text(wavelength[-1], median_scatter,
+                f" median = {median_scatter:.4f}",
+                va="bottom", fontsize="x-small", color=NEUTRAL_COLOR)
+    ax_bot.set_xlabel(r"Wavelength [\AA]")
+    ax_bot.set_ylabel(r"$\sigma_{\rm pix}$")
 
     savefig(fig, "fig_similar_stars.pdf")
-    return ax
+    return ax_top, ax_bot
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +487,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     flux_obs : ndarray, shape (n_pixels,)
         Observed normalized flux.
     error_obs : ndarray, shape (n_pixels,)
-        Observed errors (inf for masked pixels).
+        Observed errors (1e6 sentinel for masked pixels).
     flux_pred : ndarray, shape (n_pixels,)
         Model-predicted flux.
     apogee_id : str, optional
@@ -479,7 +500,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     err = error_obs[mask]
     pred = flux_pred[mask]
 
-    good = np.isfinite(err) & (err < np.inf) & np.isfinite(pred)
+    good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred)
     obs_plot = np.where(good, obs, np.nan)
     err_plot = np.where(good, err, np.nan)
     pred_plot = np.where(good, pred, np.nan)
@@ -524,7 +545,7 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
     flux_obs : ndarray, shape (n_pixels,)
         Observed normalized flux.
     error_obs : ndarray, shape (n_pixels,)
-        Observed errors (inf for masked pixels).
+        Observed errors (1e6 sentinel for masked pixels).
     flux_pred : ndarray, shape (n_pixels,)
         Cannon prediction at MCMC posterior median labels.
     scatter : ndarray, shape (n_pixels,)
@@ -583,9 +604,10 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
 # 6. Gradient spectra (Problem 8)
 # ---------------------------------------------------------------------------
 
-# Vacuum wavelengths from NIST, cross-checked against APOGEE DR17 element windows
-_MG_LINES = [15745.0, 15753.3, 15770.1]
-_SI_LINES = [15892.7, 16064.4, 16099.2, 16168.1, 16220.1]
+# Air wavelengths from Smith et al. (2013), Table 5, via jobovy/apogee
+_MG_LINES = [15740.716, 15748.9, 15765.8, 15879.5, 15886.2, 15954.477]
+_SI_LINES = [15361.161, 15376.831, 15833.602, 15960.063, 16060.009,
+             16094.787, 16215.670, 16680.770, 16828.159]
 
 
 def plot_gradient_spectra(model):
@@ -640,23 +662,36 @@ def plot_gradient_spectra(model):
 # 7. Scatter spectrum (Problem 8)
 # ---------------------------------------------------------------------------
 
-# Known H-band absorption features (vacuum wavelengths)
-# Brackett series: Paschen 1921, NIST ASD
+# Known H-band absorption features — air wavelengths from Smith et al. (2013)
+# and jobovy/apogee (https://github.com/jobovy/apogee/blob/main/apogee/spec/plot.py)
+# Brackett series: vacuum wavelengths from NIST ASD
 _BRACKETT = {
     r"Br$\,20$": 15196, r"Br$\,19$": 15265, r"Br$\,18$": 15346,
     r"Br$\,17$": 15443, r"Br$\,16$": 15561, r"Br$\,15$": 15705,
     r"Br$\,14$": 15884, r"Br$\,13$": 16113, r"Br$\,12$": 16411,
     r"Br$\,11$": 16811,
 }
-# CO first-overtone bandheads: Kleinmann & Hall 1986, Wallace & Hinkle 1997
+# CO first-overtone bandheads: Smith et al. (2013) Table 4
 _CO_BANDHEADS = {
-    r"CO$\,3\text{--}1$": 15582, r"CO$\,4\text{--}2$": 15780,
-    r"CO$\,5\text{--}3$": 15988, r"CO$\,6\text{--}4$": 16191,
+    r"CO$\,3\text{--}1$": 15582, r"CO$\,4\text{--}2$": 15780.5,
+    r"CO$\,5\text{--}3$": 15988, r"CO$\,6\text{--}4$": 16189.5,
     r"CO$\,7\text{--}5$": 16398, r"CO$\,8\text{--}6$": 16614,
 }
-# Strong atomic lines: Shetrone et al. 2015, Smith et al. 2021
+# Atomic lines: Smith et al. (2013) Tables 2 & 5, via jobovy/apogee
 _ATOMIC = {
-    "Fe I": [15240, 15395, 15534, 15632, 15652, 16042, 16078, 16352, 16878],
+    "Fe I": [15194.492, 15207.526, 15395.718, 15490.339, 15648.510,
+             15964.867, 16040.657, 16153.247, 16165.032, 16697.635],
+    "Mg I": _MG_LINES,
+    "Si I": _SI_LINES,
+    "Al I": [16718.957, 16750.564, 16763.359],
+    "Ca I": [16136.823, 16150.763, 16155.236, 16157.364],
+    "Ti I": [15543.756, 15602.842, 15698.979, 15715.573, 16635.161],
+    "Ni I": [15605.680, 16584.439, 16589.295, 16673.711, 16815.471, 16818.760],
+    "K I":  [15163.067, 15168.376],
+}
+_ATOMIC_COLORS = {
+    "Fe I": "C4", "Mg I": "C0", "Si I": "C1", "Al I": "C5",
+    "Ca I": "C6", "Ti I": "C7", "Ni I": "C8", "K I": "C9",
 }
 
 
@@ -681,20 +716,26 @@ def plot_scatter_spectrum(model):
     ylo, yhi = ax.get_ylim()
     label_y = yhi * 0.92
 
-    for name, wl in _BRACKETT.items():
-        ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
+    for j, (name, wl) in enumerate(_BRACKETT.items()):
+        ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1,
+                   label="H I (Brackett)" if j == 0 else None)
         ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
                 color="C3", alpha=ALPHA_LIGHT, rotation=90)
 
-    for name, wl in _CO_BANDHEADS.items():
-        ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1)
+    for j, (name, wl) in enumerate(_CO_BANDHEADS.items()):
+        ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1,
+                   label="CO bandheads" if j == 0 else None)
         ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
                 color="C2", alpha=ALPHA_LIGHT, rotation=90)
 
     for species, wls in _ATOMIC.items():
-        for wl in wls:
-            ax.axvline(wl, color=NEUTRAL_COLOR, ls=":", lw=LW_LIGHT,
-                       alpha=ALPHA_FAINT, zorder=1)
+        color = _ATOMIC_COLORS.get(species, NEUTRAL_COLOR)
+        for j, wl in enumerate(wls):
+            ax.axvline(wl, color=color, ls=":", lw=LW_LIGHT,
+                       alpha=ALPHA_FAINT, zorder=1,
+                       label=species if j == 0 else None)
+
+    ax.legend(fontsize=4, ncols=5, loc="upper center")
 
     ax.set_xlabel(r"Wavelength [\AA]")
     ax.set_ylabel(r"Intrinsic scatter $s_\lambda$")
@@ -823,7 +864,7 @@ def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
         obs = flux_obs[i, mask]
         pred = flux_pred[i, mask]
         err = error_obs[i, mask]
-        good = np.isfinite(err) & (err < np.inf)
+        good = np.isfinite(err) & (err < 1e5)
 
         obs_plot = np.where(good, obs, np.nan)
         pred_plot = np.where(good, pred, np.nan)
@@ -837,6 +878,59 @@ def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
     axes[-1].set_xlabel(r"Wavelength [\AA]")
 
     savefig(fig, "fig_outlier_spectra.pdf")
+    return axes
+
+
+def plot_outlier_residuals(wavelength, flux_obs, error_obs, flux_pred,
+                           scatter, apogee_ids, wl_min, wl_max):
+    """Per-star residual plots for outlier investigation.
+
+    Each panel shows (obs - model) / sqrt(sigma^2 + s^2) in a wavelength
+    window, with +/-1 and +/-2 sigma guides.
+
+    Parameters
+    ----------
+    wavelength : ndarray, shape (n_pixels,)
+    flux_obs : ndarray, shape (n_stars, n_pixels)
+    error_obs : ndarray, shape (n_stars, n_pixels)
+    flux_pred : ndarray, shape (n_stars, n_pixels)
+    scatter : ndarray, shape (n_pixels,)
+        Cannon per-pixel intrinsic scatter (variance, s^2_lambda).
+    apogee_ids : array-like
+    wl_min, wl_max : float
+    """
+    n_stars = flux_obs.shape[0]
+    mask = (wavelength >= wl_min) & (wavelength <= wl_max)
+    wl = wavelength[mask]
+    s2 = scatter[mask]
+
+    fig, ax = textwidth_figure(3 * n_stars)
+    ax.remove()
+    axes = subpanels(fig, n_stars, sharex=True, hspace=0.15)
+    if n_stars == 1:
+        axes = [axes]
+
+    for i in range(n_stars):
+        obs = flux_obs[i, mask]
+        pred = flux_pred[i, mask]
+        err = error_obs[i, mask]
+        good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred) & np.isfinite(s2)
+
+        sigma_tot = np.sqrt(np.where(good, err ** 2 + s2, np.nan))
+        pull = np.where(good, (obs - pred) / sigma_tot, np.nan)
+
+        axes[i].plot(wl, pull, lw=LW_FINE, color="C0",
+                     alpha=ALPHA_STANDARD, rasterized=True)
+        axes[i].axhline(0, **GUIDE_STYLE)
+        for sigma_level in [1, -1, 2, -2]:
+            axes[i].axhline(sigma_level, ls=":", lw=LW_LIGHT,
+                            color=NEUTRAL_COLOR, alpha=ALPHA_FAINT, zorder=1)
+        axes[i].set_ylabel("Pull")
+        axes[i].set_ylim(-5, 5)
+        axes[i].set_title(str(apogee_ids[i]), loc="left", fontsize="small")
+
+    axes[-1].set_xlabel(r"Wavelength [\AA]")
+
     return axes
 
 
@@ -860,8 +954,8 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
 
     fig, ax = textwidth_figure(8)
 
-    sc = ax.scatter(teff, logg, c=feh, s=SS_FINE, alpha=ALPHA_STANDARD,
-                    cmap="coolwarm", zorder=3, rasterized=True)
+    sc = ax.scatter(teff, logg, c=feh, s=SS_MICRO, alpha=ALPHA_STANDARD,
+                    cmap="coolwarm", zorder=2, rasterized=True)
     cb = fig.colorbar(sc, ax=ax, pad=0.02)
     cb.set_label(r"$[\mathrm{Fe/H}]$")
 
@@ -869,7 +963,7 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
         for label, iso_df in isochrone_tracks:
             iso_mask = (iso_df["Teff"] > 3500) & (iso_df["Teff"] < 6000) & (iso_df["logg"] < 4.5)
             ax.plot(iso_df["Teff"][iso_mask], iso_df["logg"][iso_mask],
-                    **MODEL_STYLE, color=NEUTRAL_COLOR, zorder=1,
+                    **MODEL_STYLE, color=NEUTRAL_COLOR, zorder=4,
                     label=label)
 
     # Inverted axes: hot→cold left→right, low-g at top
@@ -906,12 +1000,12 @@ def plot_metallicity_sequence(model, feh_values, teff, logg,
     mask = (model.wavelength >= wl_min) & (model.wavelength <= wl_max)
     wl = model.wavelength[mask]
 
-    fig, ax = textwidth_figure(8)
+    fig, ax = textwidth_figure(12)
 
     for i, feh in enumerate(feh_values):
         labels = np.array([teff, logg, feh, mg_fe, si_fe])
         spec = model.predict(labels)
-        offset = -0.15 * i
+        offset = -0.2 * i
         ax.plot(wl, spec[mask] + offset, lw=LW_FINE, alpha=ALPHA_STANDARD,
                 color=f"C{i % 10}", zorder=3,
                 label=rf"$[\mathrm{{Fe/H}}]={feh:+.2f}$")
@@ -949,12 +1043,12 @@ def plot_rgb_evolution(model, teff_track, logg_track, feh,
     mask = (model.wavelength >= wl_min) & (model.wavelength <= wl_max)
     wl = model.wavelength[mask]
 
-    fig, ax = textwidth_figure(8)
+    fig, ax = textwidth_figure(12)
 
     for i, (t, g) in enumerate(zip(teff_track, logg_track)):
         labels = np.array([t, g, feh, mg_fe, si_fe])
         spec = model.predict(labels)
-        offset = -0.15 * i
+        offset = -0.2 * i
         ax.plot(wl, spec[mask] + offset, lw=LW_FINE, alpha=ALPHA_STANDARD,
                 color=f"C{i % 10}", zorder=3,
                 label=rf"$T_{{\rm eff}}={t:.0f}$, $\log g={g:.1f}$")

@@ -228,7 +228,7 @@ def train_cannon(
     flux : ndarray, shape (N, n_pixels)
         Normalized training spectra.
     error : ndarray, shape (N, n_pixels)
-        Per-pixel errors (inf for masked pixels).
+        Per-pixel errors (1e6 sentinel for masked pixels).
     labels : ndarray, shape (N, n_labels)
         Stellar labels for each training star.
     wavelength : ndarray, shape (n_pixels,)
@@ -365,7 +365,7 @@ def fit_star_labels(
     flux : ndarray, shape (n_pixels,)
         Observed normalized flux.
     error : ndarray, shape (n_pixels,)
-        Per-pixel errors (inf for masked pixels).
+        Per-pixel errors (1e6 sentinel for masked pixels).
     x0 : ndarray, shape (n_labels,), optional
         Initial guess in original label space.  Defaults to training-set means.
 
