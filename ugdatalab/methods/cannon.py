@@ -67,7 +67,7 @@ def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
     s2 : float
         Optimized intrinsic scatter variance.
     """
-    valid = np.isfinite(error_pixel) & (error_pixel < 1e5)
+    valid = np.isfinite(error_pixel)
     n_valid = np.sum(valid)
     n_terms = design_matrix.shape[1]
 
@@ -256,12 +256,27 @@ def train_cannon(
     theta_all = np.zeros((n_pixels, n_terms))
     scatter_all = np.full(n_pixels, np.inf)
 
-    # Skip pixels where fewer than 99.7% of training stars have valid data.
-    # Chip boundaries vary slightly across stars, creating a ramp-down zone
-    # at each chip edge where a few stars contribute noisy edge flux that
-    # inflates the scatter estimate.
+    # Skip pixels that fail either of two trainability criteria:
+    #
+    # 1. Data completeness: >= 99.7% of training stars must have finite
+    #    errors.  Chip boundaries vary slightly across stars, creating a
+    #    ramp-down zone at each chip edge; this threshold excludes the
+    #    transition region where many stars have NaN.
+    #
+    # 2. Median per-pixel SNR >= 3.  After continuum normalization, the
+    #    last few pixels before a chip gap can have finite but enormous
+    #    errors (the continuum polynomial extrapolates toward small values
+    #    at the chip edge, inflating normalized errors).  These pixels
+    #    pass the completeness check but carry negligible information —
+    #    the median training-star SNR is < 1 even though valid_frac ≈ 1.
+    #    The SNR criterion catches the 2 pixels (at ~16430 Å) that leak
+    #    through the completeness check alone.
     valid_frac = np.mean(np.isfinite(error), axis=0)
-    trainable = valid_frac >= 0.997
+    finite_mask = np.isfinite(flux) & np.isfinite(error) & (error > 0)
+    with np.errstate(invalid="ignore"):
+        snr = np.where(finite_mask, np.abs(flux) / error, np.nan)
+    median_snr = np.nanmedian(snr, axis=0)
+    trainable = (valid_frac >= 0.997) & (median_snr >= 3)
 
     for pix in range(n_pixels):
         if not trainable[pix]:

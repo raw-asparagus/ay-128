@@ -106,7 +106,10 @@ def _apply_bitmask(
     bm_bad = np.zeros(len(bitmask), dtype=bool)
     for bit in APOGEE_BAD_PIXMASK_BITS:
         bm_bad |= (bitmask & (1 << bit)) != 0
-    error[bm_bad] = _APOGEE_SENTINEL_ERROR
+    # Only sentinel pixels whose error is below the threshold — preserve
+    # APOGEE's own large error values (typically ~1e12 at chip gaps).
+    needs_sentinel = bm_bad & np.isfinite(error) & (error < _APOGEE_SENTINEL_ERROR)
+    error[needs_sentinel] = _APOGEE_SENTINEL_ERROR
 
     bad = (flux < 0) | np.isnan(flux)
     flux[bad] = np.nan
