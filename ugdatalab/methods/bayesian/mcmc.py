@@ -81,9 +81,14 @@ def nuts_sample(
     good = (np.isfinite(likelihood.y_err) & (likelihood.y_err < 1e5)
             & np.isfinite(likelihood.y) & np.isfinite(y_pred))
     resid = (likelihood.y - y_pred)[good]
-    sigma = likelihood.y_err[good]
+    # Use total inlier variance (measurement noise + intrinsic scatter) when
+    # the likelihood exposes it; fall back to measurement noise alone.
+    if hasattr(likelihood, '_inlier_variance'):
+        total_var = likelihood._inlier_variance(theta_median)[good]
+    else:
+        total_var = likelihood.y_err[good] ** 2
     nu = int(good.sum()) - len(var_names)
-    chi2_r = float(np.sum((resid / sigma) ** 2) / max(nu, 1))
+    chi2_r = float(np.sum(resid ** 2 / total_var) / max(nu, 1))
 
     return MCMCResult(
         theta=theta_median,
