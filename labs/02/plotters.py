@@ -24,7 +24,10 @@ from ugdatalab.plotting import (
     MODEL_STYLE,
     ERRORBAR_STYLE,
     SCATTER_STYLE,
+    LABEL_SIZE,
+    LEGEND_SIZE,
     textwidth_figure,
+    columnwidth_figure,
     subpanels,
     zero_line,
 )
@@ -124,6 +127,31 @@ def plot_label_corner_by_field(labels, label_names, fields):
 # 2. Example raw spectrum (Problem 2)
 # ---------------------------------------------------------------------------
 
+def _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id=None):
+    """Create the shared 2-panel raw spectrum layout (flux + error).
+
+    Returns (fig, ax_flux, ax_err).
+    """
+    fig, _ = textwidth_figure(4.5)
+    _.remove()
+    ax_flux, ax_err = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
+
+    ax_flux.plot(wavelength, flux_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
+                 color="C0", rasterized=True)
+    ax_flux.set_ylabel("Flux\n" r"[$10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$]")
+    if apogee_id is not None:
+        ax_flux.set_title(apogee_id, loc="left", fontsize=LABEL_SIZE)
+
+    ax_err.plot(wavelength, error_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
+                color="C0", rasterized=True)
+    finite_err = error_raw[np.isfinite(error_raw)]
+    ax_err.set_ylim(0, np.percentile(finite_err, 94))
+    ax_err.set_xlabel(r"Wavelength [\AA]")
+    ax_err.set_ylabel(r"$\sigma$")
+
+    return fig, ax_flux, ax_err
+
+
 def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id=None):
     """Plot a single raw (un-normalized) APOGEE spectrum with errors.
 
@@ -135,23 +163,7 @@ def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id=None):
     apogee_id : str, optional
         Star ID for the panel title.
     """
-    fig, _ = textwidth_figure(8)
-    _.remove()
-    ax_flux, ax_err = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
-
-    ax_flux.plot(wavelength, flux_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
-                 color="C0", rasterized=True)
-    ax_flux.set_ylabel(r"Flux [$10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$]")
-    if apogee_id is not None:
-        ax_flux.set_title(apogee_id, loc="left", fontsize="small")
-
-    ax_err.plot(wavelength, error_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
-                color="C0", rasterized=True)
-    finite_err = error_raw[np.isfinite(error_raw)]
-    ax_err.set_ylim(0, np.percentile(finite_err, 94))
-    ax_err.set_xlabel(r"Wavelength [\AA]")
-    ax_err.set_ylabel(r"$\sigma$")
-
+    fig, ax_flux, ax_err = _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id)
     savefig(fig, "fig_example_spectrum.pdf")
     return ax_flux, ax_err
 
@@ -160,7 +172,7 @@ def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id=None):
 # 3. Bitmask diagnostic (Problem 3)
 # ---------------------------------------------------------------------------
 
-def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask):
+def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask, apogee_id=None):
     """Raw spectrum with bad pixels highlighted.
 
     Parameters
@@ -169,26 +181,21 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask):
     flux_raw : ndarray, shape (n_pixels,)
     error_raw : ndarray, shape (n_pixels,)
     bitmask : ndarray, shape (n_pixels,)
+    apogee_id : str, optional
     """
     from ugdatalab.models.apogee.spectra import _apply_bitmask
 
     _, error_masked = _apply_bitmask(flux_raw, error_raw, bitmask)
-    # Affected = bitmask-flagged (error→1e6) OR negative/NaN flux (error→NaN)
     affected = (error_masked >= 1e5) | ~np.isfinite(error_masked)
 
-    # Pixel edges: halfway between neighbouring wavelength points
+    # Pixel edges for axvspan shading
     dw = np.diff(wavelength)
     edges = np.empty(len(wavelength) + 1)
     edges[1:-1] = wavelength[:-1] + dw / 2
     edges[0] = wavelength[0] - dw[0] / 2
     edges[-1] = wavelength[-1] + dw[-1] / 2
 
-    fig, _ = textwidth_figure(8)
-    _.remove()
-    ax_flux, ax_err = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
-
-    ax_flux.plot(wavelength, flux_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
-                 color="C0", rasterized=True, label="Raw flux")
+    fig, ax_flux, ax_err = _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id)
 
     affected_idx = np.where(affected)[0]
     for i, idx in enumerate(affected_idx):
@@ -197,17 +204,9 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask):
         ax_err.axvspan(edges[idx], edges[idx + 1], color="C3", alpha=ALPHA_FAINT,
                        zorder=0, linewidth=0)
 
-    ax_flux.set_ylabel(r"Flux [$10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$]")
-    ax_flux.legend(loc="upper right", fontsize="small",
+    ax_flux.legend(loc="upper right", fontsize=LABEL_SIZE,
                    title=f"{np.sum(affected)}/{len(affected)} pixels affected",
-                   title_fontsize="small")
-
-    finite_err = error_raw[np.isfinite(error_raw)]
-    ax_err.plot(wavelength, error_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
-                color="C0", rasterized=True)
-    ax_err.set_ylim(0, np.percentile(finite_err, 94))
-    ax_err.set_xlabel(r"Wavelength [\AA]")
-    ax_err.set_ylabel(r"$\sigma$")
+                   title_fontsize=LABEL_SIZE)
 
     savefig(fig, "fig_bitmask_diagnostic.pdf")
     return ax_flux, ax_err
@@ -252,7 +251,7 @@ def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
     bm_frac = bm_count / n_stars
     neg_frac = neg_count / n_stars
 
-    fig, ax = textwidth_figure(8)
+    fig, ax = textwidth_figure(2.5)
 
     # Stack: bitmask on bottom, negative flux, NaN on top
     cum1 = bm_frac
@@ -274,22 +273,14 @@ def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
     ax.step(wavelength, cum3, where="mid",
             lw=LW_FINE, color=NEUTRAL_COLOR, label="Missing (NaN)")
 
-    # Threshold guides
-    for threshold, label in [(0.32, "68% good"), (0.05, "95% good"), (0.003, "99.7% good")]:
-        ax.axhline(threshold, ls="--", lw=LW_LIGHT, color=NEUTRAL_COLOR,
-                   alpha=ALPHA_FAINT, zorder=1)
-        ax.text(wavelength[-1], threshold, f" {label}",
-                fontsize="x-small", va="bottom", ha="left",
-                color=NEUTRAL_COLOR, alpha=ALPHA_STANDARD)
-
     ax.set_ylim(0, min(1.0, cum3.max() * 1.1))
     ax.set_xlabel(r"Wavelength [\AA]")
-    ax.set_ylabel("Fraction of stars masked")
+    ax.set_ylabel("Fraction of\nstars masked")
     ax.set_title(
         f"{n_stars} stars, {flux_raw.shape[1]} pixels",
-        loc="left", fontsize="small",
+        loc="left", fontsize=LABEL_SIZE,
     )
-    ax.legend(fontsize="small", loc="upper left")
+    ax.legend(fontsize=LABEL_SIZE, loc="upper left")
 
     savefig(fig, "fig_bitmask_frequency.pdf")
     return ax
@@ -318,9 +309,9 @@ def plot_normalization_diagnostic(
         Boolean mask of continuum pixels.
     apogee_id : str, optional
     """
-    fig, ax = textwidth_figure(8)
+    fig, ax = textwidth_figure(6)
     ax.remove()
-    ax_top, ax_bot = subpanels(fig, 2, height_ratios=(1, 1), sharex=True)
+    ax_top, ax_bot = subpanels(fig, 2, height_ratios=(4, 3), sharex=True)
 
     good = np.isfinite(error_masked) & (error_masked < 1e5)
 
@@ -385,17 +376,17 @@ def plot_normalization_diagnostic(
         ax_top.axvspan(edges[idx], edges[idx + 1], color="C2", alpha=ALPHA_FAINT,
                        zorder=0, linewidth=0,
                        label="Continuum pixels" if j == 0 else None)
-    ax_top.set_ylabel(r"Flux")
-    ax_top.legend(fontsize="x-small")
+    ax_top.set_ylabel("Flux\n" r"[$10^{-17}\,\mathrm{erg\,s^{-1}\,cm^{-2}\,\AA^{-1}}$]")
+    ax_top.legend(fontsize=LEGEND_SIZE, ncols=3)
     if apogee_id is not None:
-        ax_top.set_title(apogee_id, loc="left", fontsize="small")
+        ax_top.set_title(apogee_id, loc="left", fontsize=LABEL_SIZE)
 
     # Bottom: normalized spectrum
     ax_bot.plot(wavelength, norm_plot, lw=LW_FINE,
                 alpha=ALPHA_STANDARD, color="C1", rasterized=True,
                 label="Normalized flux")
     ax_bot.axhline(1.0, **GUIDE_STYLE)
-    ax_bot.set_ylabel(r"Normalized flux")
+    ax_bot.set_ylabel("Normalized\nflux")
     ax_bot.set_xlabel(r"Wavelength [\AA]")
 
     savefig(fig, "fig_normalization.pdf")
@@ -435,9 +426,9 @@ def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
 
     all_idx = [ref_idx] + list(neighbors)
 
-    fig, ax = textwidth_figure(8)
+    fig, ax = textwidth_figure(5)
     ax.remove()
-    ax_top, ax_bot = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
+    ax_top, ax_bot = subpanels(fig, 2, height_ratios=(3, 2), sharex=True)
 
     # Collect good-pixel fluxes for scatter computation
     all_flux = []
@@ -452,8 +443,8 @@ def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
         all_flux.append(flux_plot)
 
     ax_top.axhline(1.0, **GUIDE_STYLE)
-    ax_top.set_ylabel(r"Normalized flux")
-    ax_top.legend(fontsize="x-small", ncols=2)
+    ax_top.set_ylabel("Normalized\nflux")
+    ax_top.legend(fontsize=LEGEND_SIZE, ncols=3)
 
     # Bottom panel: per-pixel standard deviation across the group
     all_flux = np.array(all_flux)
@@ -461,11 +452,6 @@ def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
         pixel_scatter = np.nanstd(all_flux, axis=0)
     ax_bot.plot(wavelength, pixel_scatter, lw=LW_FINE, color="C0",
                 alpha=ALPHA_STANDARD, rasterized=True)
-    median_scatter = np.nanmedian(pixel_scatter)
-    ax_bot.axhline(median_scatter, **GUIDE_STYLE)
-    ax_bot.text(wavelength[-1], median_scatter,
-                f" median = {median_scatter:.4f}",
-                va="bottom", fontsize="x-small", color=NEUTRAL_COLOR)
     ax_bot.set_xlabel(r"Wavelength [\AA]")
     ax_bot.set_ylabel(r"$\sigma_{\rm pix}$")
 
@@ -500,7 +486,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     err = error_obs[mask]
     pred = flux_pred[mask]
 
-    good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred)
+    good = np.isfinite(err) & (err < 1.0) & np.isfinite(pred)
     obs_plot = np.where(good, obs, np.nan)
     err_plot = np.where(good, err, np.nan)
     pred_plot = np.where(good, pred, np.nan)
@@ -514,12 +500,12 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     axes[0].errorbar(wl, obs_plot, yerr=err_plot, **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2, label="Observed")
     axes[0].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3, label="Cannon model")
-    axes[0].set_ylabel(r"Normalized flux")
-    axes[0].legend(fontsize="x-small")
+    axes[0].set_ylabel("Normalized\nflux")
+    axes[0].legend(fontsize=LEGEND_SIZE)
     if apogee_id is not None:
         axes[0].set_title(
             rf"{apogee_id}, {wl_min:.0f}--{wl_max:.0f}\,\AA",
-            loc="left", fontsize="small",
+            loc="left", fontsize=LABEL_SIZE,
         )
 
     axes[1].errorbar(wl, resid_plot, yerr=err_plot, **ERRORBAR_STYLE,
@@ -536,8 +522,8 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
                             scatter, wl_min, wl_max):
     """Observed mystery spectrum vs MCMC-fitted Cannon prediction.
 
-    Three panels: spectra (top), raw residuals (middle), and pull
-    (residual / total uncertainty) (bottom).
+    Two panels matching plot_training_prediction style: scatter with error
+    bars (top) and residuals (bottom).
 
     Parameters
     ----------
@@ -558,43 +544,33 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
     obs = flux_obs[mask]
     err = error_obs[mask]
     pred = flux_pred[mask]
-    s2 = scatter[mask]
 
-    good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred) & np.isfinite(s2)
+    good = np.isfinite(err) & (err < 0.25) & np.isfinite(pred)
     obs_plot = np.where(good, obs, np.nan)
+    err_plot = np.where(good, err, np.nan)
     pred_plot = np.where(good, pred, np.nan)
     resid = obs - pred
     resid_plot = np.where(good, resid, np.nan)
-    sigma_tot = np.sqrt(np.where(good, err ** 2 + s2, np.nan))
-    pull_plot = np.where(good, resid / sigma_tot, np.nan)
 
-    fig, ax = textwidth_figure(10)
+    fig, ax = textwidth_figure(8)
     ax.remove()
-    axes = subpanels(fig, 3, height_ratios=(3, 1, 1), sharex=True)
+    axes = subpanels(fig, 2, height_ratios=(3, 1))
 
-    axes[0].plot(wl, obs_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
-                 zorder=2, label="Mystery spectrum", rasterized=True)
-    axes[0].plot(wl, pred_plot, lw=LW_FINE, color="C1", alpha=ALPHA_STANDARD,
-                 zorder=3, label="MCMC fit")
-    axes[0].set_ylabel(r"Normalized flux")
-    axes[0].legend(fontsize="x-small")
+    axes[0].errorbar(wl, obs_plot, yerr=err_plot, **ERRORBAR_STYLE,
+                     color="C0", alpha=ALPHA_FAINT, zorder=2, label="Mystery spectrum")
+    axes[0].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3, label="MCMC fit")
+    axes[0].set_ylabel("Normalized\nflux")
+    axes[0].legend(fontsize=LEGEND_SIZE)
     axes[0].set_title(
         rf"Mystery spectrum, {wl_min:.0f}--{wl_max:.0f}\,\AA",
-        loc="left", fontsize="small",
+        loc="left", fontsize=LABEL_SIZE,
     )
 
-    axes[1].plot(wl, resid_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
-                 zorder=2, rasterized=True)
+    axes[1].errorbar(wl, resid_plot, yerr=err_plot, **ERRORBAR_STYLE,
+                     color="C0", alpha=ALPHA_FAINT, zorder=2)
     zero_line(axes[1])
     axes[1].set_ylabel("Residual")
-
-    axes[2].plot(wl, pull_plot, lw=LW_FINE, color="C0", alpha=ALPHA_LIGHT,
-                 zorder=2, rasterized=True)
-    zero_line(axes[2])
-    axes[2].axhline(1.0, **GUIDE_STYLE)
-    axes[2].axhline(-1.0, **GUIDE_STYLE)
-    axes[2].set_ylabel("Pull")
-    axes[2].set_xlabel(r"Wavelength [\AA]")
+    axes[1].set_xlabel(r"Wavelength [\AA]")
 
     savefig(fig, "fig_mystery_prediction.pdf")
     return axes
@@ -638,7 +614,7 @@ def plot_gradient_spectra(model):
         label_bare = LABEL_LATEX[i].strip("$")
         axes[i].set_ylabel(
             rf"$\dfrac{{\partial f_\lambda}}{{\partial {label_bare}}}$",
-            fontsize="small",
+            fontsize=LABEL_SIZE,
         )
 
         # Mark known spectral lines
@@ -685,13 +661,10 @@ _ATOMIC = {
     "Si I": _SI_LINES,
     "Al I": [16718.957, 16750.564, 16763.359],
     "Ca I": [16136.823, 16150.763, 16155.236, 16157.364],
-    "Ti I": [15543.756, 15602.842, 15698.979, 15715.573, 16635.161],
-    "Ni I": [15605.680, 16584.439, 16589.295, 16673.711, 16815.471, 16818.760],
-    "K I":  [15163.067, 15168.376],
 }
 _ATOMIC_COLORS = {
     "Fe I": "C4", "Mg I": "C0", "Si I": "C1", "Al I": "C5",
-    "Ca I": "C6", "Ti I": "C7", "Ni I": "C8", "K I": "C9",
+    "Ca I": "C6",
 }
 
 
@@ -703,7 +676,7 @@ def plot_scatter_spectrum(model):
     model : CannonModel
         Trained Cannon model.
     """
-    fig, ax = textwidth_figure(5)
+    fig, ax = textwidth_figure(3)
 
     scatter_plot = np.where(
         np.isfinite(model.scatter), np.sqrt(model.scatter), np.nan,
@@ -719,14 +692,10 @@ def plot_scatter_spectrum(model):
     for j, (name, wl) in enumerate(_BRACKETT.items()):
         ax.axvline(wl, color="C3", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1,
                    label="H I (Brackett)" if j == 0 else None)
-        ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
-                color="C3", alpha=ALPHA_LIGHT, rotation=90)
 
     for j, (name, wl) in enumerate(_CO_BANDHEADS.items()):
         ax.axvline(wl, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT, zorder=1,
-                   label="CO bandheads" if j == 0 else None)
-        ax.text(wl, label_y, name, fontsize=3, ha="center", va="top",
-                color="C2", alpha=ALPHA_LIGHT, rotation=90)
+                   label="CO" if j == 0 else None)
 
     for species, wls in _ATOMIC.items():
         color = _ATOMIC_COLORS.get(species, NEUTRAL_COLOR)
@@ -735,7 +704,7 @@ def plot_scatter_spectrum(model):
                        alpha=ALPHA_FAINT, zorder=1,
                        label=species if j == 0 else None)
 
-    ax.legend(fontsize=4, ncols=5, loc="upper center")
+    ax.legend(fontsize=LEGEND_SIZE, ncols=4, loc="upper center")
 
     ax.set_xlabel(r"Wavelength [\AA]")
     ax.set_ylabel(r"Intrinsic scatter $s_\lambda$")
@@ -792,7 +761,7 @@ def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_na
         ax_c.set_ylabel(rf"Cannon {label_names[i]}")
         ax_c.set_title(
             rf"bias$={bias:+.2f}$, $\sigma={scatter_val:.2f}$",
-            loc="left", fontsize="small",
+            loc="left", fontsize=LABEL_SIZE,
         )
 
         # Residual panel
@@ -800,7 +769,7 @@ def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_na
                      zorder=2, rasterized=True)
         zero_line(ax_r)
         ax_r.set_ylabel("Res.")
-        ax_r.set_xlabel(rf"APSCAP {label_names[i]}")
+        ax_r.set_xlabel(rf"ASPCAP {label_names[i]}")
 
     # Hide unused subfigures if n_labels is odd
     if n_labels % ncols != 0:
@@ -832,53 +801,68 @@ def plot_label_recovery(true_labels, fitted_labels, label_names):
 # 9. Outlier spectra (Problem 10)
 # ---------------------------------------------------------------------------
 
-def plot_outlier_spectra(wavelength, flux_obs, error_obs, flux_pred, apogee_ids,
+def plot_outlier_spectra(wavelength, flux_obs_worst, error_obs_worst,
+                         flux_pred_worst, ids_worst,
+                         flux_obs_best, error_obs_best,
+                         flux_pred_best, ids_best,
                          wl_min, wl_max):
-    """Overlay observed and model spectra for outlier stars.
+    """Plot residuals (obs - model) for worst and best-fit stars side by side.
+
+    Left column: 3 worst-fit stars. Right column: 3 best-fit stars.
 
     Parameters
     ----------
     wavelength : ndarray, shape (n_pixels,)
-    flux_obs : ndarray, shape (n_stars, n_pixels)
-        Observed spectra of outlier stars.
-    error_obs : ndarray, shape (n_stars, n_pixels)
-        Observed errors, used only to mask invalid pixels.
-    flux_pred : ndarray, shape (n_stars, n_pixels)
-        Cannon-predicted spectra for the outlier stars.
-    apogee_ids : array-like
-        IDs for each star (used for titles).
+    flux_obs_worst, flux_obs_best : ndarray, shape (3, n_pixels)
+    error_obs_worst, error_obs_best : ndarray, shape (3, n_pixels)
+    flux_pred_worst, flux_pred_best : ndarray, shape (3, n_pixels)
+    ids_worst, ids_best : array-like, length 3
     wl_min, wl_max : float
-        Wavelength window.
     """
-    n_stars = flux_obs.shape[0]
+    import matplotlib.pyplot as plt
+
     mask = (wavelength >= wl_min) & (wavelength <= wl_max)
     wl = wavelength[mask]
 
-    fig, ax = textwidth_figure(4 * n_stars)
-    ax.remove()
-    axes = subpanels(fig, n_stars, sharex=True, hspace=0.15)
-    if n_stars == 1:
-        axes = [axes]
+    fig, _ = columnwidth_figure(15)
+    _.remove()
 
-    for i in range(n_stars):
-        obs = flux_obs[i, mask]
-        pred = flux_pred[i, mask]
-        err = error_obs[i, mask]
+    gs = fig.add_gridspec(6, 1, hspace=0.35)
+
+    def _plot_resid(ax, obs, pred, err, star_id, color):
         good = np.isfinite(err) & (err < 1e5)
+        resid = np.where(good, obs - pred, np.nan)
+        ax.plot(wl, resid, lw=LW_FINE, color=color,
+                alpha=ALPHA_STANDARD, zorder=2)
+        ax.axhline(0, **GUIDE_STYLE, zorder=1)
+        ax.set_title(str(star_id), loc="left", fontsize=LABEL_SIZE)
+        ax.set_ylabel("Residual")
 
-        obs_plot = np.where(good, obs, np.nan)
-        pred_plot = np.where(good, pred, np.nan)
+    # Top 3 rows: worst fit
+    for row in range(3):
+        ax = fig.add_subplot(gs[row, 0])
+        _plot_resid(ax, flux_obs_worst[row, mask], flux_pred_worst[row, mask],
+                    error_obs_worst[row, mask], ids_worst[row], "C3")
+        if row == 0:
+            ax.set_title("Worst fit", loc="right", fontsize=LEGEND_SIZE,
+                         fontstyle="italic", color=NEUTRAL_COLOR)
+        ax.tick_params(labelbottom=False)
 
-        axes[i].plot(wl, obs_plot, lw=LW_FINE, color="C0",
-                     alpha=ALPHA_STANDARD, zorder=2)
-        axes[i].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3)
-        axes[i].set_ylabel("Flux")
-        axes[i].set_title(str(apogee_ids[i]), loc="left", fontsize="small")
-
-    axes[-1].set_xlabel(r"Wavelength [\AA]")
+    # Bottom 3 rows: best fit
+    for row in range(3):
+        ax = fig.add_subplot(gs[row + 3, 0])
+        _plot_resid(ax, flux_obs_best[row, mask], flux_pred_best[row, mask],
+                    error_obs_best[row, mask], ids_best[row], "C0")
+        if row == 0:
+            ax.set_title("Best fit", loc="right", fontsize=LEGEND_SIZE,
+                         fontstyle="italic", color=NEUTRAL_COLOR)
+        if row < 2:
+            ax.tick_params(labelbottom=False)
+        else:
+            ax.set_xlabel(r"Wavelength [\AA]")
 
     savefig(fig, "fig_outlier_spectra.pdf")
-    return axes
+    return fig
 
 
 def plot_outlier_residuals(wavelength, flux_obs, error_obs, flux_pred,
@@ -927,7 +911,7 @@ def plot_outlier_residuals(wavelength, flux_obs, error_obs, flux_pred,
                             color=NEUTRAL_COLOR, alpha=ALPHA_FAINT, zorder=1)
         axes[i].set_ylabel("Pull")
         axes[i].set_ylim(-5, 5)
-        axes[i].set_title(str(apogee_ids[i]), loc="left", fontsize="small")
+        axes[i].set_title(str(apogee_ids[i]), loc="left", fontsize=LABEL_SIZE)
 
     axes[-1].set_xlabel(r"Wavelength [\AA]")
 
@@ -973,7 +957,7 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
     ax.set_ylabel(r"$\log g$ [dex]")
 
     if isochrone_tracks is not None:
-        ax.legend(fontsize="x-small")
+        ax.legend(fontsize=LEGEND_SIZE)
 
     savefig(fig, "fig_kiel_diagram.pdf")
     return ax
@@ -1011,12 +995,12 @@ def plot_metallicity_sequence(model, feh_values, teff, logg,
                 label=rf"$[\mathrm{{Fe/H}}]={feh:+.2f}$")
 
     ax.set_xlabel(r"Wavelength [\AA]")
-    ax.set_ylabel(r"Normalized flux $+$ offset")
+    ax.set_ylabel("Normalized\n" r"flux $+$ offset")
     ax.set_title(
         rf"$T_{{\rm eff}}={teff}$ K, $\log g={logg}$",
-        loc="left", fontsize="small",
+        loc="left", fontsize=LABEL_SIZE,
     )
-    ax.legend(fontsize="x-small", ncols=2)
+    ax.legend(fontsize=LEGEND_SIZE, ncols=2)
 
     savefig(fig, "fig_metallicity_sequence.pdf")
     return ax
@@ -1054,12 +1038,12 @@ def plot_rgb_evolution(model, teff_track, logg_track, feh,
                 label=rf"$T_{{\rm eff}}={t:.0f}$, $\log g={g:.1f}$")
 
     ax.set_xlabel(r"Wavelength [\AA]")
-    ax.set_ylabel(r"Normalized flux $+$ offset")
+    ax.set_ylabel("Normalized\n" r"flux $+$ offset")
     ax.set_title(
         rf"RGB track, $[\mathrm{{Fe/H}}]={feh:+.1f}$",
-        loc="left", fontsize="small",
+        loc="left", fontsize=LABEL_SIZE,
     )
-    ax.legend(fontsize="x-small", ncols=2)
+    ax.legend(fontsize=LEGEND_SIZE, ncols=2)
 
     savefig(fig, "fig_rgb_evolution.pdf")
     return ax
@@ -1079,7 +1063,7 @@ def plot_nn_loss(train_losses, val_losses):
     """
     epochs = np.arange(1, len(train_losses) + 1)
 
-    fig, ax = textwidth_figure(5)
+    fig, ax = columnwidth_figure(3)
 
     ax.plot(epochs, train_losses, lw=LW_STANDARD, alpha=ALPHA_STANDARD,
             color="C0", label="Training", zorder=3)

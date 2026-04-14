@@ -131,7 +131,7 @@ def gen_bitmask_diagnostic():
     spec_raw = _spec_raw_cache["spec_raw"]
     plotters.plot_bitmask_diagnostic(
         spec_raw["wavelength"], spec_raw["flux"], spec_raw["error"],
-        spec_raw["bitmask"],
+        spec_raw["bitmask"], apogee_id="2M21235315+1244123",
     )
 
 # ---------------------------------------------------------------------------
