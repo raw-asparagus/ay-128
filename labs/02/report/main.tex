@@ -103,7 +103,7 @@ In this work, we (1) assemble a training set of 1886 red giants from four APOGEE
 
   \end{tikzpicture}%
   }
-  \caption{Analysis pipeline from APOGEE data acquisition to label inference. Node color indicates pipeline stage: \textcolor{blue!70!black}{Data Access} (catalog query and spectrum download); \textcolor{cyan!60!black}{Preprocessing} (bitmask application and continuum normalization); \textcolor{violet}{Modeling} (train/CV split, Cannon training, neural network); \textcolor{red!60!black}{Key Results} (label gradient, Kiel diagram, synthetic spectra, MCMC label fit).}
+  \caption{Analysis pipeline from APOGEE data acquisition to label inference. Node color indicates pipeline stage: \textcolor{blue!70!black}{Data Access} (catalog query and spectrum download); \textcolor{cyan!60!black}{Preprocessing} (bitmask application and pseudo-continuum normalization); \textcolor{violet}{Modeling} (train/CV split, Cannon training, neural network); \textcolor{red!60!black}{Key Results} (label gradient, Kiel diagram, synthetic spectra, MCMC label fit).}
   \label{fig:pipeline}
 \end{figure*}
 
@@ -231,7 +231,7 @@ A standard activation function is the Rectified Linear Unit (ReLU):
   \sigma(z) = \max(0, z),
   \label{eq:relu}
 \end{equation}
-which is computationally cheap compared to $\tanh$ or the logistic sigmoid, and introduces the piecewise-linear nonlinearity.
+which is computationally cheap compared to $\tanh$ or the logistic sigmoid, but introduces the piecewise-linear nonlinearity.
 
 A complete MLP with two hidden layers (the architecture we adopt as our baseline) computes:
 \begin{equation}
@@ -352,7 +352,7 @@ To verify normalization robustness, Figure~\ref{fig:similar_stars} compares the 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_similar_stars.pdf}
-  \caption{Normalization robustness check. \textit{Top:} Normalized spectra of 2M21235315+1244123 (blue) and its 5 nearest neighbors in label space (colored). \textit{Bottom:} Per-pixel standard deviation across the 6 spectra. The median scatter of $\sim$0.01 confirms that continuum normalization does not introduce significant star-to-star artifacts at the percent level.}
+  \caption{Normalization robustness check. \textit{Top:} Normalized spectra of 2M21235315+1244123 (blue) and its 5 nearest neighbors in label space (colored). \textit{Bottom:} Per-pixel standard deviation across the 6 spectra. The median scatter of $\sim$0.01 confirms that pseudo-continuum normalization does not introduce significant star-to-star artifacts at the percent level.}
   \label{fig:similar_stars}
 \end{figure*}
 
@@ -450,7 +450,7 @@ Figure~\ref{fig:scatter_spectrum} shows the per-pixel intrinsic scatter $s_\lamb
 Broadly, regions of elevated scatter fall into three categories:
 \begin{enumerate}
   \item Strong absorption lines where the flux depends nonlinearly on labels beyond second order.
-  \item Chip-edge where continuum normalization may be less reliable.
+  \item Chip-edge where pseudo-continuum normalization may be less reliable.
   \item Outlier-driven spikes stemming from isolated high-scatter pixels traceable to individual stars with anomalous features (e.g., emission lines, poor sky subtraction).
 \end{enumerate}
 Physically, a second-order polynomial in five labels has limited flexibility to capture the nonlinear dependence of line strength on temperature through the Boltzmann and Saha equations or Voigt profile shapes of strong lines; this can be visually observed in the example of Figure~\ref{fig:training_prediction}.
@@ -485,7 +485,7 @@ $[\mathrm{Si/Fe}]$ (dex) & $+0.001$ & 0.044 \\
 \end{tabular}
 \end{table}
 
-We note that the lab manual suggests scatters of $\sim$30~K in $T_{\rm eff}$ and $\sim$0.02~dex in [Fe/H] ``should be achievable''; our global scatters exceed these by a factor of $\sim$2. For comparison, the original Cannon paper \citep{Ness2015} reported leave-one-out cross-validation scatters of $\sim$95.8~K in $T_{\rm eff}$, $\sim$0.24~dex in $\log g$, and $\sim$0.08~dex in [Fe/H] using 542 training stars from 19 clusters with only 3 labels. Our model substantially outperforms these values, likely due to the larger training set (942 stars), improved data quality in DR17 vs.\ DR10 and more feature-rich 5 labels. When we bin by $T_{\rm eff}$, the RGB core (4000--5000~K) achieves $\sim$40~K scatter, while the warm edge ($T_{\rm eff} > 5000$~K) degrades to 70--100~K due to polynomial saturation and less training stars. The global scatter is dominated by these hotter-end outliers. 
+We note that the lab manual suggests scatters of $\sim$30~K in $T_{\rm eff}$ and $\sim$0.02~dex in [Fe/H] ``should be achievable''; our global scatters exceed these by a factor of $\sim$2. For comparison, the original Cannon paper \citep{Ness2015} reported leave-one-out cross-validation scatters of $\sim$95.8~K in $T_{\rm eff}$, $\sim$0.24~dex in $\log g$, and $\sim$0.08~dex in [Fe/H] using 548 reference stars from cluster fields with only 3 labels. Our model substantially outperforms these values, likely due to the larger training set (942 stars), improved data quality in DR17 vs.\ DR10 and more feature-rich 5 labels. When we bin by $T_{\rm eff}$, the RGB core (4000--5000~K) achieves $\sim$40~K scatter, while the warm edge ($T_{\rm eff} > 5000$~K) degrades to 70--100~K due to polynomial saturation and less training stars. The global scatter is dominated by these hotter-end outliers. 
 
 We intentionally do not apply outlier rejection to the CV metrics and report the more honest worse fit as it would be removing poorly-fit stars thus conflating model inadequacy and further reduce training coverage at the edges of label space where the model is already struggling.
 
@@ -500,7 +500,7 @@ Figure~\ref{fig:outlier_spectra} contrasts the residuals $(f_{\rm obs} - f_{\rm 
   \label{fig:outlier_spectra}
 \end{figure}
 
-To address this and other possible drawbacks (e.g., poor continuum normalization), The Cannon~2 \citep{Casey2016} introduces regularization via censoring and simultaneous continuum normalization; we discuss these improvements further in Section~\ref{sec:future}.
+To address this and other possible drawbacks (e.g., poor pseudo-continuum normalization), The Cannon~2 \citep{Casey2016} introduces regularization via censoring and simultaneous pseudo-continuum normalization; we discuss these improvements further in Section~\ref{sec:future}.
 
 %%% ---------------------------------------------------------------
 \section{Neural Network Comparison}
@@ -711,7 +711,7 @@ $[\mathrm{Si/Fe}]$ (dex) & 0.005 & 0.044 & $\sim$0.03 & 9.6  \\
 
 \subsubsection{Uncertainty Discussion}
 
-Table~\ref{tab:uncertainty_comparison} compares the MCMC uncertainties to the CV scatter (Section~\ref{sec:cv}) and typical ASPCAP errors \citep{Holtzman2015}.
+Table~\ref{tab:uncertainty_comparison} compares the MCMC uncertainties to the CV scatter (Section~\ref{sec:cv}) and typical ASPCAP errors \citep{Holtzman2015, Abdurrouf2022}.
 
 The MCMC uncertainties are $\sim$10--15$\times$ smaller than the CV scatter. This discrepancy arises because the per-pixel scatter term $s_\lambda^2$ captures the variance of model residuals but cross-pixel model deviations (e.g., a poorly fit molecular band) which would contribute systematic label errors that are not reflected in the MCMC uncertainties. The CV scatter is therefore a more realistic estimate of the true label precision of the Cannon model. 
 

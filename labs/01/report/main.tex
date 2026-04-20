@@ -132,7 +132,7 @@ RR Lyrae stars are classified by their pulsation mode:
   \item \textbf{RRd}: double-mode pulsators exciting both fundamental and first-overtone modes simultaneously; much rarer.
 \end{itemize}
 
-The Blazhko effect refers to the observed quasi-periodic modulations of the light curve amplitude and phase on timescales of tens to hundreds of days \citep{Netzel2018}. Stars exhibiting the Blazhko effect show residuals from simple periodic models, complicating period determination. 
+The Blazhko effect refers to the observed quasi-periodic modulations of the light curve amplitude and phase on timescales of tens to hundreds of days. While first documented in fundamental-mode pulsators, recent work has shown the effect is also prevalent in first-overtone RR Lyrae stars \citep{Netzel2018}. Stars exhibiting the Blazhko effect show residuals from simple periodic models, complicating period determination.
 
 \subsection{Period-Luminosity Relations}
 
@@ -187,9 +187,9 @@ The per-epoch weights $\sigma_{G,i}$ combine the Gaia epoch flux signal-to-noise
 \end{equation}
 The formal coefficient covariance is:
 \begin{equation}
-  C_{\boldsymbol{\beta}} = \max\!\left(\chi_\nu^2,\,1\right)(\mathbf{X}^T\mathbf{W}\mathbf{X})^{-1},
+  C_{\boldsymbol{\beta}} = \max\!\left(\chi^2_r,\,1\right)(\mathbf{X}^T\mathbf{W}\mathbf{X})^{-1},
 \end{equation}
-where $\chi_\nu^2 = (N - 2K - 1)^{-1}\sum_i (G_i - \hat{G}_i)^2/\sigma_{G,i}^2$. All downstream Fourier uncertainties (predicted magnitudes, mean magnitude) are propagated from $C_{\boldsymbol{\beta}}$.
+where $\chi^2_r = (N - 2K - 1)^{-1}\sum_i (G_i - \hat{G}_i)^2/\sigma_{G,i}^2$. All downstream Fourier uncertainties (predicted magnitudes, mean magnitude) are propagated from $C_{\boldsymbol{\beta}}$.
 
 The order $K$ is chosen by cross-validation (CV) where we split the light curve into training ($\sim$80\%) and validation ($\sim$20\%) sets, fit on the training set for each $K$, and select the $K$ that minimizes the validation reduced $\chi^2_r$:
 \begin{equation}
@@ -247,7 +247,7 @@ The $G$-band extinction is then:
 \begin{equation}
   A_G = R_G \cdot E(G_{\rm BP} - G_{\rm RP}),
 \end{equation}
-where $R_G = 2.0$ is the ratio of total-to-selective extinction adopted for the Gaia $G$ band. This value is consistent with the extinction law of \citet{Cardelli1989} as updated by \citet{ODonnell1994} applied to the Gaia $G$ bandpass, and with the empirical calibration by \citet{WangChen2019} who find $R_G \approx 2.0$ for Gaia DR2 photometry at typical red giant temperatures. Conceptually, since the Gaia DR3 $G$ band is broad, and $R_G$ has mild color dependence, for the range of stellar temperatures relevant to RR Lyrae ($T_{\rm eff} \sim 6000$--7500 K), $R_G \approx 2.0$ is an appropriate approximation.
+where $R_G = 2.0$ is the ratio of total-to-selective extinction adopted for the Gaia $G$ band. This value is consistent with the extinction law of \citet{Cardelli1989} as updated by \citet{ODonnell1994} applied to the Gaia $G$ bandpass, and with the empirical calibration by \citet{WangChen2019} who find $R_G \approx 2.0$ for Gaia DR2 photometry. Their calibration uses red giant stars ($T_{\rm eff} \sim 4000$--5000 K), which are cooler than RR Lyrae ($T_{\rm eff} \sim 6000$--7500 K). Since $R_G$ has mild color dependence across the broad Gaia $G$ band, and the variation over this temperature range is small, $R_G \approx 2.0$ remains an appropriate approximation for RR Lyrae.
 
 %%% ---------------------------------------------------------------
 \section{Data Acquisition}
@@ -779,7 +779,7 @@ The intrinsic scatter $\sigma_{\rm scatter} \approx 0.17$--0.18 mag in $G$ could
 
 Our $W2$ RRab slope ($-2.99 \pm 0.11$) lies $\sim$2.6$\sigma$ from the \citet{KleinBloom2014} value ($a = -2.39 \pm 0.20$), possibly reflecting different sample selections or parallax zero-points. It agrees within $1\sigma$ with the pure PL slope reported by \citet{Dambis2014} ($a = -2.94 \pm 0.15$). The small differences may reflect (i) different metallicity distributions between samples, (ii) different parallax zero-point conventions (Gaia EDR3 vs. HST or other calibrators), or (iii) different reference period choices. For RRc stars, \citet{KleinBloom2014} report $a_{W2,\rm RRc} = -1.70 \pm 0.62$, which is substantially shallower than our value of $-3.25 \pm 0.16$. The large uncertainty on the \citet{KleinBloom2014} RRc slope ($\pm 0.62$) reflects their much smaller sample size. Compared to \citet{KleinBloom2014}, our RRc slope deviates at the $\sim$2.5$\sigma$ level.
 
-Our $G$-band slopes are somewhat steeper than optical $V$-band literature values (typically $a_V \approx -1.4$ to $-1.8$; \citealt{Beaton2018}), as expected since $G$ is redder than $V$ and should have a steeper period-luminosity slope. \citet{Beaton2018} present $V$-band RR Lyrae period-luminosity relations from the extragalactic Carnegie--Chicago Hubble Program with slopes in the range $a_V \approx -1.4$ to $-1.8$ and intrinsic scatter of $\sim$0.14--0.20 mag, which they use to calibrate the extragalactic distance scale. The $G$-band is broader and extends redward of $V$, so the Gaia $G$-band PL slope is expected to be steeper, as we observe ($a_G \approx -2.2$ vs. $a_V \approx -1.5$). The larger intrinsic scatter we find in $G$ ($\sigma_{\rm scatter} \approx 0.17$ mag) compared to their $V$-band values is also consistent with the increased sensitivity of optical bands to metallicity spread.
+Our $G$-band slopes are somewhat steeper than optical $V$-band literature values (typically $a_V \approx -1.4$ to $-1.8$; \citealt{Beaton2018}), as expected since $G$ is redder than $V$ and should have a steeper period-luminosity slope. \citet{Beaton2018} review $V$-band RR Lyrae period-luminosity relations compiled from old-aged primary distance indicators, reporting slopes in the range $a_V \approx -1.4$ to $-1.8$ and intrinsic scatter of $\sim$0.14--0.20 mag. The $G$-band is broader and extends redward of $V$, so the Gaia $G$-band PL slope is expected to be steeper, as we observe ($a_G \approx -2.2$ vs. $a_V \approx -1.5$). The larger intrinsic scatter we find in $G$ ($\sigma_{\rm scatter} \approx 0.17$ mag) compared to their $V$-band values is also consistent with the increased sensitivity of optical bands to metallicity spread.
 
 Literature values are listed in Table~\ref{tab:pl_summary} for direct numerical comparison but are \textit{not} overlaid on the posterior predictive check figures (Figures~\ref{fig:optical_ir_comparison} and \ref{fig:period_color}). Those figures display our model evaluated over our own calibration sample; overlaying a literature relation calibrated on a different dataset, with different parallax zero-points, and metallicity distributions, would conflate the intrinsic scatter of our data with the systematic offset between datasets and produce a misleading visual comparison.
 
