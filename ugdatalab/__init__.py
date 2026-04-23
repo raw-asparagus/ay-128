@@ -34,3 +34,13 @@ from ugdatalab.methods.cross_validate import (
     k_fold_validate,
 )
 from ugdatalab.models.gaia.lightcurves import DEFAULT_PERIOD_MIN, DEFAULT_PERIOD_MAX
+
+try:
+    from ugdatalab.models.galaxy_zoo import (
+        GalaxyZooData,
+        GalaxyZooSplit,
+        GalaxyZooImages,
+        GalaxyZooDataset,
+    )
+except ImportError:
+    pass

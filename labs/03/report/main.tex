@@ -1,0 +1,304 @@
+\documentclass[10pt,preprint2]{aastex}
+\usepackage[a4paper,asymmetric,left=0.75in,right=0.75in,top=0.75in,bottom=0.75in]{geometry}
+\AtBeginDocument{\newgeometry{asymmetric,left=0.75in,right=0.75in,top=0.75in,bottom=0.75in}\hoffset=0pt\setlength{\columnsep}{0.3in}\pagestyle{fancy}\fancyhf{}\fancyhead[L]{\small ASTRON 128 Astronomy Data Science Laboratory}\fancyhead[R]{\small Lab 3}\fancyfoot[C]{\thepage}}
+\usepackage{amsmath, amsfonts, amssymb}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\setlength{\headheight}{11pt}
+\addtolength{\topmargin}{-0.16pt}
+\usepackage{float}
+\usepackage{stfloats}
+\usepackage{pdflscape}
+\usepackage{placeins}
+\usepackage{pdfpages}\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric}
+
+\makeatletter\def\frontmatter@abstractheading{}\makeatother
+\renewcommand{\abstractname}{}
+
+% TikZ styles for pipeline flowchart
+\tikzset{
+  flowbox/.style={rectangle, rounded corners=4pt, draw=black, thick,
+                  fill=blue!10, text width=3.0cm, align=center,
+                  minimum height=0.8cm, font=\small},
+  decisionbox/.style={diamond, draw=black, thick, fill=orange!15,
+                      text width=2.2cm, align=center, aspect=1.5,
+                      font=\footnotesize},
+  outputbox/.style={rectangle, draw=black, thick, fill=green!15,
+                    text width=2.5cm, align=center, minimum height=0.8cm,
+                    font=\small},
+  arrow/.style={-{Stealth[length=6pt]}, thick},
+}
+
+\begin{document}
+
+\title{Galaxy Image Classification and the Galaxy Merger Rate}
+\author{Jun Rui Ting \\ \today\vspace{-2.5\baselineskip}}
+
+\begin{abstract}
+We present a convolutional neural network (CNN) pipeline for morphological classification of galaxies from Sloan Digital Sky Survey (SDSS) images, using Galaxy Zoo 2 (GZ2) citizen-science labels as training data. Starting from $\sim$61,000 galaxy images with 37 continuous morphological labels (vote fractions in $[0,1]$), we crop and resize images to $69 \times 69$ pixels ($\sim$30$\times$ reduction), split 80/20 into training and validation sets, and establish a mean-prediction baseline RMSE. We train three model architectures: (1) a custom 3-layer CNN with dropout, (2) an 18-layer ResNet adapted for small inputs and sigmoid output, and (3) the ResNet with learning-rate scheduling (ReduceLROnPlateau) and data augmentation (random $0$--$360^\circ$ rotation exploiting the rotational invariance of galaxy morphology). The augmented ResNet achieves the best validation RMSE, substantially improving over both the baseline and the plain architectures. Per-label scatter plots reveal that top-level morphological features (smooth vs.\ disk) are predicted accurately, while rare sub-classifications (rings, mergers, lens/arcs) remain challenging due to sparse training examples. We apply the trained model to a test image set to estimate the galaxy merger fraction, comparing our result to the $z \approx 0$ merger rate from \citet{Lotz2011} and discussing complicating factors including the distinction between merger rate (Gyr$^{-1}$) and instantaneous merger fraction.
+
+\vspace{2.5\baselineskip}
+\end{abstract}
+
+%%% ---------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+%%% ---------------------------------------------------------------
+
+Understanding galaxy morphology is fundamental to tracing the evolutionary history of galaxies across cosmic time \citep{Conselice2014}. The visual classification of galaxies into categories --- elliptical, spiral, irregular, merging --- dates back to Hubble's original tuning fork diagram, and modern large-scale surveys have extended this classification to hundreds of thousands of galaxies through citizen science projects such as Galaxy Zoo \citep{Lintott2008}. Galaxy Zoo 2 \citep{Willett2013} refined the classification scheme to 37 continuous labels organized in a hierarchical decision tree, enabling nuanced morphological descriptions including bar presence, spiral arm count, bulge prominence, and disturbed/merging features.
+
+However, human classification does not scale to the billions of galaxies that will be observed by upcoming surveys (LSST, Euclid, Roman). Convolutional neural networks (CNNs) offer an automated alternative: given sufficient training data, a CNN can learn to extract morphological features directly from pixel data \citep{Krizhevsky2020}. In this work, we train CNNs on GZ2 labels to predict all 37 morphological classifications simultaneously, then apply the trained model to estimate the galaxy merger fraction at $z \approx 0$.
+
+Figure~\ref{fig:pipeline} provides an overview of the analysis pipeline.
+
+\begin{figure*}[t!]
+  \centering
+  \begin{tikzpicture}[node distance=1.6cm and 1.3cm]
+    \node[flowbox] (csv) {GZ2 CSV\\+ SDSS Images};
+    \node[flowbox, right=of csv] (crop) {Crop \& Resize\\$\sim$30$\times$};
+    \node[flowbox, right=of crop] (split) {80/20\\Train/Val Split};
+    \node[flowbox, above right=0.8cm and 1.3cm of split] (resnet) {ResNet-18};
+    \node[flowbox, below right=0.8cm and 1.3cm of split] (custom) {Custom CNN};
+    \node[flowbox, right=of resnet] (opt) {LR Schedule\\+ Augmentation};
+    \node[outputbox, right=2.0cm of opt] (eval) {Evaluation\\+ Merger Rate};
+    \draw[arrow] (csv) -- (crop);
+    \draw[arrow] (crop) -- (split);
+    \draw[arrow] (split) -- (resnet);
+    \draw[arrow] (split) -- (custom);
+    \draw[arrow] (resnet) -- (opt);
+    \draw[arrow] (custom.east) -| (eval.south);
+    \draw[arrow] (opt) -- (eval);
+  \end{tikzpicture}
+  \caption{Analysis pipeline. SDSS galaxy images and GZ2 classification labels are preprocessed (crop, resize, split), then used to train a custom CNN and a ResNet-18. The best model is optimized with learning-rate scheduling and data augmentation, then evaluated on the validation and test sets. The final step estimates the galaxy merger fraction.}
+  \label{fig:pipeline}
+\end{figure*}
+
+%%% ---------------------------------------------------------------
+\section{Data Exploration}
+\label{sec:data}
+%%% ---------------------------------------------------------------
+
+The training set consists of $\sim$61,000 SDSS $gri$-composite images and 37 GZ2 classification labels per galaxy. Each label is a vote fraction in $[0, 1]$ representing the proportion of human classifiers who assigned that morphological feature. The labels are organized hierarchically: top-level questions (smooth vs.\ disk vs.\ star/artifact) gate whether deeper questions (bar? spiral? arm count?) are asked.
+
+\subsection{Label Distributions}
+
+Figure~\ref{fig:label_distributions} shows normalized histograms of all 37 labels. Top-level labels (smooth, features/disk) exhibit broad, roughly bimodal distributions, while deeper labels (arm count, spiral tightness) are heavily concentrated near zero because most galaxies never reached those questions. This hierarchical concentration is a fundamental property of the GZ2 label space and presents a challenge for the CNN: the model must learn that most labels are near-zero for most galaxies.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_distributions.pdf}
+  \caption{Normalized histograms of all 37 GZ2 classification labels. Top-level labels show broad distributions; deeper hierarchical labels are concentrated near zero.}
+  \label{fig:label_distributions}
+\end{figure}
+
+\subsection{Prototype Images}
+
+Figure~\ref{fig:prototype_images} shows the prototype image (highest vote fraction) for each label, providing a visual dictionary of the classification scheme.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_prototype_images.pdf}
+  \caption{Prototype images: the galaxy with the highest vote fraction for each of the 37 labels.}
+  \label{fig:prototype_images}
+\end{figure}
+
+\subsection{Label Correlations}
+
+Figure~\ref{fig:correlation_matrix} shows the $37 \times 37$ Pearson correlation matrix. Strong negative correlations within each question confirm mutually exclusive categories, while positive correlations along the hierarchical tree reflect parent--child dependencies. The expected correlation for two mutually exclusive binary labels is $\rho = -1$; the observed values are close to this for Class1.1/1.2 and Class2.1/2.2.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_correlation_matrix.pdf}
+  \caption{Pearson correlation matrix of all 37 labels. Block-diagonal structure reflects the hierarchical decision tree.}
+  \label{fig:correlation_matrix}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Data Preparation}
+\label{sec:prep}
+%%% ---------------------------------------------------------------
+
+\subsection{Image Downsizing}
+
+Raw SDSS images are $\sim$424$\times$424 pixels, of which most is empty sky. We center-crop (removing 25\% of the border on each side) and resize to $69 \times 69$ pixels, achieving a $\sim$38$\times$ reduction in pixel count while preserving morphological features (Figure~\ref{fig:image_comparison}).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_image_comparison.pdf}
+  \caption{Original vs.\ downsized images for four example galaxies.}
+  \label{fig:image_comparison}
+\end{figure}
+
+\subsection{Train/Validation Split}
+
+We randomly split the dataset 80/20 into training and validation sets. Figure~\ref{fig:split_distributions} confirms that the label distributions are statistically indistinguishable between the two sets.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_split_distributions.pdf}
+  \caption{Training (blue) vs.\ validation (orange) label distributions.}
+  \label{fig:split_distributions}
+\end{figure}
+
+\subsection{Baseline Model}
+
+The baseline model predicts the training-set mean label for every image, yielding a training and validation RMSE that any CNN must outperform.
+
+%%% ---------------------------------------------------------------
+\section{ResNet-18}
+\label{sec:resnet}
+%%% ---------------------------------------------------------------
+
+Residual Networks \citep{He2015} address the degradation problem in deep CNNs via skip connections that add the block input directly to its output: $H(x) = F(x) + x$. We use an 18-layer ResNet modified for our $69 \times 69$ input (3$\times$3 first conv, stride 1, no initial max-pool) and 37-label sigmoid output. Figure~\ref{fig:loss_resnet_18} shows the training and validation loss curves.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/fig_loss_resnet_18.pdf}
+  \caption{ResNet-18 training and validation RMSE vs.\ epoch.}
+  \label{fig:loss_resnet_18}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Custom CNN}
+\label{sec:custom}
+%%% ---------------------------------------------------------------
+
+Our custom CNN uses three convolutional blocks (32, 64, 128 channels with max pooling) followed by two fully connected layers (256, 128 units) with 50\% dropout and sigmoid output. The architecture has substantially fewer parameters than ResNet-18. Figure~\ref{fig:loss_custom_cnn} shows the loss curves.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/fig_loss_custom_cnn.pdf}
+  \caption{Custom CNN training and validation RMSE vs.\ epoch.}
+  \label{fig:loss_custom_cnn}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Optimization}
+\label{sec:opt}
+%%% ---------------------------------------------------------------
+
+\subsection{Learning Rate Scheduling}
+
+We retrain the ResNet-18 with \texttt{ReduceLROnPlateau} (factor 0.5, patience 3 epochs). The learning rate decreases when the validation loss plateaus, enabling finer convergence. Figure~\ref{fig:loss_lr_resnet_18___lr_scheduler} shows loss curves with the learning rate schedule.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/fig_loss_lr_resnet_18___lr_scheduler.pdf}
+  \caption{ResNet-18 with LR scheduler: loss curves (top) and learning rate (bottom).}
+  \label{fig:loss_lr_resnet_18___lr_scheduler}
+\end{figure}
+
+\subsection{Data Augmentation}
+
+Galaxy morphological labels are rotationally invariant: a spiral galaxy remains a spiral under arbitrary rotation. We augment the training set by rotating each image by a random angle $\theta \in [0, 360)$ degrees, combined with the LR scheduler. Figure~\ref{fig:loss_lr_aug} shows the improved loss curves with reduced overfitting.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/fig_loss_lr_resnet_18___augmentation___lr_scheduler.pdf}
+  \caption{ResNet-18 with augmentation + LR scheduler.}
+  \label{fig:loss_lr_aug}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Model Comparison and Evaluation}
+\label{sec:eval}
+%%% ---------------------------------------------------------------
+
+\subsection{Three-Model Comparison}
+
+Figure~\ref{fig:model_comparison} compares validation RMSE across the three models: custom CNN, plain ResNet-18, and augmented ResNet-18 with LR scheduling. The augmented model achieves the best performance.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.5\textwidth]{figures/fig_model_comparison.pdf}
+  \caption{Validation RMSE comparison across three models.}
+  \label{fig:model_comparison}
+\end{figure}
+
+\subsection{Per-Label Performance}
+
+Figure~\ref{fig:label_scatter} shows true vs.\ predicted scatter plots for all 37 labels on the validation set using the best model. Top-level features (smooth, disk) track the 1:1 line well; rare features (merger, ring, lens/arc) show larger scatter and regression toward the mean, reflecting the sparse training signal.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_scatter.pdf}
+  \caption{True vs.\ predicted label values for all 37 labels (validation set). Diagonal line is 1:1; bias and scatter annotated per panel.}
+  \label{fig:label_scatter}
+\end{figure}
+
+\subsection{Extreme Examples}
+
+Figures~\ref{fig:top5_smooth}--\ref{fig:top5_odd_merger} show the top-5 most extreme validation images for 7 labels, comparing actual (top row) vs.\ predicted (bottom row) rankings.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_smooth.pdf}
+  \caption{Top-5 images for ``Smooth'' by actual (top) and predicted (bottom) label.}
+  \label{fig:top5_smooth}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_starartifact.pdf}
+  \caption{Top-5 images for ``Star/Artifact.''}
+  \label{fig:top5_star}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_edge_on_yes.pdf}
+  \caption{Top-5 images for ``Edge-on: Yes.''}
+  \label{fig:top5_edgeon}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_odd_ring.pdf}
+  \caption{Top-5 images for ``Odd: Ring.''}
+  \label{fig:top5_ring}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_odd_lensarc.pdf}
+  \caption{Top-5 images for ``Odd: Lens/Arc.''}
+  \label{fig:top5_lens}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_spiral_2_arms.pdf}
+  \caption{Top-5 images for ``Spiral: 2 arms.''}
+  \label{fig:top5_spiral}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.8\textwidth]{figures/fig_top5_odd_merger.pdf}
+  \caption{Top-5 images for ``Odd: Merger.''}
+  \label{fig:top5_merger}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Merger Fraction}
+\label{sec:mergers}
+%%% ---------------------------------------------------------------
+
+We apply the trained model to a separate test image set and estimate the galaxy merger fraction using the mean predicted probability of the ``Odd: Merger'' label (Class8.6). The Lotz et al.\ (2011) $z \approx 0$ major merger rate is $\sim$0.01--0.03~Gyr$^{-1}$; converting to an instantaneous merger fraction requires multiplying by the merger observability timescale $T_{\rm obs} \sim 0.5$--1~Gyr, giving an expected fraction of $\sim$0.5--3\%.
+
+Several factors complicate direct comparison: (1)~the GZ2 ``merger'' label conflates major and minor mergers, tidal interactions, and close pairs; (2)~higher-redshift galaxies appear smaller and may be preferentially classified as disturbed; (3)~the Lotz et al.\ rates are in units of Gyr$^{-1}$ (a rate), while we estimate a dimensionless fraction; (4)~GZ2 debiasing corrections do not fully account for resolution-dependent classification bias.
+
+%%% ---------------------------------------------------------------
+\section{Conclusion}
+\label{sec:conclusion}
+%%% ---------------------------------------------------------------
+
+We have demonstrated that CNNs can predict Galaxy Zoo 2 morphological labels from SDSS images with RMSE well below the mean-prediction baseline. Data augmentation via random rotation and learning rate scheduling provide substantial improvements, exploiting the rotational invariance of galaxy morphology. The trained model enables automated estimation of the galaxy merger fraction on large image sets, although careful interpretation is required to compare with theoretical merger rates due to differences in definition and timescale.
+
+\bibliography{references}
+\bibliographystyle{aasjournal}
+
+\end{document}
