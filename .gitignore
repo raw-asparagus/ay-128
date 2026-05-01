@@ -1,4 +1,6 @@
 ugdatalab/data
+labs/*/data
+labs/*/artifacts
 
 # Based on github/gitignore:
 # - TeX.gitignore
