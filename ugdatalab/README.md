@@ -51,9 +51,9 @@ result = lomb_scargle(times, values, errors, period_min=0.2, period_max=1.2)
 from ugdatalab.methods.fourier import fourier_fit, phase_fold
 fit = fourier_fit(x, y, y_err, period=0.567, k=3)
 
-# Cross-validation
-from ugdatalab.methods.cross_validate import holdout_validate
-cv = holdout_validate(x, y, y_err, fit_fn, param_values)
+# Cross-validation (holdout by default; set n_folds=k for k-fold)
+from ugdatalab.methods.cross_validate import cross_validate
+cv = cross_validate(x, y, y_err, fit_fn, param_values)
 
 # Bayesian parameter estimation (PyMC NUTS)
 from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
@@ -75,12 +75,12 @@ from ugdatalab.models.gaia import GaiaData, GaiaSample, LindegrenC1
 
 Generic, reusable analysis routines. 
 
-- **`Fit`** -- ABC for fitted models (`chi2_r`, `predict`)
-- **`Likelihood → GaussianLikelihood → LinearGaussianLikelihood`** -- Bayesian model hierarchy. Likelihoods define the model; engines consume them.
-- **Bayesian engines** -- `nuts_sample` (parameter estimation) and `mixture_contamination` (outlier rejection) take any `Likelihood` and return result dataclasses.
+- **`Fit / DataFit`** -- ABCs for fitted models. `Fit` requires `predict(x)`; `DataFit(Fit)` adds `x, y, y_err` and a derived `chi2_r` property.
+- **`Likelihood → MixtureLikelihood → GaussianLikelihood → LinearGaussianLikelihood`** -- Bayesian model hierarchy. Likelihoods define the model; engines consume them.
+- **Bayesian engines** -- `nuts_sample` (parameter estimation; consumes `Likelihood`) and `mixture_contamination` (outlier rejection; consumes `MixtureLikelihood`).
 - **Signal detection** -- `lomb_scargle` (Lomb-Scargle periodogram).
 - **Fitting** -- `fourier_fit` (weighted least-squares Fourier series).
-- **Model selection** -- `holdout_validate`, `k_fold_validate` (cross-validation over a parameter grid).
+- **Model selection** -- `cross_validate` (holdout when `n_folds=1`, k-fold when `n_folds>1`).
 
 ### Models
 

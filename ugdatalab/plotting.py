@@ -1,3 +1,11 @@
+"""Project-wide matplotlib styling and figure-sizing helpers.
+
+Defines page dimensions, font sizes, line weights, marker sizes, alphas,
+neutral colors, and reusable style dictionaries (``GRID_STYLE``,
+``ERRORBAR_STYLE``, ...). Importing this module also installs the
+``rcParams`` used by every plot in the package.
+"""
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
@@ -74,7 +82,7 @@ GRID_STYLE = dict(lw=LW_FINE, ls=":", alpha=ALPHA_FAINT, color=NEUTRAL_COLOR)
 GUIDE_STYLE = dict(lw=LW_LIGHT, ls="-.", alpha=ALPHA_LIGHT, color=NEUTRAL_COLOR)
 FIT_STYLE = dict(lw=LW_STANDARD, ls="-", alpha=ALPHA_STANDARD)
 MODEL_STYLE = dict(lw=LW_STANDARD, ls="--", alpha=ALPHA_STANDARD)
-ERRORBAR_STYLE = dict(fmt=".", capsize=2, lw=LW_FINE, elinewidth=LW_FINE, markersize=MS_FINE)
+ERRORBAR_STYLE = dict(capsize=2, lw=LW_FINE, elinewidth=LW_FINE, markersize=MS_FINE)
 FILL_STYLE = dict(alpha=ALPHA_EXTRA_LIGHT, lw=LW_NONE)
 SCATTER_STYLE = dict(s=SS_FINE, alpha=ALPHA_STANDARD, lw=LW_NONE)
 
@@ -92,10 +100,6 @@ mpl.rcParams.update(
         "text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{amsmath}\usepackage{amssymb}",
         "axes.unicode_minus": False,
         # Font sizes
-        "axes.labelsize": LABEL_SIZE,
-        "axes.titlesize": EMPHASIS_SIZE,
-        "xtick.labelsize": TICK_SIZE,
-        "ytick.labelsize": TICK_SIZE,
         "legend.fontsize": LEGEND_SIZE,
         # Axes
         "axes.linewidth": LW_LIGHT,
@@ -117,7 +121,6 @@ mpl.rcParams.update(
         # Figure
         "figure.dpi": 300,
         "savefig.bbox": "tight",
-        "savefig.dpi": 300,
     }
 )
 
@@ -127,6 +130,7 @@ mpl.rcParams.update(
 # ---------------------------------------------------------------------------
 
 def _make_figure(width, height_ratio, height, subfigures):
+    """Build a figure of the given width and proportional height."""
     fig = plt.figure(figsize=(width, height / height_ratio * width))
     if subfigures is not None:
         return fig, fig.subfigures(*subfigures)
@@ -136,8 +140,19 @@ def _make_figure(width, height_ratio, height, subfigures):
 def textwidth_figure(height_out_of_16, subfigures=None):
     """Create a figure spanning the full text width.
 
-    Returns (fig, ax) for a single panel, or (fig, subfigs) when
-    subfigures=(nrows, ncols).
+    Parameters
+    ----------
+    height_out_of_16 : float
+        Figure height expressed as units out of 16 of the text width.
+    subfigures : tuple of int, optional
+        ``(nrows, ncols)`` to partition the figure into subfigures.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    ax_or_subfigs : Axes or ndarray of SubFigure
+        A single ``Axes`` if ``subfigures`` is ``None``, otherwise the
+        array of subfigures.
     """
     return _make_figure(TEXTWIDTH_IN, 16, height_out_of_16, subfigures)
 
@@ -145,8 +160,19 @@ def textwidth_figure(height_out_of_16, subfigures=None):
 def columnwidth_figure(height_out_of_7_5, subfigures=None):
     """Create a figure spanning a single column width.
 
-    Returns (fig, ax) for a single panel, or (fig, subfigs) when
-    subfigures=(nrows, ncols).
+    Parameters
+    ----------
+    height_out_of_7_5 : float
+        Figure height expressed as units out of 7.5 of the column width.
+    subfigures : tuple of int, optional
+        ``(nrows, ncols)`` to partition the figure into subfigures.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    ax_or_subfigs : Axes or ndarray of SubFigure
+        A single ``Axes`` if ``subfigures`` is ``None``, otherwise the
+        array of subfigures.
     """
     return _make_figure(COLUMNWIDTH_IN, 7.5, height_out_of_7_5, subfigures)
 
@@ -154,14 +180,30 @@ def columnwidth_figure(height_out_of_7_5, subfigures=None):
 def landscapewidth_figure(height_out_of_10, subfigures=None):
     """Create a figure spanning the A4 usable height (landscape width).
 
-    Returns (fig, ax) for a single panel, or (fig, subfigs) when
-    subfigures=(nrows, ncols).
+    Parameters
+    ----------
+    height_out_of_10 : float
+        Figure height expressed as units out of 10 of the landscape width.
+    subfigures : tuple of int, optional
+        ``(nrows, ncols)`` to partition the figure into subfigures.
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    ax_or_subfigs : Axes or ndarray of SubFigure
+        A single ``Axes`` if ``subfigures`` is ``None``, otherwise the
+        array of subfigures.
     """
     return _make_figure(A4_USABLE_HEIGHT_IN, 10, height_out_of_10, subfigures)
 
 
 def corner_figure():
-    """Create a square figure at 0.7x text width for corner plots."""
+    """Create a square figure sized at 0.7x the text width.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
     side = 0.7 * TEXTWIDTH_IN
     return plt.figure(figsize=(side, side))
 
@@ -177,22 +219,31 @@ def subpanels(
     sharex: bool = True,
     sharey: bool = False,
 ):
-    """Create axes inside a parent figure or subfigure.
+    """Create a grid of axes inside a parent figure or subfigure.
 
-    Examples::
+    Parameters
+    ----------
+    parent : Figure or SubFigure
+        The container in which to lay out the axes.
+    nrows : int
+        Number of rows of axes.
+    ncols : int, optional
+        Number of columns of axes.
+    height_ratios, width_ratios : sequence of int, optional
+        Relative sizes of rows and columns.
+    hspace, wspace : float, optional
+        Spacing between axes in fractions of axis height/width.
+    sharex, sharey : bool, optional
+        Whether axes share x- or y-limits.
 
-        # Simple stacked panels
-        fig = plt.figure(figsize=(7, 5))
-        axes = subpanels(fig, 2, height_ratios=(3, 1))
-        axes[0].plot(...)   # data
-        axes[1].plot(...)   # residual
+    Returns
+    -------
+    Axes or ndarray of Axes
 
-        # 2x2 grid, each cell with data + residual
-        fig = plt.figure(figsize=(10, 8))
-        for sf in fig.subfigures(2, 2).flat:
-            axes = subpanels(sf, 2, height_ratios=(3, 1))
-            axes[0].plot(...)   # data
-            axes[1].plot(...)   # residual
+    Examples
+    --------
+    >>> fig = plt.figure(figsize=(7, 5))
+    >>> axes = subpanels(fig, 2, height_ratios=(3, 1))
     """
     gridspec_kw = {"hspace": hspace, "wspace": wspace}
     if height_ratios is not None:
@@ -209,10 +260,24 @@ def subpanels(
 
 
 def zero_line(ax) -> None:
-    """Draw a horizontal reference line at y=0."""
+    """Draw a horizontal reference line at ``y = 0``.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    """
     ax.axhline(0.0, **GUIDE_STYLE)
 
 
 def unity_line(ax, label: str | None = None) -> None:
-    """Draw a horizontal reference line at y=1."""
+    """Draw a horizontal reference line at ``y = 1``.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    label : str, optional
+        Legend label for the line.
+    """
     ax.axhline(1.0, **GUIDE_STYLE, label=label)

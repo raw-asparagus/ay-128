@@ -7,10 +7,9 @@ from matplotlib.colors import LogNorm
 from matplotlib.lines import Line2D
 import numpy as np
 
-from ugdatalab.methods.fourier import FourierFit, fourier_fit, phase_fold
-from ugdatalab.methods.cross_validate import HoldoutResult, holdout_validate
+from ugdatalab.methods.fourier import fourier_fit, phase_fold
+from ugdatalab.methods.cross_validate import cross_validate
 from ugdatalab.plotters.bayesian import predict_posterior
-from ugdatalab.methods.periodogram import PeriodogramResult
 from ugdatalab.models.gaia import Deoutlier, GaiaData
 from ugdatalab.plotting import (
     TEXTWIDTH_IN,
@@ -23,7 +22,6 @@ from ugdatalab.plotting import (
     MS_FINE,
     MS_STANDARD,
     MS_MEDIUM,
-    MS_LARGE,
     SS_MICRO,
     SS_FINE,
     SS_STANDARD,
@@ -32,20 +30,24 @@ from ugdatalab.plotting import (
     ALPHA_LIGHT,
     ALPHA_STANDARD,
     NEUTRAL_COLOR,
+    ERRORBAR_STYLE,
+    GRID_STYLE,
     GUIDE_STYLE,
     FILL_STYLE,
     FIT_STYLE,
+    MODEL_STYLE,
+    LABEL_SIZE,
+    LEGEND_SIZE,
     textwidth_figure,
     columnwidth_figure,
     subpanels,
-    zero_line, MODEL_STYLE,
+    zero_line,
     corner_figure,
     landscapewidth_figure,
 )
 
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 _CLASS_COLORS = {"RRab": "C0", "RRc": "C1", "RRd": "C2"}
-_ERRBAR_KW = dict(fmt="none", elinewidth=LW_FINE, alpha=ALPHA_FAINT, zorder=1)
 
 
 def savefig(fig, name):
@@ -72,7 +74,7 @@ def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
     ax.remove()
     axes = subpanels(fig, 2, hspace=0.42, sharex=False, sharey=True)
 
-    axes[0].errorbar(epoch, mag, yerr=mag_err, ecolor="C0", **_ERRBAR_KW)
+    axes[0].errorbar(epoch, mag, yerr=mag_err, ecolor="C0", fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
     axes[0].scatter(epoch, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C0",
                     zorder=2, rasterized=True, label="Raw light curve")
     axes[0].invert_yaxis()
@@ -80,7 +82,7 @@ def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
     axes[0].set_ylabel(r"$G$ [mag]")
     axes[0].legend(loc="best")
 
-    axes[1].errorbar(phase, mag, yerr=mag_err, ecolor="C1", **_ERRBAR_KW)
+    axes[1].errorbar(phase, mag, yerr=mag_err, ecolor="C1", fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
     axes[1].scatter(phase, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C1",
                     zorder=2, rasterized=True, label="Phase-folded light curve")
     axes[1].invert_yaxis()
@@ -251,7 +253,7 @@ def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
         ax_c.invert_yaxis()
         ax_c.set_ylabel(r"$G$ [mag]")
         ax_c.set_title(rf"$K={K}$, $\chi_r^2={fit.chi2_r:.2f}$",
-                       loc="left", fontsize="small")
+                       loc="left", fontsize=LEGEND_SIZE)
         ax_c.tick_params(axis="x", bottom=False, labelbottom=False)
 
         ax_r.errorbar(phase, residuals, yerr=mag_err, fmt="o", ms=MS_MICRO,
@@ -298,7 +300,7 @@ def plot_fourier_cross_validation(result):
     ax.set_xlabel(r"$K$ (number of Fourier harmonics)")
     ax.set_ylabel(r"$\chi_r^2$")
     ax.set_title(rf"20\% CV, train={len(result.train_idx)}, CV={len(result.cv_idx)}",
-                 loc="left", fontsize="small")
+                 loc="left", fontsize=LEGEND_SIZE)
     ax.legend()
 
     savefig(fig, "fig_crossval.pdf")
@@ -345,7 +347,7 @@ def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, bes
         ax.plot(x_gauss, gaussian, color=NEUTRAL_COLOR, ls="--", lw=LW_STANDARD,
                 alpha=ALPHA_STANDARD, label=r"$\mathcal{N}(0,1)$", zorder=3)
         ax.axvline(0.0, color=NEUTRAL_COLOR, ls=":", lw=LW_STANDARD)
-        ax.set_title(label, loc="left", fontsize="small")
+        ax.set_title(label, loc="left", fontsize=LEGEND_SIZE)
         ax.set_xlabel(r"$(G - G_{\rm model})/\sigma$")
 
     axes[0].set_ylabel("Density")
@@ -389,16 +391,16 @@ def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_
         ax.scatter(cv_phase, mags[cv], s=SS_MICRO, alpha=ALPHA_FAINT,
                    color="C1", rasterized=True, label="CV")
         ax.errorbar(train_phase, mags[train], yerr=errs[train],
-                    ecolor="C0", **_ERRBAR_KW)
+                    ecolor="C0", fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
         ax.errorbar(cv_phase, mags[cv], yerr=errs[cv],
-                    ecolor="C1", **_ERRBAR_KW)
+                    ecolor="C1", fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
         ax.plot(phase_grid, fit.predict(epoch_grid), color=NEUTRAL_COLOR,
                 lw=LW_STANDARD, alpha=ALPHA_STANDARD, label="Model")
         ax.set_ylim(y_lim)
         ax.invert_yaxis()
         ax.set_xlabel("Phase")
         tag = "Best" if K == best_fit.k else "High"
-        ax.set_title(rf"{tag} $K = {K}$", loc="left", fontsize="small")
+        ax.set_title(rf"{tag} $K = {K}$", loc="left", fontsize=LEGEND_SIZE)
 
     axes[0].set_ylabel(r"$G$ [mag]")
     axes[1].set_ylabel(r"$G$ [mag]")
@@ -458,20 +460,20 @@ def plot_mean_g_catalog_comparison(rrlyrae):
 
     for ax_m, ax_r, y, y_err, resid, r_err, valid, color, ylabel in panels:
         ax_m.errorbar(int_g[valid], y[valid], yerr=y_err[valid], ms=MS_FINE,
-                      ecolor=color, **_ERRBAR_KW)
+                      ecolor=color, fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
         ax_m.scatter(int_g[valid], y[valid], s=SS_FINE, alpha=ALPHA_STANDARD,
                      color=color, rasterized=True)
         ax_m.plot([mag_lo, mag_hi], [mag_lo, mag_hi], **GUIDE_STYLE)
         ax_m.set_xlim(mag_hi, mag_lo)
         ax_m.set_ylim(mag_hi, mag_lo)
         ax_m.set_ylabel(ylabel)
-        plt.setp(ax_m.get_xticklabels(), visible=False)
+        ax_m.tick_params(labelbottom=False)
 
         ax_r.errorbar(int_g[valid], resid[valid], yerr=r_err[valid], ms=MS_FINE,
-                      ecolor=color, **_ERRBAR_KW)
+                      ecolor=color, fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
         ax_r.scatter(int_g[valid], resid[valid], s=SS_FINE, alpha=ALPHA_STANDARD,
                      color=color, rasterized=True)
-        ax_r.axhline(0.0, **GUIDE_STYLE)
+        zero_line(ax_r)
         ax_r.set_xlim(mag_hi, mag_lo)
         ax_r.set_ylim(-resid_max, resid_max)
         ax_r.set_xlabel(r"Gaia $\mathtt{int\_average\_g}$ [mag]")
@@ -549,7 +551,7 @@ def _prepare_shape_panels(rrlyrae, rr_class):
         star = lc[lc["source_id"] == sid]
 
         cv_period = star["period_ls"][0]
-        cv = holdout_validate(
+        cv = cross_validate(
             star["g_transit_time"], star["g_transit_mag"], star["g_transit_mag_err"],
             lambda x, y, ye, k, p=cv_period: fourier_fit(x, y, ye, p, k),
             np.arange(1, 26),
@@ -640,7 +642,7 @@ def plot_rrlyrae_shape_comparison(rrab, rrc):
                 rf"$P={p['period']:.4f}\,\mathrm{{d}}$, $K={p['best_K']}$, "
                 rf"$\chi_r^2={p['chi2_r']:.2f}$, "
                 rf"$\langle G \rangle_{{\rm Fourier}}={p['mean_g']:.2f}$",
-                loc="left", fontsize="small")
+                loc="left", fontsize=LEGEND_SIZE)
             ax_c.tick_params(axis="x", bottom=False, labelbottom=False)
 
             ax_r.errorbar(p["phase"], p["residuals"], yerr=p["mag_err"],
@@ -825,7 +827,7 @@ def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deout
                cmap="RdYlGn", vmin=0.0, vmax=1.0, marker="x", s=SS_STANDARD,
                linewidths=LW_LIGHT, alpha=ALPHA_FAINT, rasterized=True, zorder=1,
                label=rf"Removed ($N={removed.sum()}$)")
-    plt.colorbar(sc, ax=ax, label="Posterior inlier probability")
+    fig.colorbar(sc, ax=ax, label="Posterior inlier probability")
 
     ax.set_xscale("log")
     ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
@@ -927,8 +929,7 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
             (optical, "C0", "Gaia $G$"),
             (w2, "C1", r"WISE $W\!2$"),
         ]:
-            likelihood = result._likelihood
-            x_c, y, y_err = likelihood.x, likelihood.y, likelihood.y_err
+            x_c, y, y_err = result.x, result.y, result.y_err
             pp = predict_posterior(result)
 
             periods = 10.0 ** (x_c + mean_lp)
@@ -991,8 +992,7 @@ def plot_period_color_comparison(rrab_result, rrc_result,
         (rrab_result, rrab_mean_log_p, "C0", "RRab"),
         (rrc_result, rrc_mean_log_p, "C1", "RRc"),
     ]:
-        likelihood = result._likelihood
-        x_c, y, y_err = likelihood.x, likelihood.y, likelihood.y_err
+        x_c, y, y_err = result.x, result.y, result.y_err
         pp = predict_posterior(result)
 
         periods = 10.0 ** (x_c + mean_lp)
@@ -1112,7 +1112,7 @@ def plot_aitoff_reddening(l_deg, b_deg, values):
         sc, ax=ax, orientation="vertical", shrink=0.6,
         label=r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]",
     )
-    ax.grid(True, lw=LW_FINE, alpha=ALPHA_FAINT)
+    ax.grid(True, **GRID_STYLE)
     ax.set_xlabel(r"Galactic longitude $l$")
     ax.set_ylabel(r"Galactic latitude $b$")
 
@@ -1145,7 +1145,7 @@ def plot_aitoff_sfd(l_deg, b_deg, sfd_ebv):
         sc, ax=ax, orientation="vertical", shrink=0.6,
         label=r"SFD $E(B-V)$ [mag]",
     )
-    ax.grid(True, lw=LW_FINE, alpha=ALPHA_FAINT)
+    ax.grid(True, **GRID_STYLE)
     ax.set_xlabel(r"Galactic longitude $l$")
     ax.set_ylabel(r"Galactic latitude $b$")
 

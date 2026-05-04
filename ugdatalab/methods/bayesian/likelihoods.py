@@ -1,3 +1,5 @@
+"""Concrete Bayesian likelihood implementations (linear, etc.)."""
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -7,17 +9,33 @@ import pytensor.tensor as pt
 from ugdatalab.methods.bayesian.base import GaussianLikelihood
 
 
+# Prior-scale multipliers (data-driven weakly informative widths).
+# 2.5σ Normal covers ~99% of the data range under the slope/intercept.
+_PRIOR_SCALE_SLOPE_INTERCEPT = 2.5
+# log10(σ_s) prior width of 2.0 lets intrinsic scatter span ~2 decades.
+_PRIOR_LOG10_SIG_WIDTH = 2.0
+# Numerical floor to avoid log(0) when residuals are perfectly fit.
+_LOG_FLOOR = 1e-300
+
+
 @dataclass
 class LinearGaussianLikelihood(GaussianLikelihood):
     """Linear model with Gaussian noise and intrinsic scatter.
 
-    Model: y = a*x + b
-    Noise: V_i = sigma_yi^2 + sigma_s^2 + (a * sigma_xi)^2
+    Model::
 
-    Parameters: a (slope), b (intercept), log10(sigma_s) (intrinsic scatter).
+        y = a * x + b
+        V_i = sigma_yi**2 + sigma_s**2 + (a * sigma_xi)**2
 
-    The log-likelihood is:
-        log L = -0.5 * sum_i [ log(2*pi*V_i) + (y_i - a*x_i - b)^2 / V_i ]
+    Posterior parameters exposed in ``MCMCResult.samples`` / ``theta``:
+    ``a`` (slope), ``b`` (intercept), ``sigma_s`` (intrinsic scatter).
+
+    Attributes
+    ----------
+    x, y, y_err : ndarray
+        Independent variable, dependent variable, and uncertainties.
+    x_err : ndarray, optional
+        Uncertainties on ``x``; defaults to zeros.
     """
     x: np.ndarray
     y: np.ndarray
@@ -32,35 +50,44 @@ class LinearGaussianLikelihood(GaussianLikelihood):
 
     @property
     def param_labels(self) -> list[str]:
-        return [r"$a$", r"$b$", r"$\log_{10}\,\sigma_s$"]
+        """Return LaTeX labels for slope, intercept, intrinsic scatter."""
+        return [r"$a$", r"$b$", r"$\sigma_s$"]
 
-    def _predict(self, x, theta):
+    @property
+    def physical_param_names(self) -> list[str]:
+        """Return physical parameter names to extract from the trace."""
+        return ["a", "b", "sigma_s"]
+
+    def predict(self, x, theta):
+        """Return ``a * x + b`` for ``theta = (a, b, ...)``."""
         a, b, *_ = theta
         return a * np.asarray(x, dtype=float) + b
 
-    def _inlier_variance(self, theta):
-        a, _, log10_sig = theta
-        return self.y_err**2 + (10.0**log10_sig)**2 + (a * self.x_err)**2
+    def total_variance(self, theta):
+        """Return ``y_err**2 + sigma_s**2 + (a * x_err)**2``."""
+        a, _, sigma_s = theta
+        return self.y_err**2 + sigma_s**2 + (a * self.x_err)**2
 
     def _initial_guess(self):
+        """Return an OLS-based starting point ``(a, b, log10(std(resid)))``."""
         A = np.column_stack([self.x, np.ones_like(self.x)])
         a0, b0 = np.linalg.lstsq(A, self.y, rcond=None)[0]
         resid = self.y - (a0 * self.x + b0)
-        sig_resid = max(np.std(resid), 1e-300)
+        sig_resid = max(np.std(resid), _LOG_FLOOR)
         return np.array([a0, b0, np.log10(sig_resid)])
 
     def _prior_scales(self):
-        """Data-driven weakly informative prior widths.
-
-        The log10(sigma_s) width of 2.0 allows the intrinsic scatter to
-        span approximately two orders of magnitude.
-        """
+        """Return data-driven weakly informative prior widths for ``(a, b, log10_sig)``."""
         sy = float(np.std(self.y))
         sx = float(np.std(self.x))
-        return np.array([2.5 * sy / sx, 2.5 * sy, 2.0])
+        return np.array([
+            _PRIOR_SCALE_SLOPE_INTERCEPT * sy / sx,
+            _PRIOR_SCALE_SLOPE_INTERCEPT * sy,
+            _PRIOR_LOG10_SIG_WIDTH,
+        ])
 
     def _pymc_inlier_model(self, model):
-        """Add linear inlier priors and return (mu_in, var_in)."""
+        """Add linear inlier priors to *model* and return ``(mu_in, var_in)``."""
         x = pt.as_tensor_variable(self.x)
         y_err = pt.as_tensor_variable(self.y_err)
         guess = self._initial_guess()
@@ -69,16 +96,17 @@ class LinearGaussianLikelihood(GaussianLikelihood):
         a = pm.Normal("a", mu=guess[0], sigma=scales[0])
         b = pm.Normal("b", mu=guess[1], sigma=scales[1])
         log10_sig = pm.Normal("log10_sig", mu=guess[2], sigma=scales[2])
+        # Publish the physical scatter so MCMCResult.samples is in σ-space,
+        # not log10(σ)-space. ``log10_sig`` remains the sampled internal RV;
+        # users never see it.
+        sigma_s = pm.Deterministic("sigma_s", 10.0**log10_sig)
         mu_in = a * x + b
         x_err = pt.as_tensor_variable(self.x_err)
-        var_in = y_err**2 + (10.0**log10_sig)**2 + (a * x_err)**2
+        var_in = y_err**2 + sigma_s**2 + (a * x_err)**2
         return mu_in, var_in
 
     def build_pymc(self):
-        """Build a native PyMC model for NUTS sampling.
-
-        Model: y ~ N(a*x + b, sigma_obs^2 + sigma_s^2)
-        """
+        """Return a PyMC model with ``y ~ N(a*x + b, sqrt(var_in))``."""
         with pm.Model() as model:
             mu_in, var_in = self._pymc_inlier_model(model)
             pm.Normal("obs", mu=mu_in, sigma=pt.sqrt(var_in), observed=self.y)

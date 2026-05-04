@@ -1,37 +1,79 @@
-"""Galaxy Zoo 2 classification data loading and train/validation splitting."""
+"""Galaxy Zoo 2 classification labels, image preprocessing, and PyTorch Dataset."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
+from PIL import Image
+from torch.utils.data import Dataset
+from tqdm.auto import tqdm
 
 from ugdatalab.models.galaxy_zoo.constants import (
     LABEL_COLUMNS,
     _GALAXY_ZOO_SCHEMA,
 )
+from ugdatalab.utils.tables import _sanitize_dataframe
 
 
-def _sanitize_dataframe(data: pd.DataFrame, schema: dict) -> None:
-    """Cast DataFrame columns to specified dtypes.
+# uint8 max — denominator for normalizing 8-bit images to [0, 1].
+_UINT8_MAX = 255.0
 
-    Parameters
-    ----------
-    data : pd.DataFrame
-        DataFrame to modify in place.
-    schema : dict
-        Mapping ``{dtype: [column_names]}`` — same format as
-        ``_sanitize_table`` but for pandas DataFrames.
-    """
-    for dtype, cols in schema.items():
-        for col in cols:
-            if col in data.columns:
-                data[col] = data[col].astype(dtype)
+
+# ---------------------------------------------------------------------------
+# Image preprocessing helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_image(path: Path) -> np.ndarray:
+    """Read a JPEG image and return it as a float32 (H, W, 3) array in [0, 1]."""
+    img = Image.open(path).convert("RGB")
+    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+
+
+def _crop_center(image: np.ndarray, crop_fraction: float) -> np.ndarray:
+    """Center-crop an (H, W, 3) image by removing ``crop_fraction`` of each side."""
+    h, w = image.shape[:2]
+    dy = int(h * crop_fraction)
+    dx = int(w * crop_fraction)
+    return image[dy:h - dy, dx:w - dx]
+
+
+def _resize(image: np.ndarray, target_size: int) -> np.ndarray:
+    """Lanczos-resize an (H, W, 3) float32 image to ``(target_size, target_size, 3)``."""
+    img = Image.fromarray((image * _UINT8_MAX).astype(np.uint8))
+    img = img.resize((target_size, target_size), Image.LANCZOS)
+    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+
+
+def _preprocess_images(
+    image_dir: Path,
+    galaxy_ids: np.ndarray,
+    crop_fraction: float,
+    target_size: int,
+) -> np.ndarray:
+    """Batch-load, center-crop, and resize JPEG images for the given galaxy IDs into an (N, target_size, target_size, 3) array."""
+    n = len(galaxy_ids)
+    images = np.empty((n, target_size, target_size, 3), dtype=np.float32)
+    for i, gid in enumerate(tqdm(galaxy_ids, desc="Loading images")):
+        path = image_dir / f"{gid}.jpg"
+        img = _load_image(path)
+        img = _crop_center(img, crop_fraction)
+        img = _resize(img, target_size)
+        images[i] = img
+    return images
+
+
+# ---------------------------------------------------------------------------
+# Public classes
+# ---------------------------------------------------------------------------
 
 
 @dataclass
 class GalaxyZooData:
-    """Loads Galaxy Zoo 2 classification labels from CSV.
+    """Load Galaxy Zoo 2 classification labels from CSV.
 
     Parameters
     ----------
@@ -56,51 +98,85 @@ class GalaxyZooData:
         """Galaxy ID column as integer array."""
         return self.data["GalaxyID"].to_numpy()
 
-    @property
-    def n_galaxies(self) -> int:
+    def __len__(self) -> int:
         """Number of galaxies in the dataset."""
         return len(self.data)
 
 
-class GalaxyZooSplit:
-    """Random train/validation split of a GalaxyZooData source.
+@dataclass
+class GalaxyZooImages:
+    """Preprocessed in-memory Galaxy Zoo image array.
+
+    Loads all images from disk, center-crops, and resizes them to a
+    uniform square size.
 
     Parameters
     ----------
     source : GalaxyZooData
-        Full dataset to split.
-    seed : int
-        Random seed for reproducibility.
-    train_fraction : float
-        Fraction of data to use for training (e.g. 0.8).
+        Data source providing galaxy IDs.
+    image_dir : Path
+        Directory containing JPEG images named by GalaxyID.
+    crop_fraction : float
+        Fraction of each border to remove before resizing (0.25 keeps
+        the central 50% of the image).
+    target_size : int
+        Output image dimension (``target_size`` × ``target_size`` pixels).
     """
-    def __init__(self, source: GalaxyZooData, seed: int, train_fraction: float):
-        self.csv_path = source.csv_path
-        n = source.n_galaxies
-        rng = np.random.default_rng(seed)
-        idx = rng.permutation(n)
-        n_train = int(train_fraction * n)
-        self.train_idx = np.sort(idx[:n_train])
-        self.val_idx = np.sort(idx[n_train:])
-        self.train_data = source.data.iloc[self.train_idx].reset_index(drop=True)
-        self.val_data = source.data.iloc[self.val_idx].reset_index(drop=True)
+    source: GalaxyZooData
+    image_dir: Path
+    crop_fraction: float
+    target_size: int
 
-    @property
-    def train_labels(self) -> np.ndarray:
-        """Training labels, shape (N_train, 37)."""
-        return self.train_data[LABEL_COLUMNS].to_numpy(dtype=np.float32)
+    images: np.ndarray = field(init=False, repr=False)
 
-    @property
-    def val_labels(self) -> np.ndarray:
-        """Validation labels, shape (N_val, 37)."""
-        return self.val_data[LABEL_COLUMNS].to_numpy(dtype=np.float32)
+    def __post_init__(self):
+        self.image_dir = Path(self.image_dir)
+        self.images = _preprocess_images(
+            self.image_dir,
+            self.source.galaxy_ids,
+            self.crop_fraction,
+            self.target_size,
+        )
 
-    @property
-    def train_galaxy_ids(self) -> np.ndarray:
-        """Training galaxy IDs."""
-        return self.train_data["GalaxyID"].to_numpy()
 
-    @property
-    def val_galaxy_ids(self) -> np.ndarray:
-        """Validation galaxy IDs."""
-        return self.val_data["GalaxyID"].to_numpy()
+class GalaxyZooDataset(Dataset):
+    """PyTorch Dataset for Galaxy Zoo images and labels.
+
+    Parameters
+    ----------
+    images : ndarray, shape (N, H, W, 3)
+        Preprocessed images in [0, 1], float32.
+    labels : ndarray, shape (N, 37)
+        Classification labels in [0, 1].
+    transform : callable
+        Transform applied to each image (numpy HWC array) before
+        conversion to tensor. Required: cached images are typically
+        larger than the model input, so callers must compose at minimum
+        a ``CenterCrop`` to the model's input size. Pass ``Compose([])``
+        for a true no-op.
+    """
+    def __init__(
+        self,
+        images: np.ndarray,
+        labels: np.ndarray,
+        transform: Callable,
+    ):
+        self.images = images
+        self.labels = labels.astype(np.float32)
+        self.transform = transform
+
+    def __getitem__(self, index: int) -> tuple:
+        image = self.images[index]  # (H, W, 3)
+        label = self.labels[index]  # (37,)
+
+        image = self.transform(image)
+
+        # HWC → CHW for PyTorch convention
+        image_tensor = torch.from_numpy(
+            np.ascontiguousarray(image.transpose(2, 0, 1)),
+        )
+        label_tensor = torch.from_numpy(label)
+        return image_tensor, label_tensor
+
+    def __len__(self) -> int:
+        return len(self.images)

@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.8,<0.20"]
+build-backend = "uv_build"
 
 [project]
 name = "ugdatalab"
@@ -9,16 +9,23 @@ dependencies = [
     "astropy",
     "astroquery",
     "corner",
-    "emcee",
     "joblib",
     "matplotlib",
     "numpy",
+    "pandas",
+    "pillow",
     "pymc",
+    "requests",
+    "scipy",
+    "torch",
+    "torchvision",
+    "tqdm",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
-dust = ["dustmaps"]
+labs = ["arviz", "dustmaps", "scikit-learn"]
 
-[tool.setuptools.packages.find]
-include = ["ugdatalab*"]
+[tool.uv.build-backend]
+module-name = "ugdatalab"
+module-root = ""

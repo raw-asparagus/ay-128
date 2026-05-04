@@ -1,10 +1,12 @@
-from importlib import resources
+"""Gaia / WISE schemas, default period bounds, datalink URL, and zero points."""
 
 from astropy.io import ascii
 import numpy as np
 
-DEFAULT_PERIOD_MIN = 0.2
-DEFAULT_PERIOD_MAX = 1.2
+from ugdatalab.data._fetch import gaia_zeropoints_dir
+
+RRLYRAE_PERIOD_MIN = 0.2
+RRLYRAE_PERIOD_MAX = 1.2
 
 _GAIA_DATALINK_URL = "https://gea.esac.esa.int/data-server/data"
 
@@ -28,11 +30,12 @@ _EPOCH_SCHEMA = {
 
 _WISE_SCHEMA = {
     np.int64: ["source_id"],
-    str: ["best_classification"],
+    str: ["best_classification", "ph_qual", "cc_flags"],
     float: [
         "l", "b", "pf", "pf_error", "p1_o", "p1_o_error",
         "parallax", "parallax_error",
         "phot_g_mean_mag", "bp_rp", "w2mpro", "w2mpro_error",
+        "allwise_oid", "number_of_mates", "number_of_neighbours", "ext_flag",
     ],
 }
 
@@ -40,7 +43,7 @@ _WISE_SCHEMA = {
 # Gaia zero-point constants
 # ---------------------------------------------------------------------------
 
-_ZP_DIR = resources.files("ugdatalab.data") / "GaiaEDR3_passbands_zeropoints_version2"
+_ZP_DIR = gaia_zeropoints_dir()
 _ZEROPT = ascii.read(str(_ZP_DIR / "zeropt.dat"), readme=str(_ZP_DIR / "ReadMe"))
 _ZEROPT_VEGAMAG = _ZEROPT[_ZEROPT["System"] == "VEGAMAG"]
 

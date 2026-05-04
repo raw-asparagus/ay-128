@@ -672,7 +672,7 @@ To ensure a clean reddening map, we applied the following quality cuts to the fu
   \item $\texttt{phot\_rp\_mean\_flux\_over\_error} > 5$ (good RP photometry): removes 1,515 stars (0.6\%)
   \item BP/RP photometric excess within the magnitude-dependent envelope (similar to C2 cut): removes 55,304 stars (20.5\%), primarily heavily blended sources concentrated toward the Galactic plane with bad photometric solutions
   \item Uncertainty on color excess $\sigma_E \leq 0.15$ mag: removes 8,000 stars (3.0\%)
-  \item $0 \leq E(G_{\rm BP}-G_{\rm RP}) \leq 10$ mag (exclude unphysical negative reddening): removes 38,571 stars (14.3\%), primarily low-latitude stars with negative empirical reddening. The upper bound sanity cap of 10 mag affects no stars passing the preceding quality cuts
+  \item $E(G_{\rm BP}-G_{\rm RP}) \geq 0$ mag (exclude unphysical negative reddening): removes 38,571 stars (14.3\%), primarily low-latitude stars with negative empirical reddening
 \end{enumerate}
 
 After these cuts, 131,213 stars (48.6\% of the initial catalog) remained for the sky map. The removed stars are not random but concentrated toward the Galactic plane and other crowded or high-extinction regions.

@@ -1,3 +1,5 @@
+"""Gaia DR3 catalog loaders, quality cuts, and WISE cross-match wrappers."""
+
 from ugdatalab.models.gaia.gaia import (
     GaiaData,
     GaiaSample,
@@ -15,6 +17,6 @@ from ugdatalab.models.gaia.wise import (
     WISESample,
 )
 from ugdatalab.models.gaia.lightcurves import (
-    DEFAULT_PERIOD_MIN,
-    DEFAULT_PERIOD_MAX,
+    RRLYRAE_PERIOD_MIN,
+    RRLYRAE_PERIOD_MAX,
 )

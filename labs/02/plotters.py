@@ -1,29 +1,28 @@
 from pathlib import Path
 
 import corner
+import matplotlib.pyplot as plt
 import numpy as np
 
+from ugdatalab.models.apogee.constants import APOGEE_BAD_PIXMASK_BITS, LABEL_LATEX
+from ugdatalab.models.apogee.spectra import _apply_bitmask
+from ugdatalab.plotters.bayesian import plot_corner
 from ugdatalab.plotting import (
     LW_FINE,
     LW_LIGHT,
     LW_MEDIUM,
-    LW_NONE,
     LW_STANDARD,
     MS_MICRO,
     SS_MICRO,
-    SS_FINE,
-    ALPHA_EXTRA_LIGHT,
     ALPHA_FAINT,
     ALPHA_LIGHT,
     ALPHA_STANDARD,
-    ALPHA_FULL,
     NEUTRAL_COLOR,
     FILL_STYLE,
     GUIDE_STYLE,
     FIT_STYLE,
     MODEL_STYLE,
     ERRORBAR_STYLE,
-    SCATTER_STYLE,
     LABEL_SIZE,
     LEGEND_SIZE,
     textwidth_figure,
@@ -127,7 +126,7 @@ def plot_label_corner_by_field(labels, label_names, fields):
 # 2. Example raw spectrum (Problem 2)
 # ---------------------------------------------------------------------------
 
-def _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id=None):
+def _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id):
     """Create the shared 2-panel raw spectrum layout (flux + error).
 
     Returns (fig, ax_flux, ax_err).
@@ -152,7 +151,7 @@ def _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id=None):
     return fig, ax_flux, ax_err
 
 
-def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id=None):
+def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id):
     """Plot a single raw (un-normalized) APOGEE spectrum with errors.
 
     Parameters
@@ -164,7 +163,6 @@ def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id=None):
         Star ID for the panel title.
     """
     fig, ax_flux, ax_err = _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id)
-    savefig(fig, "fig_example_spectrum.pdf")
     return ax_flux, ax_err
 
 
@@ -172,7 +170,7 @@ def plot_example_spectrum(wavelength, flux_raw, error_raw, apogee_id=None):
 # 3. Bitmask diagnostic (Problem 3)
 # ---------------------------------------------------------------------------
 
-def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask, apogee_id=None):
+def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask, apogee_id):
     """Raw spectrum with bad pixels highlighted.
 
     Parameters
@@ -183,8 +181,6 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask, apogee_id=
     bitmask : ndarray, shape (n_pixels,)
     apogee_id : str, optional
     """
-    from ugdatalab.models.apogee.spectra import _apply_bitmask
-
     _, error_masked = _apply_bitmask(flux_raw, error_raw, bitmask)
     affected = (error_masked >= 1e5) | ~np.isfinite(error_masked)
 
@@ -227,8 +223,6 @@ def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
     bitmask_raw : ndarray, shape (N, n_pixels)
         Raw APOGEE pixel bitmask.
     """
-    from ugdatalab.models.apogee.constants import APOGEE_BAD_PIXMASK_BITS
-
     # Category 1: NaN flux (inter-chip gaps, already missing in FITS)
     nan_flux = np.isnan(flux_raw)
 
@@ -292,7 +286,7 @@ def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
 
 def plot_normalization_diagnostic(
     wavelength, flux_masked, error_masked, continuum_fit, flux_norm, error_norm,
-    continuum_mask, apogee_id=None,
+    continuum_mask, apogee_id,
 ):
     """Three-panel normalization diagnostic: masked flux, continuum fit, normalized.
 
@@ -497,7 +491,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     ax.remove()
     axes = subpanels(fig, 2, height_ratios=(3, 1))
 
-    axes[0].errorbar(wl, obs_plot, yerr=err_plot, **ERRORBAR_STYLE,
+    axes[0].errorbar(wl, obs_plot, yerr=err_plot, fmt=".", **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2, label="Observed")
     axes[0].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3, label="Cannon model")
     axes[0].set_ylabel("Normalized\nflux")
@@ -508,7 +502,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
             loc="left", fontsize=LABEL_SIZE,
         )
 
-    axes[1].errorbar(wl, resid_plot, yerr=err_plot, **ERRORBAR_STYLE,
+    axes[1].errorbar(wl, resid_plot, yerr=err_plot, fmt=".", **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2)
     zero_line(axes[1])
     axes[1].set_ylabel("Residual")
@@ -556,7 +550,7 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
     ax.remove()
     axes = subpanels(fig, 2, height_ratios=(3, 1))
 
-    axes[0].errorbar(wl, obs_plot, yerr=err_plot, **ERRORBAR_STYLE,
+    axes[0].errorbar(wl, obs_plot, yerr=err_plot, fmt=".", **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2, label="Mystery spectrum")
     axes[0].plot(wl, pred_plot, **FIT_STYLE, color="C1", zorder=3, label="MCMC fit")
     axes[0].set_ylabel("Normalized\nflux")
@@ -566,7 +560,7 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
         loc="left", fontsize=LABEL_SIZE,
     )
 
-    axes[1].errorbar(wl, resid_plot, yerr=err_plot, **ERRORBAR_STYLE,
+    axes[1].errorbar(wl, resid_plot, yerr=err_plot, fmt=".", **ERRORBAR_STYLE,
                      color="C0", alpha=ALPHA_FAINT, zorder=2)
     zero_line(axes[1])
     axes[1].set_ylabel("Residual")
@@ -596,8 +590,6 @@ def plot_gradient_spectra(model):
     model : CannonModel
         Trained Cannon model.
     """
-    from ugdatalab.models.apogee.constants import LABEL_LATEX
-
     n_labels = len(model.label_names)
     fig, ax = textwidth_figure(14)
     ax.remove()
@@ -611,7 +603,7 @@ def plot_gradient_spectra(model):
                      alpha=ALPHA_STANDARD, color=f"C{i}", rasterized=True,
                      zorder=3)
         zero_line(axes[i])
-        label_bare = LABEL_LATEX[i].strip("$")
+        label_bare = LABEL_LATEX[model.label_names[i]].strip("$")
         axes[i].set_ylabel(
             rf"$\dfrac{{\partial f_\lambda}}{{\partial {label_bare}}}$",
             fontsize=LABEL_SIZE,
@@ -819,47 +811,40 @@ def plot_outlier_spectra(wavelength, flux_obs_worst, error_obs_worst,
     ids_worst, ids_best : array-like, length 3
     wl_min, wl_max : float
     """
-    import matplotlib.pyplot as plt
-
     mask = (wavelength >= wl_min) & (wavelength <= wl_max)
     wl = wavelength[mask]
 
     fig, _ = columnwidth_figure(15)
     _.remove()
-
-    gs = fig.add_gridspec(6, 1, hspace=0.35)
+    axes = subpanels(fig, 6, hspace=0.35, sharex=True)
 
     def _plot_resid(ax, obs, pred, err, star_id, color):
         good = np.isfinite(err) & (err < 1e5)
         resid = np.where(good, obs - pred, np.nan)
         ax.plot(wl, resid, lw=LW_FINE, color=color,
                 alpha=ALPHA_STANDARD, zorder=2)
-        ax.axhline(0, **GUIDE_STYLE, zorder=1)
+        zero_line(ax)
         ax.set_title(str(star_id), loc="left", fontsize=LABEL_SIZE)
         ax.set_ylabel("Residual")
 
     # Top 3 rows: worst fit
     for row in range(3):
-        ax = fig.add_subplot(gs[row, 0])
+        ax = axes[row]
         _plot_resid(ax, flux_obs_worst[row, mask], flux_pred_worst[row, mask],
                     error_obs_worst[row, mask], ids_worst[row], "C3")
         if row == 0:
             ax.set_title("Worst fit", loc="right", fontsize=LEGEND_SIZE,
                          fontstyle="italic", color=NEUTRAL_COLOR)
-        ax.tick_params(labelbottom=False)
 
     # Bottom 3 rows: best fit
     for row in range(3):
-        ax = fig.add_subplot(gs[row + 3, 0])
+        ax = axes[row + 3]
         _plot_resid(ax, flux_obs_best[row, mask], flux_pred_best[row, mask],
                     error_obs_best[row, mask], ids_best[row], "C0")
         if row == 0:
             ax.set_title("Best fit", loc="right", fontsize=LEGEND_SIZE,
                          fontstyle="italic", color=NEUTRAL_COLOR)
-        if row < 2:
-            ax.tick_params(labelbottom=False)
-        else:
-            ax.set_xlabel(r"Wavelength [\AA]")
+    axes[-1].set_xlabel(r"Wavelength [\AA]")
 
     savefig(fig, "fig_outlier_spectra.pdf")
     return fig
@@ -890,7 +875,7 @@ def plot_outlier_residuals(wavelength, flux_obs, error_obs, flux_pred,
 
     fig, ax = textwidth_figure(3 * n_stars)
     ax.remove()
-    axes = subpanels(fig, n_stars, sharex=True, hspace=0.15)
+    axes = subpanels(fig, n_stars, sharex=True, hspace=0.14)
     if n_stars == 1:
         axes = [axes]
 
@@ -922,7 +907,7 @@ def plot_outlier_residuals(wavelength, flux_obs, error_obs, flux_pred,
 # 10. Kiel diagram (Problem 11)
 # ---------------------------------------------------------------------------
 
-def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
+def plot_kiel_diagram(fitted_labels, isochrone_tracks):
     """Kiel diagram (log g vs Teff) colored by [Fe/H] with MIST isochrones.
 
     Parameters
@@ -930,7 +915,7 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
     fitted_labels : ndarray, shape (N, 5)
         Fitted stellar labels [Teff, logg, [Fe/H], [Mg/Fe], [Si/Fe]].
     isochrone_tracks : list of (label_str, DataFrame), optional
-        Each entry is (label, isochrone_df) with columns ``Teff`` and ``logg``.
+        Each entry is (label, isochrone_df) with columns ``Teff`` and ``log_g``.
     """
     teff = fitted_labels[:, 0]
     logg = fitted_labels[:, 1]
@@ -945,8 +930,8 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks=None):
 
     if isochrone_tracks is not None:
         for label, iso_df in isochrone_tracks:
-            iso_mask = (iso_df["Teff"] > 3500) & (iso_df["Teff"] < 6000) & (iso_df["logg"] < 4.5)
-            ax.plot(iso_df["Teff"][iso_mask], iso_df["logg"][iso_mask],
+            iso_mask = (iso_df["Teff"] > 3500) & (iso_df["Teff"] < 6000) & (iso_df["log_g"] < 4.5)
+            ax.plot(iso_df["Teff"][iso_mask], iso_df["log_g"][iso_mask],
                     **MODEL_STYLE, color=NEUTRAL_COLOR, zorder=4,
                     label=label)
 
@@ -1095,3 +1080,20 @@ def plot_nn_label_recovery(true_labels, fitted_labels, label_names):
     return _plot_label_recovery_impl(
         true_labels, fitted_labels, label_names, "fig_nn_label_recovery.pdf",
     )
+
+
+# ---------------------------------------------------------------------------
+# 15. MCMC corner plot (Problem 12)
+# ---------------------------------------------------------------------------
+
+def plot_methods_corner(result):
+    """Corner plot of MCMC posterior samples for the Cannon label fit.
+
+    Parameters
+    ----------
+    result : MCMCResult
+        NUTS result with ``.samples`` and ``.labels``.
+    """
+    fig = plot_corner(result)
+    savefig(fig, "fig_methods_corner.pdf")
+    return fig

@@ -1,5 +1,15 @@
 # Project: ay-128 (ugdatalab)
 
+## Code style
+
+### Docstrings
+
+- **Private functions / methods** (names prefixed with `_`): a single-line docstring describing what the function does.
+- **Public functions / methods / classes**: PEP 257 format — one-line summary on the first line, a blank line, optional extended description, then `Args` / `Returns` / `Raises` sections (Google or NumPy style — match whatever the surrounding module already uses).
+- **Module docstrings**: same shape — one-line summary, blank line, optional details.
+- Docstrings must **describe** what the symbol does (behavior, inputs, outputs, side effects). They must **not justify** the symbol's existence (no "we need this because…", no rationale for design choices, no historical context). Justification belongs in commit messages or PR descriptions, not docstrings.
+- Keep docstrings accurate: no references to removed parameters, renamed types, or stale behavior.
+
 ## Audit: "audit ugdatalab"
 
 When the user says "audit ugdatalab", perform the following checks on all `.py` files in `ugdatalab/` (recursively), including `ugdatalab/methods/`, `ugdatalab/models/`, and `ugdatalab/plotting.py`.

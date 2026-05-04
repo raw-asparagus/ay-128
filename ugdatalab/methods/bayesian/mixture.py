@@ -1,7 +1,11 @@
+"""Mixture-contamination engine: NUTS over an inlier+outlier mixture model."""
+
 from dataclasses import dataclass
 
 import numpy as np
 import pymc as pm
+
+from ugdatalab.methods.bayesian.base import MixtureLikelihood
 
 
 @dataclass(frozen=True)
@@ -29,23 +33,27 @@ class MixtureResult:
 
 
 def mixture_contamination(
-    likelihood,
+    likelihood: MixtureLikelihood,
     n_steps: int = 2000,
     n_burn: int = 1000,
     seed: int = 42,
 ) -> MixtureResult:
-    """Run a mixture contamination model via PyMC NUTS.
+    """Run an inlier+outlier mixture model via PyMC NUTS.
 
     Parameters
     ----------
-    likelihood : Likelihood
-        An object satisfying the Likelihood ABC.
+    likelihood : MixtureLikelihood
+        Object satisfying the ``MixtureLikelihood`` ABC.
     n_steps : int
-        Total NUTS draws (after tuning).
+        Total NUTS draws after tuning.
     n_burn : int
-        Tuning steps (discarded).
+        Tuning steps, discarded.
     seed : int
         Random seed for reproducibility.
+
+    Returns
+    -------
+    MixtureResult
     """
     model = likelihood.build_pymc_mixture()
     with model:
@@ -56,7 +64,7 @@ def mixture_contamination(
             progressbar=False,
         )
 
-    model_var_names = [v.name for v in model.free_RVs if v.name not in ("f", "logit_f")]
+    model_var_names = likelihood.physical_param_names
     posterior = trace.posterior
     theta_median = np.array([float(posterior[name].median()) for name in model_var_names])
     samples = np.column_stack([

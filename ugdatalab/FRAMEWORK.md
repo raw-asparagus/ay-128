@@ -87,12 +87,21 @@ and return frozen dataclass results.
 
 ### Contracts
 
-Two ABCs define the contracts:
+Two ABC ladders define the contracts:
 
-- **`Fit`** — all fitted models expose `chi2_r: float` and
-  `predict(x) -> ndarray`.
-- **`Likelihood`** — all Bayesian models expose `param_labels`,
-  `build_pymc()`, `build_pymc_mixture()`, and `inlier_probs()`.
+- **`Fit`** — every fitted model exposes `predict(x) -> ndarray`. Use this
+  for trained-model artifacts that aren't bound to specific data (e.g.
+  `CannonModel`).
+- **`DataFit(Fit)`** — adds `x, y, y_err`, abstract `n_params`, and a
+  derived `chi2_r` property (computed from `predict` + `total_variance`).
+  Use for fits bound to the data they were produced from
+  (`MCMCResult`, `FourierFit`).
+- **`Likelihood`** — Bayesian models expose `param_labels`,
+  `physical_param_names`, `build_pymc()`, `predict(x, theta)`, and
+  `total_variance(theta)`.
+- **`MixtureLikelihood(Likelihood)`** — additionally exposes
+  `build_pymc_mixture()` and `inlier_probs()`. Required by
+  `mixture_contamination`.
 
 Engines consume these contracts without knowing the concrete implementation:
 
@@ -114,19 +123,19 @@ frozen result:
 | `mixture_contamination` | `Likelihood` | `MixtureResult` | Outlier rejection via mixture model |
 | `lomb_scargle` | `x, y, y_err` | `PeriodogramResult` | Period detection |
 | `fourier_fit` | `x, y, y_err, period, k` | `FourierFit` | Weighted Fourier series fit |
-| `holdout_validate` | `x, y, y_err, fit_fn, params` | `HoldoutResult` | Single-split model selection |
-| `k_fold_validate` | `x, y, y_err, fit_fn, params` | `KFoldResult` | K-fold model selection |
+| `cross_validate` | `x, y, y_err, fit_fn, params, *, n_folds=1, cv_fraction=0.2` | `ValidationResult` | Holdout (n_folds=1) or k-fold model selection |
 
 ### Result dataclasses
 
 All results are frozen dataclasses carrying everything downstream code needs:
 
 - **`MCMCResult`**: `theta`, `samples`, `log_probs`, `labels`, `chi2_r`,
-  `predict()`, `predict_std()`, and `_likelihood` (for posterior predictive).
+  `x`, `y`, `y_err`, plus `predict(x, theta=None)`, `total_variance(theta=None)`,
+  and `predict_std(x)`. Self-contained — no Likelihood back-reference.
 - **`MixtureResult`**: `inlier_prob`, `theta`, `samples`, `log_probs`,
   `labels`.
-- **`FourierFit`**: `beta`, `beta_cov`, `period`, `k`, `chi2_r`,
-  `predict()`, `predict_std()`.
+- **`FourierFit`**: `beta`, `beta_cov`, `period`, `k`, `x`, `y`, `y_err`,
+  plus `predict()`, `predict_std()`, and inherited `chi2_r` (property).
 - **`PeriodogramResult`**: `periods`, `power`, `best_period`, `best_power`,
   `fap`.
 - **`ValidationResult`** (and subclasses): `param_values`, `chi2r_train`,
@@ -142,8 +151,8 @@ and implement three methods:
 
 ```python
 class PolynomialGaussianLikelihood(GaussianLikelihood):
-    def _predict(self, x, theta) -> ndarray: ...
-    def _inlier_variance(self, theta) -> ndarray: ...
+    def predict(self, x, theta) -> ndarray: ...
+    def total_variance(self, theta) -> ndarray: ...
     def _pymc_inlier_model(self, model): ...
 ```
 
@@ -419,7 +428,7 @@ from astropy import table
 from ugdatalab.models.sdss import SDSSData  # or whatever survey
 
 # ugdatalab — methods
-from ugdatalab import fourier_fit, lomb_scargle, holdout_validate
+from ugdatalab import fourier_fit, lomb_scargle, cross_validate
 
 # lab plotters
 import plotters
@@ -441,7 +450,7 @@ following the existing `models/gaia/` pattern:
 If the lab requires a model beyond `LinearGaussianLikelihood`, add a new
 concrete class in `ugdatalab/methods/bayesian/likelihoods.py` (or a new
 file if substantially different). Subclass `GaussianLikelihood` and
-implement `_predict`, `_inlier_variance`, and `_pymc_inlier_model`.
+implement `predict`, `total_variance`, and `_pymc_inlier_model`.
 
 ### 6. Build notebooks in pipeline order
 

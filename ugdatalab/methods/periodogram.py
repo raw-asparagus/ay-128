@@ -1,3 +1,5 @@
+"""Lomb-Scargle periodogram wrapper with anti-alias best-period selection."""
+
 from dataclasses import dataclass
 
 import numpy as np
@@ -6,7 +8,21 @@ from astropy.timeseries import LombScargle
 
 @dataclass(frozen=True)
 class PeriodogramResult:
-    """Result of a Lomb-Scargle periodogram."""
+    """Result of a Lomb-Scargle periodogram.
+
+    Attributes
+    ----------
+    periods : ndarray
+        Tested periods, sorted by descending power.
+    power : ndarray
+        Periodogram power, aligned with ``periods``.
+    best_period : float
+        Period selected by the anti-alias rule.
+    best_power : float
+        Peak power.
+    fap : float
+        False alarm probability of ``best_power``.
+    """
     periods: np.ndarray
     power: np.ndarray
     best_period: float
@@ -23,20 +39,20 @@ def lomb_scargle(
 ) -> PeriodogramResult:
     """Compute a Lomb-Scargle periodogram and identify the best period.
 
+    When multiple peaks are within 2% of the maximum power, the longest
+    period among them is selected.
+
     Parameters
     ----------
     times, values, errors : array-like
         Observation times, measured values, and their uncertainties.
-    period_min, period_max : float
-        Search range in the same units as *times*.
+    period_min, period_max : float, optional
+        Search range in the same units as *times*. ``None`` defers to
+        the astropy autopower defaults.
 
     Returns
     -------
     PeriodogramResult
-        Periods and power sorted by descending power, plus the best period,
-        the peak power, and its false alarm probability.
-        When multiple peaks are within 2 % of the maximum power, the longest
-        period among them is chosen (avoids alias-driven short-period picks).
     """
     times = np.asarray(times, dtype=float)
     values = np.asarray(values, dtype=float)

@@ -1,12 +1,24 @@
+"""WISE / AllWISE photometric quality cuts on Gaia-cross-matched samples."""
+
 from dataclasses import dataclass
 
 import numpy as np
 from astropy import table
 
-from ugdatalab.models.cache import _cache_stable
+from ugdatalab.utils.cache import cache_stable
 from ugdatalab.models.gaia.gaia import GaiaData, _get_gaia, _attach_rrlyrae_representative_period_column
-from ugdatalab.models.utils import _char_at, _sanitize_table
+from ugdatalab.utils.tables import _sanitize_table
 from ugdatalab.models.gaia.constants import _WISE_SCHEMA
+
+
+# Sample-quality cuts for minimal line-of-sight dust applied inside ``_get_wise_sample``.
+_PARALLAX_OVER_ERROR_MIN = 5
+_GALACTIC_LATITUDE_MIN_DEG = 30
+
+
+def _char_at(column, index: int) -> np.ndarray:
+    """Extract the character at *index* from each string in *column*."""
+    return np.array([s[index] if len(s) > index else "" for s in np.asarray(column, dtype=str)])
 
 
 # ---------------------------------------------------------------------------
@@ -22,12 +34,13 @@ def _add_wise_photometry_columns(data: table.Table) -> None:
     data["sigma_M_W2"] = np.sqrt(data["w2mpro_error"] ** 2 + data["sigma_mu"] ** 2)
 
 
-@_cache_stable(module="ugdatalab.wise")
+@cache_stable(module="ugdatalab.wise")
 def _get_wise_sample(query):
+    """Run a Gaia/AllWISE join query and apply the parallax/latitude sample cuts."""
     raw = _get_gaia(query)
     poe = raw["parallax_over_error"]
     b = raw["b"]
-    data = raw[(poe > 5) & (np.abs(b) > 30)]
+    data = raw[(poe > _PARALLAX_OVER_ERROR_MIN) & (np.abs(b) > _GALACTIC_LATITUDE_MIN_DEG)]
     _add_wise_photometry_columns(data)
     return data
 
@@ -38,7 +51,18 @@ def _get_wise_sample(query):
 
 @dataclass
 class WISEData(GaiaData):
-    """Fetches and caches the WISE quality-filtered sample with photometry-derived columns."""
+    """WISE/AllWISE quality-filtered sample with photometry-derived columns.
+
+    Parameters
+    ----------
+    query : str
+        Gaia/AllWISE join ADQL query.
+
+    Attributes
+    ----------
+    data : astropy.table.Table
+        Sanitized table with WISE absolute magnitudes attached.
+    """
 
     def __post_init__(self):
         data = _get_wise_sample(self.query)
@@ -59,24 +83,28 @@ class WISESample(WISEData):
       cc_flags[W2] == '0' (no artifact contamination)
       ext_flag <= 1 (point source)
         (AllWISE Explanatory Supplement, Cutri et al. 2013)
+
+    Parameters
+    ----------
+    source : WISEData
+        Catalog to filter.
     """
     def __init__(self, source: WISEData):
         self.query = source.query
         self.include_lightcurve = False
 
-        allwise_oid = np.asarray(source.data["allwise_oid"], dtype=float)
-        matched = source.data[np.isfinite(allwise_oid)]
+        matched = source.data[np.isfinite(source.data["allwise_oid"])]
 
         rr_classes = matched["best_classification"]
         matched = matched[np.isin(rr_classes, ["RRab", "RRc", "RRd"])]
 
-        number_of_mates = np.asarray(matched["number_of_mates"], dtype=float)
-        number_of_neighbours = np.asarray(matched["number_of_neighbours"], dtype=float)
+        number_of_mates = matched["number_of_mates"]
+        number_of_neighbours = matched["number_of_neighbours"]
         w2 = matched["w2mpro"]
         w2_error = matched["w2mpro_error"]
         ph_qual_w2 = _char_at(matched["ph_qual"], 1)
         cc_flags_w2 = _char_at(matched["cc_flags"], 1)
-        ext_flg = np.asarray(matched["ext_flag"], dtype=float)
+        ext_flg = matched["ext_flag"]
 
         mask = (
             np.isfinite(number_of_mates)

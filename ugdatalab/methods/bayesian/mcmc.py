@@ -1,44 +1,104 @@
+"""PyMC NUTS engine and ``MCMCResult`` container."""
+
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 import pymc as pm
 
-from ugdatalab.methods.base import Fit
+from ugdatalab.methods.base import DataFit
 
 
 @dataclass(frozen=True)
-class MCMCResult(Fit):
+class MCMCResult(DataFit):
     """Result of PyMC NUTS parameter estimation.
+
+    Carries the data the fit was performed on plus bound model
+    evaluators, exposing ``predict`` / ``total_variance`` / ``chi2_r``.
 
     Attributes
     ----------
     theta : ndarray
-        Posterior median of the model parameters.
-    samples : ndarray
-        Posterior samples, shape (n_samples, n_params).
-    log_probs : ndarray
+        Per-parameter posterior median (marginal, not a joint draw).
+    samples : ndarray, shape (n_samples, n_params)
+        Posterior samples with all chains flattened.
+    log_probs : ndarray, shape (n_samples,)
         Log-posterior probability at each sample.
-    labels : list[str]
-        LaTeX-formatted parameter labels for plotting.
-    chi2_r : float
-        Reduced chi-squared evaluated at the posterior median.
+    labels : list of str
+        LaTeX-formatted parameter labels.
+    x, y, y_err : ndarray
+        Data the fit was performed on.
+    _predict_fn, _variance_fn : Callable
+        Bound model evaluators; accessed via ``predict`` / ``total_variance``.
     """
     theta: np.ndarray
     samples: np.ndarray
     log_probs: np.ndarray
     labels: list
-    chi2_r: float
-    _likelihood: object = None
+    x: np.ndarray
+    y: np.ndarray
+    y_err: np.ndarray
+    _predict_fn: Callable[[np.ndarray, np.ndarray], np.ndarray]
+    _variance_fn: Callable[[np.ndarray], np.ndarray]
 
-    def predict(self, x: np.ndarray) -> np.ndarray:
-        """Predict y values at *x* using the posterior median parameters."""
-        return self._likelihood._predict(x, self.theta)
+    def predict(self, x: np.ndarray, theta: np.ndarray | None = None) -> np.ndarray:
+        """Return the noiseless model prediction at *x*.
+
+        Uses the posterior median when *theta* is omitted.
+
+        Parameters
+        ----------
+        x : ndarray
+            Positions at which to evaluate the model.
+        theta : ndarray, optional
+            Parameter vector; defaults to ``self.theta``.
+
+        Returns
+        -------
+        ndarray
+        """
+        return self._predict_fn(x, self.theta if theta is None else theta)
+
+    def total_variance(self, theta: np.ndarray | None = None) -> np.ndarray:
+        """Return per-point predictive variance at ``self.x``.
+
+        Uses the posterior median when *theta* is omitted.
+
+        Parameters
+        ----------
+        theta : ndarray, optional
+            Parameter vector; defaults to ``self.theta``.
+
+        Returns
+        -------
+        ndarray
+        """
+        return self._variance_fn(self.theta if theta is None else theta)
 
     def predict_std(self, x: np.ndarray) -> np.ndarray:
-        """Prediction uncertainty at *x* from posterior spread."""
+        """Return the std of the mean prediction at *x* across posterior samples.
+
+        Captures parameter-spread uncertainty only; observational and
+        intrinsic scatter are not included.
+
+        Parameters
+        ----------
+        x : array-like
+            Positions at which to evaluate the prediction.
+
+        Returns
+        -------
+        ndarray
+            Std of ``predict(x, theta)`` across rows of ``self.samples``.
+        """
         x = np.atleast_1d(np.asarray(x, dtype=float))
-        preds = np.array([self._likelihood._predict(x, s) for s in self.samples])
+        preds = np.array([self.predict(x, s) for s in self.samples])
         return np.std(preds, axis=0)
+
+    @property
+    def n_params(self) -> int:
+        """Return the number of fitted parameters."""
+        return len(self.theta)
 
 
 def nuts_sample(
@@ -47,18 +107,22 @@ def nuts_sample(
     n_burn: int = 1000,
     seed: int = 42,
 ) -> MCMCResult:
-    """Run PyMC NUTS on a likelihood's model.
+    """Run PyMC NUTS on a likelihood's model and return an ``MCMCResult``.
 
     Parameters
     ----------
     likelihood : Likelihood
-        An object satisfying the Likelihood ABC.
+        Object satisfying the ``Likelihood`` ABC.
     n_steps : int
-        Total NUTS draws (after tuning).
+        Total NUTS draws after tuning.
     n_burn : int
-        Tuning steps (discarded).
+        Tuning steps, discarded.
     seed : int
         Random seed for reproducibility.
+
+    Returns
+    -------
+    MCMCResult
     """
     model = likelihood.build_pymc()
     with model:
@@ -69,7 +133,7 @@ def nuts_sample(
             progressbar=False,
         )
 
-    var_names = [v.name for v in model.free_RVs]
+    var_names = likelihood.physical_param_names
     posterior = trace.posterior
     theta_median = np.array([float(posterior[name].median()) for name in var_names])
     samples = np.column_stack([
@@ -77,24 +141,14 @@ def nuts_sample(
     ])
     log_probs = trace.sample_stats["lp"].values.flatten()
 
-    y_pred = likelihood._predict(likelihood.x, theta_median)
-    good = (np.isfinite(likelihood.y_err) & (likelihood.y_err < 1e5)
-            & np.isfinite(likelihood.y) & np.isfinite(y_pred))
-    resid = (likelihood.y - y_pred)[good]
-    # Use total inlier variance (measurement noise + intrinsic scatter) when
-    # the likelihood exposes it; fall back to measurement noise alone.
-    if hasattr(likelihood, '_inlier_variance'):
-        total_var = likelihood._inlier_variance(theta_median)[good]
-    else:
-        total_var = likelihood.y_err[good] ** 2
-    nu = int(good.sum()) - len(var_names)
-    chi2_r = float(np.sum(resid ** 2 / total_var) / max(nu, 1))
-
     return MCMCResult(
         theta=theta_median,
         samples=samples,
         log_probs=log_probs,
         labels=likelihood.param_labels,
-        chi2_r=chi2_r,
-        _likelihood=likelihood,
+        x=likelihood.x,
+        y=likelihood.y,
+        y_err=likelihood.y_err,
+        _predict_fn=likelihood.predict,
+        _variance_fn=likelihood.total_variance,
     )

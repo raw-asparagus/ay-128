@@ -68,19 +68,6 @@ LABEL_LATEX = {
     for col, desc in LABEL_DESCRIPTIVE.items()
 }
 
-MERGER_LABEL = "Class8.6"
-
-# The 7 labels used for Task 25 extreme-example analysis (from lab manual)
-PROTOTYPE_LABELS = [
-    "Class1.1",   # smooth
-    "Class1.3",   # star/artifact
-    "Class2.1",   # edge-on disk
-    "Class8.1",   # odd: ring
-    "Class8.2",   # odd: lens/arc
-    "Class11.2",  # spiral: 2 arms
-    "Class8.6",   # odd: merger
-]
-
 # Hierarchical label tree: parent question → child question columns.
 # A child question is only asked if the parent answer exceeds a threshold.
 # This encodes the Galaxy Zoo 2 decision tree structure.
