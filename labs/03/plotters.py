@@ -12,6 +12,7 @@ from matplotlib.ticker import ScalarFormatter
 
 
 def _decimal_log_yaxis(ax):
+    """Format the y-axis tick labels as plain decimals instead of scientific notation."""
     fmt = ScalarFormatter()
     fmt.set_scientific(False)
     ax.yaxis.set_major_formatter(fmt)
@@ -37,8 +38,45 @@ from ugdatalab.plotting import (
 
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 
+# --- Layout ---
+# Columns in the random-image montage
+_RANDOM_IMAGES_NCOLS = 7
+# Columns in the label-distribution histogram grid
+_LABEL_DIST_NCOLS = 5
+# Per-row figure height scale (inches)
+_LABEL_DIST_FIGURE_SCALE = 2.2
+# Columns in the prototype-image grid
+_PROTOTYPE_IMAGES_NCOLS = 4
+# Max columns in the pairwise-label scatter grid
+_PAIRWISE_LABEL_MAX_COLS = 4
+
+# --- Histogram bin counts ---
+# Bin count for per-label distribution histograms
+_LABEL_DIST_HIST_BINS = 50
+# Bin count for train/val split-distribution histograms
+_SPLIT_DIST_NBINS = 30
+# 2D histogram bins for pairwise density panels
+_PAIRWISE_2D_HIST_BINS = 60
+# Bin count for pixel-statistic histograms
+_PIXEL_STAT_HIST_BINS = 50
+
+# --- Corner / contour ---
+# 1σ and 2σ enclosed-mass contour levels
+_CORNER_CONTOUR_LEVELS = (0.393, 0.865)
+
+# --- MCMC effective-sample-size thresholds (mirrors labs/02) ---
+# ESS at or above which posteriors are "well-mixed"
+_NEFF_HIGH_THRESHOLD = 1000
+# ESS below which posteriors are flagged as poorly-mixed
+_NEFF_LOW_THRESHOLD = 200
+
+# --- Label-axis padding ---
+# Symmetric pad on the [0, 1] label-probability axis
+_LABEL_AXIS_PAD = 0.05
+
 
 def savefig(fig, name):
+    """Write *fig* to ``report/figures/<name>``, creating the directory if needed."""
     _FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(_FIGURES_DIR / name)
 
@@ -63,7 +101,7 @@ def plot_random_images(images, galaxy_ids, n_samples, seed):
     rng = np.random.default_rng(seed)
     idx = rng.choice(len(images), size=n_samples, replace=False)
 
-    ncols = 7
+    ncols = _RANDOM_IMAGES_NCOLS
     nrows = (n_samples + ncols - 1) // ncols
 
     fig, _ = textwidth_figure(2 * nrows)
@@ -106,10 +144,10 @@ def plot_label_distributions(labels, label_names, label_descriptive):
         Mapping column name -> descriptive name.
     """
     n_labels = labels.shape[1]
-    ncols = 5
+    ncols = _LABEL_DIST_NCOLS
     nrows = (n_labels + ncols - 1) // ncols
 
-    fig, _ = textwidth_figure(2.2 * nrows)
+    fig, _ = textwidth_figure(_LABEL_DIST_FIGURE_SCALE * nrows)
     _.remove()
     axes = subpanels(fig, nrows, ncols, hspace=0.56, wspace=0.28, sharex=True)
 
@@ -124,11 +162,11 @@ def plot_label_distributions(labels, label_names, label_descriptive):
         if i < n_labels:
             class_id = int(label_names[i].split("Class")[1].split(".")[0])
             color = f"C{(class_id - 1) % 10}"
-            ax.hist(labels[:, i], bins=50, density=True, color=color,
+            ax.hist(labels[:, i], bins=_LABEL_DIST_HIST_BINS, density=True, color=color,
                     alpha=ALPHA_STANDARD, lw=LW_NONE)
             desc = label_descriptive.get(label_names[i], label_names[i])
             ax.set_title(desc, fontsize=LEGEND_SIZE, loc="left")
-            ax.set_xlim(-0.05, 1.05)
+            ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
             ax.tick_params(labelsize=LEGEND_SIZE - 1)
             ax.tick_params(labelbottom=(row == last_row_for_col[col]))
         else:
@@ -158,7 +196,7 @@ def plot_prototype_images(images, galaxy_ids, labels, label_names,
     label_descriptive : dict
     """
     n_labels = labels.shape[1]
-    ncols = 4
+    ncols = _PROTOTYPE_IMAGES_NCOLS
     nrows = (n_labels + ncols - 1) // ncols
 
     fig, _ = textwidth_figure(2 * nrows)
@@ -275,7 +313,7 @@ def plot_split_distributions(train_labels, val_labels, label_names,
     _.remove()
     axes = subpanels(fig, nrows, ncols, hspace=0.55, wspace=0.35, sharex=False)
 
-    bins = np.linspace(0, 1, 30)
+    bins = np.linspace(0, 1, _SPLIT_DIST_NBINS)
     for i in range(nrows * ncols):
         row, col = divmod(i, ncols)
         ax = axes[row, col]
@@ -290,7 +328,7 @@ def plot_split_distributions(train_labels, val_labels, label_names,
                     label="Val" if i == 0 else None)
             desc = label_descriptive.get(label_names[i], label_names[i])
             ax.set_title(desc, fontsize=LEGEND_SIZE - 1, loc="left")
-            ax.set_xlim(-0.05, 1.05)
+            ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
             ax.tick_params(labelsize=LEGEND_SIZE - 1)
         else:
             ax.set_visible(False)
@@ -443,8 +481,8 @@ def plot_label_scatter(true_labels, pred_labels, label_descriptive_list):
                        zorder=3, rasterized=True)
             ax.plot([0, 1], [0, 1], color=NEUTRAL_COLOR, lw=LW_MEDIUM,
                     alpha=ALPHA_STANDARD, zorder=1)
-            ax.set_xlim(-0.05, 1.05)
-            ax.set_ylim(-0.05, 1.05)
+            ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
+            ax.set_ylim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
             ax.set_title(
                 f"{label_descriptive_list[i]}\n"
                 rf"bias$={bias:+.3f}$, $\sigma={scatter_val:.3f}$",
@@ -726,7 +764,7 @@ def plot_pairwise_label_scatter(labels, pairs, label_descriptive_list):
     import matplotlib.colors as mcolors
 
     n = len(pairs)
-    ncols = min(n, 4)
+    ncols = min(n, _PAIRWISE_LABEL_MAX_COLS)
     nrows = (n + ncols - 1) // ncols
 
     fig, _ = textwidth_figure(3.5 * nrows)
@@ -741,11 +779,11 @@ def plot_pairwise_label_scatter(labels, pairs, label_descriptive_list):
         x, y = labels[:, i], labels[:, j]
 
         # 2D histogram for density coloring
-        counts, xedges, yedges = np.histogram2d(x, y, bins=60,
+        counts, xedges, yedges = np.histogram2d(x, y, bins=_PAIRWISE_2D_HIST_BINS,
                                                  range=[[0, 1], [0, 1]])
         # Map each point to its bin density
-        xi = np.clip(np.digitize(x, xedges) - 1, 0, 59)
-        yi = np.clip(np.digitize(y, yedges) - 1, 0, 59)
+        xi = np.clip(np.digitize(x, xedges) - 1, 0, _PAIRWISE_2D_HIST_BINS - 1)
+        yi = np.clip(np.digitize(y, yedges) - 1, 0, _PAIRWISE_2D_HIST_BINS - 1)
         density = counts[xi, yi]
 
         order = np.argsort(density)
@@ -758,8 +796,8 @@ def plot_pairwise_label_scatter(labels, pairs, label_descriptive_list):
         ax.set_title(rf"$\rho = {rho:+.3f}$", fontsize=LEGEND_SIZE)
         ax.set_xlabel(label_descriptive_list[i], fontsize=LEGEND_SIZE - 1)
         ax.set_ylabel(label_descriptive_list[j], fontsize=LEGEND_SIZE - 1)
-        ax.set_xlim(-0.05, 1.05)
-        ax.set_ylim(-0.05, 1.05)
+        ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
+        ax.set_ylim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
         ax.tick_params(labelsize=LEGEND_SIZE - 1)
 
     # Hide unused axes
@@ -790,13 +828,13 @@ def plot_effective_sample_size(labels, label_descriptive_list, threshold):
     fig, ax = textwidth_figure(9)
 
     y_pos = np.arange(len(n_eff))
-    colors = ["C0" if n > 1000 else "C3" if n < 200 else "C1" for n in n_eff[order]]
+    colors = ["C0" if n > _NEFF_HIGH_THRESHOLD else "C3" if n < _NEFF_LOW_THRESHOLD else "C1" for n in n_eff[order]]
     ax.barh(y_pos, n_eff[order], color=colors, alpha=ALPHA_STANDARD)
     ax.set_yticks(y_pos)
     ax.set_yticklabels([label_descriptive_list[i] for i in order],
                        fontsize=LEGEND_SIZE - 1)
     ax.set_xlabel(rf"$N_{{\mathrm{{eff}}}}$ (galaxies with label $> {threshold}$)")
-    ax.axvline(1000, **GUIDE_STYLE, label=r"$N_{\mathrm{eff}} = 1000$")
+    ax.axvline(_NEFF_HIGH_THRESHOLD, **GUIDE_STYLE, label=r"$N_{\mathrm{eff}} = 1000$")
     ax.legend(fontsize=LEGEND_SIZE)
 
     savefig(fig, "fig_effective_sample_size.pdf")
@@ -864,7 +902,7 @@ def plot_pixel_statistics(stats_smooth, stats_disk, stat_names):
         ax = axes[i]
         lo = min(stats_smooth[name].min(), stats_disk[name].min())
         hi = max(stats_smooth[name].max(), stats_disk[name].max())
-        bins = np.linspace(lo, hi, 50)
+        bins = np.linspace(lo, hi, _PIXEL_STAT_HIST_BINS)
         ax.hist(stats_smooth[name], bins=bins, density=True,
                 alpha=ALPHA_LIGHT, color="C3", lw=LW_NONE,
                 label="Smooth" if i == 0 else None)

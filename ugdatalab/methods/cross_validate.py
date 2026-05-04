@@ -7,6 +7,11 @@ from typing import Tuple
 import numpy as np
 
 
+# ---------------------------------------------------------------------------
+# Result container
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class ValidationResult:
     """Result of cross-validated model selection over a parameter grid.
@@ -68,6 +73,11 @@ class ValidationResult:
         return self.fold_assignments[0][1]
 
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
 def _chi2r(y_true: np.ndarray, y_pred: np.ndarray, y_err: np.ndarray) -> float:
     """Reduced chi-squared with no dof correction (divides by ``N``)."""
     return float(np.sum(((y_true - y_pred) / y_err) ** 2) / len(y_true))
@@ -88,6 +98,11 @@ def _make_folds(
         (np.setdiff1d(idx, fold, assume_unique=True), fold)
         for fold in np.array_split(idx, n_folds)
     ]
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
+# ---------------------------------------------------------------------------
 
 
 def cross_validate(
@@ -120,13 +135,23 @@ def cross_validate(
     param_values : array-like
         Grid of parameter values to search over.
     n_folds : int
-        ``1`` (default) for a single train/validation split (holdout); any
-        larger value for k-fold cross-validation.
+        Number of cross-validation folds. Default ``1`` — a single
+        holdout split, the cheapest option and adequate when the dataset
+        is large enough that one held-out subset is representative.
+        Override to ``5``–``10`` for small datasets where holdout variance
+        across splits is large, or whenever you want a CV-error estimate
+        with its own uncertainty.
     cv_fraction : float
         Fraction of data held out for validation in the holdout case.
-        Ignored when ``n_folds > 1``. Default 0.2.
+        Ignored when ``n_folds > 1``. Default ``0.2`` — the standard
+        80/20 train/validation split, which keeps most of the data for
+        fitting while leaving enough rows for a stable validation score.
+        Lower it on very small datasets to preserve training power; raise
+        it if validation scores look noisy from a too-small CV set.
     seed : int
-        Random seed for the split / fold assignment. Default 346.
+        Random seed for the split / fold assignment. Default ``346`` —
+        an arbitrary fixed value for reproducibility; override to test
+        sensitivity of the chosen ``best_param`` to the random split.
 
     Returns
     -------

@@ -45,11 +45,18 @@ def mixture_contamination(
     likelihood : MixtureLikelihood
         Object satisfying the ``MixtureLikelihood`` ABC.
     n_steps : int
-        Total NUTS draws after tuning.
+        Total NUTS draws kept per chain after tuning. Default ``2000`` —
+        matches :func:`~ugdatalab.methods.bayesian.mcmc.nuts_sample`; gives
+        ESS ≳ 1000 on the inlier/outlier mixtures used in the labs. Raise
+        if the per-row ``inlier_prob`` summaries appear noisy.
     n_burn : int
-        Tuning steps, discarded.
+        Tuning / adaptation steps discarded before sampling. Default
+        ``1000`` — sufficient for NUTS to adapt on the mixture posteriors
+        here; raise if divergences or r-hat warnings appear.
     seed : int
-        Random seed for reproducibility.
+        Random seed for chain initialization and draws. Default ``42`` —
+        an arbitrary fixed value for reproducibility; override to check
+        sensitivity of the inlier-probability assignments to randomness.
 
     Returns
     -------

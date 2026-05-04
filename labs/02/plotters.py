@@ -33,8 +33,55 @@ from ugdatalab.plotting import (
 
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 
+# --- Corner / contour ---
+# 1σ and 2σ enclosed-mass contour levels
+_CORNER_CONTOUR_LEVELS = (0.393, 0.865)
+
+# --- Pixel-mask sentinels & error gates ---
+# Error magnitude marking masked APOGEE pixels
+_BAD_PIXEL_ERROR_SENTINEL = 1e5
+# Max σ for "well-measured" training pixel comparisons
+_ERROR_THRESHOLD_TRAINING = 1.0
+# Stricter σ cap used in mystery-spectrum overlay
+_ERROR_THRESHOLD_MYSTERY = 0.25
+
+# --- Padding / margins ---
+# Padding fraction for label-axis ranges
+_PAD_FRACTION_LABELS = 0.05
+# Mask-frequency y-axis headroom multiplier
+_MASK_FRACTION_PAD_FACTOR = 1.1
+# Percentile cap when sizing the error-axis limit
+_ERROR_PERCENTILE_CAP = 94
+
+# --- Continuum normalization ---
+# Per-chip extrapolation guard as fraction of pixels
+_CONTINUUM_EXTRAP_FRAC = 0.05
+
+# --- Sequence offsets ---
+# Vertical offset between stacked spectra in sequence plots
+_SPECTRUM_OFFSET_STEP = 0.2
+
+# --- Layout ---
+# Columns in the per-label recovery scatter grid
+_LABEL_RECOVERY_NCOLS = 3
+
+# --- MCMC effective-sample-size thresholds ---
+# ESS at or above which posteriors are "well-mixed"
+_NEFF_HIGH_THRESHOLD = 1000
+# ESS below which posteriors are flagged as poorly-mixed
+_NEFF_LOW_THRESHOLD = 200
+
+# --- MIST isochrone selection window ---
+# Lower Teff bound for plotted isochrone tracks (K)
+_TEFF_MIN_ISOCHRONE = 3500
+# Upper Teff bound for plotted isochrone tracks (K)
+_TEFF_MAX_ISOCHRONE = 6000
+# Upper log g bound for plotted isochrone tracks
+_LOGG_MAX_ISOCHRONE = 4.5
+
 
 def savefig(fig, name):
+    """Write *fig* to ``report/figures/<name>``, creating the directory if needed."""
     _FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(_FIGURES_DIR / name)
 
@@ -62,7 +109,7 @@ def plot_label_corner(labels, label_names):
         fill_contours=False,
         plot_datapoints=True,
         plot_density=True,
-        levels=(0.393, 0.865),
+        levels=_CORNER_CONTOUR_LEVELS,
         smooth=1.0,
         hist_kwargs=dict(
             density=True, histtype="step", linewidth=LW_STANDARD,
@@ -103,7 +150,7 @@ def plot_label_corner_by_field(labels, label_names, fields):
             fill_contours=False,
             plot_datapoints=True,
             plot_density=False,
-            levels=(0.393, 0.865),
+            levels=_CORNER_CONTOUR_LEVELS,
             smooth=1.0,
             hist_kwargs=dict(
                 density=True, histtype="step", linewidth=LW_STANDARD,
@@ -127,10 +174,7 @@ def plot_label_corner_by_field(labels, label_names, fields):
 # ---------------------------------------------------------------------------
 
 def _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id):
-    """Create the shared 2-panel raw spectrum layout (flux + error).
-
-    Returns (fig, ax_flux, ax_err).
-    """
+    """Build the shared 2-panel raw spectrum layout and return ``(fig, ax_flux, ax_err)``."""
     fig, _ = textwidth_figure(4.5)
     _.remove()
     ax_flux, ax_err = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
@@ -144,7 +188,7 @@ def _raw_spectrum_panels(wavelength, flux_raw, error_raw, apogee_id):
     ax_err.plot(wavelength, error_raw, lw=LW_FINE, alpha=ALPHA_STANDARD,
                 color="C0", rasterized=True)
     finite_err = error_raw[np.isfinite(error_raw)]
-    ax_err.set_ylim(0, np.percentile(finite_err, 94))
+    ax_err.set_ylim(0, np.percentile(finite_err, _ERROR_PERCENTILE_CAP))
     ax_err.set_xlabel(r"Wavelength [\AA]")
     ax_err.set_ylabel(r"$\sigma$")
 
@@ -182,7 +226,7 @@ def plot_bitmask_diagnostic(wavelength, flux_raw, error_raw, bitmask, apogee_id)
     apogee_id : str, optional
     """
     _, error_masked = _apply_bitmask(flux_raw, error_raw, bitmask)
-    affected = (error_masked >= 1e5) | ~np.isfinite(error_masked)
+    affected = (error_masked >= _BAD_PIXEL_ERROR_SENTINEL) | ~np.isfinite(error_masked)
 
     # Pixel edges for axvspan shading
     dw = np.diff(wavelength)
@@ -267,7 +311,7 @@ def plot_bitmask_frequency(wavelength, flux_raw, bitmask_raw):
     ax.step(wavelength, cum3, where="mid",
             lw=LW_FINE, color=NEUTRAL_COLOR, label="Missing (NaN)")
 
-    ax.set_ylim(0, min(1.0, cum3.max() * 1.1))
+    ax.set_ylim(0, min(1.0, cum3.max() * _MASK_FRACTION_PAD_FACTOR))
     ax.set_xlabel(r"Wavelength [\AA]")
     ax.set_ylabel("Fraction of\nstars masked")
     ax.set_title(
@@ -307,13 +351,13 @@ def plot_normalization_diagnostic(
     ax.remove()
     ax_top, ax_bot = subpanels(fig, 2, height_ratios=(4, 3), sharex=True)
 
-    good = np.isfinite(error_masked) & (error_masked < 1e5)
+    good = np.isfinite(error_masked) & (error_masked < _BAD_PIXEL_ERROR_SENTINEL)
 
     # Use nan to break lines at bad/gap pixels instead of boolean indexing
     flux_plot = np.where(good, flux_masked, np.nan)
     cont_plot = np.where(np.isfinite(continuum_fit), continuum_fit, np.nan)
     norm_plot = np.where(
-        np.isfinite(flux_norm) & (error_norm < 1e5), flux_norm, np.nan,
+        np.isfinite(flux_norm) & (error_norm < _BAD_PIXEL_ERROR_SENTINEL), flux_norm, np.nan,
     )
 
     # Per-chip continuum with 5% extrapolation
@@ -336,7 +380,7 @@ def plot_normalization_diagnostic(
         if len(chip_idx) < 2:
             continue
         color = chip_colors[i % len(chip_colors)]
-        n_ext = max(1, int(0.05 * len(chip_idx)))
+        n_ext = max(1, int(_CONTINUUM_EXTRAP_FRAC * len(chip_idx)))
 
         # Build per-chip array with extrapolation
         lo = max(0, chip_idx[0] - n_ext)
@@ -360,7 +404,7 @@ def plot_normalization_diagnostic(
                     lw=LW_STANDARD, alpha=ALPHA_STANDARD, color=color,
                     zorder=4, label=f"{chip_names[i]} chip")
     # Highlight continuum pixels used in the fit with filled bands
-    cont_px_idx = np.where(continuum_mask & good & (error_masked < 1e5))[0]
+    cont_px_idx = np.where(continuum_mask & good & (error_masked < _BAD_PIXEL_ERROR_SENTINEL))[0]
     dw = np.diff(wavelength)
     edges = np.empty(len(wavelength) + 1)
     edges[1:-1] = wavelength[:-1] + dw / 2
@@ -427,7 +471,7 @@ def plot_similar_stars_comparison(wavelength, flux_array, error_array, labels,
     # Collect good-pixel fluxes for scatter computation
     all_flux = []
     for i, idx in enumerate(all_idx):
-        good = np.isfinite(flux_array[idx]) & (error_array[idx] < 1e5)
+        good = np.isfinite(flux_array[idx]) & (error_array[idx] < _BAD_PIXEL_ERROR_SENTINEL)
         flux_plot = np.where(good, flux_array[idx], np.nan)
         color = "C0" if i == 0 else f"C{i}"
         alpha = ALPHA_STANDARD if i == 0 else ALPHA_FAINT
@@ -480,7 +524,7 @@ def plot_training_prediction(wavelength, flux_obs, error_obs, flux_pred,
     err = error_obs[mask]
     pred = flux_pred[mask]
 
-    good = np.isfinite(err) & (err < 1.0) & np.isfinite(pred)
+    good = np.isfinite(err) & (err < _ERROR_THRESHOLD_TRAINING) & np.isfinite(pred)
     obs_plot = np.where(good, obs, np.nan)
     err_plot = np.where(good, err, np.nan)
     pred_plot = np.where(good, pred, np.nan)
@@ -539,7 +583,7 @@ def plot_mystery_prediction(wavelength, flux_obs, error_obs, flux_pred,
     err = error_obs[mask]
     pred = flux_pred[mask]
 
-    good = np.isfinite(err) & (err < 0.25) & np.isfinite(pred)
+    good = np.isfinite(err) & (err < _ERROR_THRESHOLD_MYSTERY) & np.isfinite(pred)
     obs_plot = np.where(good, obs, np.nan)
     err_plot = np.where(good, err, np.nan)
     pred_plot = np.where(good, pred, np.nan)
@@ -713,7 +757,7 @@ def plot_scatter_spectrum(model):
 def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_name):
     """Core implementation for label recovery plots."""
     n_labels = true_labels.shape[1]
-    ncols = 3
+    ncols = _LABEL_RECOVERY_NCOLS
     nrows = (n_labels + ncols - 1) // ncols
     fig, subfigs = textwidth_figure(6 * nrows, subfigures=(nrows, ncols))
     subfigs = np.atleast_2d(subfigs)
@@ -744,7 +788,7 @@ def _plot_label_recovery_impl(true_labels, fitted_labels, label_names, output_na
                      zorder=2, rasterized=True)
         lo = min(np.min(t), np.min(f))
         hi = max(np.max(t), np.max(f))
-        margin = 0.05 * (hi - lo)
+        margin = _PAD_FRACTION_LABELS * (hi - lo)
         ax_c.plot([lo - margin, hi + margin], [lo - margin, hi + margin],
                   color=NEUTRAL_COLOR, lw=LW_MEDIUM, alpha=ALPHA_STANDARD,
                   zorder=3)
@@ -819,7 +863,8 @@ def plot_outlier_spectra(wavelength, flux_obs_worst, error_obs_worst,
     axes = subpanels(fig, 6, hspace=0.35, sharex=True)
 
     def _plot_resid(ax, obs, pred, err, star_id, color):
-        good = np.isfinite(err) & (err < 1e5)
+        """Plot the (obs - pred) residual on *ax*, masking bad-error pixels."""
+        good = np.isfinite(err) & (err < _BAD_PIXEL_ERROR_SENTINEL)
         resid = np.where(good, obs - pred, np.nan)
         ax.plot(wl, resid, lw=LW_FINE, color=color,
                 alpha=ALPHA_STANDARD, zorder=2)
@@ -883,7 +928,7 @@ def plot_outlier_residuals(wavelength, flux_obs, error_obs, flux_pred,
         obs = flux_obs[i, mask]
         pred = flux_pred[i, mask]
         err = error_obs[i, mask]
-        good = np.isfinite(err) & (err < 1e5) & np.isfinite(pred) & np.isfinite(s2)
+        good = np.isfinite(err) & (err < _BAD_PIXEL_ERROR_SENTINEL) & np.isfinite(pred) & np.isfinite(s2)
 
         sigma_tot = np.sqrt(np.where(good, err ** 2 + s2, np.nan))
         pull = np.where(good, (obs - pred) / sigma_tot, np.nan)
@@ -930,7 +975,7 @@ def plot_kiel_diagram(fitted_labels, isochrone_tracks):
 
     if isochrone_tracks is not None:
         for label, iso_df in isochrone_tracks:
-            iso_mask = (iso_df["Teff"] > 3500) & (iso_df["Teff"] < 6000) & (iso_df["log_g"] < 4.5)
+            iso_mask = (iso_df["Teff"] > _TEFF_MIN_ISOCHRONE) & (iso_df["Teff"] < _TEFF_MAX_ISOCHRONE) & (iso_df["log_g"] < _LOGG_MAX_ISOCHRONE)
             ax.plot(iso_df["Teff"][iso_mask], iso_df["log_g"][iso_mask],
                     **MODEL_STYLE, color=NEUTRAL_COLOR, zorder=4,
                     label=label)
@@ -974,7 +1019,7 @@ def plot_metallicity_sequence(model, feh_values, teff, logg,
     for i, feh in enumerate(feh_values):
         labels = np.array([teff, logg, feh, mg_fe, si_fe])
         spec = model.predict(labels)
-        offset = -0.2 * i
+        offset = -_SPECTRUM_OFFSET_STEP * i
         ax.plot(wl, spec[mask] + offset, lw=LW_FINE, alpha=ALPHA_STANDARD,
                 color=f"C{i % 10}", zorder=3,
                 label=rf"$[\mathrm{{Fe/H}}]={feh:+.2f}$")
@@ -1017,7 +1062,7 @@ def plot_rgb_evolution(model, teff_track, logg_track, feh,
     for i, (t, g) in enumerate(zip(teff_track, logg_track)):
         labels = np.array([t, g, feh, mg_fe, si_fe])
         spec = model.predict(labels)
-        offset = -0.2 * i
+        offset = -_SPECTRUM_OFFSET_STEP * i
         ax.plot(wl, spec[mask] + offset, lw=LW_FINE, alpha=ALPHA_STANDARD,
                 color=f"C{i % 10}", zorder=3,
                 label=rf"$T_{{\rm eff}}={t:.0f}$, $\log g={g:.1f}$")

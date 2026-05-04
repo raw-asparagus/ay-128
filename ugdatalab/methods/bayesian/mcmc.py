@@ -9,6 +9,11 @@ import pymc as pm
 from ugdatalab.methods.base import DataFit
 
 
+# ---------------------------------------------------------------------------
+# Result container
+# ---------------------------------------------------------------------------
+
+
 @dataclass(frozen=True)
 class MCMCResult(DataFit):
     """Result of PyMC NUTS parameter estimation.
@@ -101,6 +106,11 @@ class MCMCResult(DataFit):
         return len(self.theta)
 
 
+# ---------------------------------------------------------------------------
+# Sampler entry point
+# ---------------------------------------------------------------------------
+
+
 def nuts_sample(
     likelihood,
     n_steps: int = 2000,
@@ -114,11 +124,19 @@ def nuts_sample(
     likelihood : Likelihood
         Object satisfying the ``Likelihood`` ABC.
     n_steps : int
-        Total NUTS draws after tuning.
+        Total NUTS draws kept per chain after tuning. Default ``2000`` —
+        comfortably yields ESS ≳ 1000 on the 2–3 parameter linear/Gaussian
+        models used across the labs; raise if posterior summaries are still
+        noisy or if ``arviz.summary`` reports ESS below a few hundred.
     n_burn : int
-        Tuning steps, discarded.
+        Tuning / adaptation steps discarded before sampling. Default
+        ``1000`` — enough for NUTS to adapt the mass matrix and step size
+        on the well-behaved likelihoods here; raise if you see divergences
+        or persistent r-hat warnings on a harder posterior.
     seed : int
-        Random seed for reproducibility.
+        Random seed for chain initialization and draws. Default ``42`` —
+        an arbitrary fixed value chosen for reproducibility; override to
+        check sensitivity of results to the random seed.
 
     Returns
     -------

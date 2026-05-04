@@ -32,6 +32,11 @@ _DOWNLOAD_TIMEOUT_S = 600
 _CACHE_ROOT = Path.home() / ".cache" / "ugdatalab"
 
 
+# ---------------------------------------------------------------------------
+# Cache + download primitives
+# ---------------------------------------------------------------------------
+
+
 def _cached_dir(name: str) -> Path | None:
     """Return the user-cache directory if already populated, else ``None``."""
     cached = _CACHE_ROOT / name
@@ -98,6 +103,11 @@ def _fetch_tarball(url: str, name: str, desc: str) -> Path:
     archive.unlink()
     (target / ".done").touch()
     return target
+
+
+# ---------------------------------------------------------------------------
+# Public dataset accessors
+# ---------------------------------------------------------------------------
 
 
 def gaia_zeropoints_dir() -> Path:

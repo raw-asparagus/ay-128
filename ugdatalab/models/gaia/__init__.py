@@ -1,20 +1,27 @@
-"""Gaia DR3 catalog loaders, quality cuts, and WISE cross-match wrappers."""
+"""Gaia DR3 catalog loaders, composable quality cuts, and WISE cross-match wrappers."""
 
-from ugdatalab.models.gaia.gaia import (
-    GaiaData,
-    GaiaSample,
-    Local,
-    StrictG,
-    StrictBPRP,
-    LindegrenC1,
-    LindegrenC2,
-    GaiaReddening,
-    StrictReddening,
-    Deoutlier,
+from ugdatalab.models.gaia.gaia import GaiaData
+from ugdatalab.models.gaia.pipeline import (
+    AddPhotometryColumns,
+    AttachInlierProbColumn,
+    AttachReddening,
+    AttachRepresentativePeriod,
+    GaiaFiniteCut,
+    HighLatitudeCut,
+    HighParallaxSnrCut,
+    LindegrenC1Cut,
+    LindegrenC2Cut,
+    LocalCut,
+    StrictBPRPCut,
+    StrictGCut,
+    StrictReddeningCut,
 )
-from ugdatalab.models.gaia.wise import (
-    WISEData,
-    WISESample,
+from ugdatalab.models.gaia.wise import WISEData
+from ugdatalab.models.gaia.wise_pipeline import (
+    AddW2PhotometryColumns,
+    MarreseOneToOneMatchCut,
+    W2PhotometryQualityCut,
+    WISEFiniteCut,
 )
 from ugdatalab.models.gaia.lightcurves import (
     RRLYRAE_PERIOD_MIN,

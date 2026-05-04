@@ -11,6 +11,7 @@ from PIL import Image
 from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 
+from ugdatalab.models.base import Data
 from ugdatalab.models.galaxy_zoo.constants import (
     LABEL_COLUMNS,
     _GALAXY_ZOO_SCHEMA,
@@ -72,21 +73,34 @@ def _preprocess_images(
 
 
 @dataclass
-class GalaxyZooData:
+class GalaxyZooData(Data):
     """Load Galaxy Zoo 2 classification labels from CSV.
 
     Parameters
     ----------
     csv_path : str or Path
         Path to ``training_classifications.csv``.
+    pipeline : Compose, keyword-only
+        Inherited from :class:`~ugdatalab.models.base.Data`. Pipeline of
+        cuts and column augmentations applied immediately after CSV load
+        + sanitize. Default ``Compose([])`` — no transformations. Galaxy
+        Zoo has no built-in cuts today; the parameter is here for
+        symmetry with the other data classes (Gaia, WISE, APOGEE).
+
+    Attributes
+    ----------
+    data : pandas.DataFrame
+        Sanitized (and cut) classifications table.
     """
     csv_path: str | Path
-    data: pd.DataFrame = field(init=False, repr=False)
 
-    def __post_init__(self):
-        data = pd.read_csv(self.csv_path)
-        _sanitize_dataframe(data, _GALAXY_ZOO_SCHEMA)
-        self.data = data
+    def _fetch(self) -> pd.DataFrame:
+        """Read the Galaxy Zoo 2 classifications CSV into a DataFrame."""
+        return pd.read_csv(self.csv_path)
+
+    def _sanitize(self, raw: pd.DataFrame) -> None:
+        """Coerce columns to the Galaxy Zoo schema in place."""
+        _sanitize_dataframe(raw, _GALAXY_ZOO_SCHEMA)
 
     @property
     def labels(self) -> np.ndarray:
@@ -97,10 +111,6 @@ class GalaxyZooData:
     def galaxy_ids(self) -> np.ndarray:
         """Galaxy ID column as integer array."""
         return self.data["GalaxyID"].to_numpy()
-
-    def __len__(self) -> int:
-        """Number of galaxies in the dataset."""
-        return len(self.data)
 
 
 @dataclass
@@ -130,6 +140,7 @@ class GalaxyZooImages:
     images: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
+        """Load and preprocess all images for the source's galaxy IDs into memory."""
         self.image_dir = Path(self.image_dir)
         self.images = _preprocess_images(
             self.image_dir,
@@ -161,11 +172,13 @@ class GalaxyZooDataset(Dataset):
         labels: np.ndarray,
         transform: Callable,
     ):
+        """Store images, float32 labels, and the per-sample image transform."""
         self.images = images
         self.labels = labels.astype(np.float32)
         self.transform = transform
 
     def __getitem__(self, index: int) -> tuple:
+        """Return the (CHW image tensor, label tensor) pair at *index* after applying the transform."""
         image = self.images[index]  # (H, W, 3)
         label = self.labels[index]  # (37,)
 
@@ -179,4 +192,5 @@ class GalaxyZooDataset(Dataset):
         return image_tensor, label_tensor
 
     def __len__(self) -> int:
+        """Return the number of samples in the dataset."""
         return len(self.images)

@@ -221,6 +221,7 @@ class APOGEESpectra:
     apogee_ids: np.ndarray
 
     def __len__(self):
+        """Return the number of spectra (rows of ``flux``)."""
         return self.flux.shape[0]
 
     @classmethod

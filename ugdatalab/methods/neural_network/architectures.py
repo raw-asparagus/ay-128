@@ -9,6 +9,11 @@ import torch.nn as nn
 from torchvision.models import resnet18 as _resnet18_factory
 
 
+# ---------------------------------------------------------------------------
+# ResNet-18 factory
+# ---------------------------------------------------------------------------
+
+
 def build_resnet18(n_labels: int, input_size: int) -> nn.Module:
     """Build a modified ResNet-18 for multi-label classification.
 
@@ -46,6 +51,11 @@ def build_resnet18(n_labels: int, input_size: int) -> nn.Module:
     return model
 
 
+# ---------------------------------------------------------------------------
+# Custom CNN
+# ---------------------------------------------------------------------------
+
+
 class _CustomCNN(nn.Module):
     """Custom CNN with configurable conv/FC layers, pooling, and dropout.
 
@@ -67,6 +77,7 @@ class _CustomCNN(nn.Module):
         pool_type: str,
         input_size: int,
     ):
+        """Build the conv-pool stack and FC classifier head from the layer specs."""
         super().__init__()
 
         pool_cls = nn.MaxPool2d if pool_type == "max" else nn.AvgPool2d
@@ -108,6 +119,7 @@ class _CustomCNN(nn.Module):
         self.classifier = nn.Sequential(*fc_layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the convolutional features and dense classifier on input ``x``."""
         x = self.features(x)
         x = x.view(x.size(0), -1)
         x = self.classifier(x)

@@ -43,6 +43,7 @@ class LinearGaussianLikelihood(GaussianLikelihood):
     x_err: np.ndarray = None
 
     def __post_init__(self):
+        """Coerce x, y, y_err, and x_err to float ndarrays, defaulting x_err to zeros."""
         self.x = np.asarray(self.x, dtype=float)
         self.y = np.asarray(self.y, dtype=float)
         self.y_err = np.asarray(self.y_err, dtype=float)

@@ -22,6 +22,7 @@ def cache_stable(*, module: str):
         joblib-cached wrapper.
     """
     def _deco(fn):
+        """Set the function's ``__module__`` and return the joblib-cached wrapper."""
         fn.__module__ = module
         return _memory.cache(fn)
     return _deco

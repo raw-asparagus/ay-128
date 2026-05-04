@@ -37,6 +37,7 @@ def _sanitize_columns(
 def _sanitize_table(data, schema: dict) -> None:
     """Cast columns of an ``astropy.table.Table`` according to *schema*."""
     def _set_col(name, dtype):
+        """Cast the named astropy table column to *dtype* in place."""
         data[name] = np.asarray(data[name], dtype=dtype)
     _sanitize_columns(data.colnames, _set_col, schema)
 
@@ -44,5 +45,6 @@ def _sanitize_table(data, schema: dict) -> None:
 def _sanitize_dataframe(data, schema: dict) -> None:
     """Cast columns of a ``pandas.DataFrame`` according to *schema*."""
     def _set_col(name, dtype):
+        """Cast the named DataFrame column to *dtype* in place."""
         data[name] = data[name].astype(dtype)
     _sanitize_columns(data.columns, _set_col, schema)

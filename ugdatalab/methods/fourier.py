@@ -7,6 +7,11 @@ import numpy as np
 from ugdatalab.methods.base import DataFit
 
 
+# ---------------------------------------------------------------------------
+# Phase and design-matrix helpers
+# ---------------------------------------------------------------------------
+
+
 def phase_fold(x: np.ndarray, period: float) -> np.ndarray:
     """Map values to phase in [0, 1).
 
@@ -53,6 +58,11 @@ def build_design_matrix(x: np.ndarray, omega: float, k: int) -> np.ndarray:
         X[:, 2 * j - 1] = np.cos(j * omega * x_mod)
         X[:, 2 * j] = np.sin(j * omega * x_mod)
     return X
+
+
+# ---------------------------------------------------------------------------
+# Fit result
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -124,6 +134,11 @@ class FourierFit(DataFit):
     def n_params(self) -> int:
         """Return the number of free coefficients (``2*k + 1``)."""
         return 2 * self.k + 1
+
+
+# ---------------------------------------------------------------------------
+# Fit driver
+# ---------------------------------------------------------------------------
 
 
 def fourier_fit(

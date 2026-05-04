@@ -10,7 +10,7 @@ import numpy as np
 from ugdatalab.methods.fourier import fourier_fit, phase_fold
 from ugdatalab.methods.cross_validate import cross_validate
 from ugdatalab.plotters.bayesian import predict_posterior
-from ugdatalab.models.gaia import Deoutlier, GaiaData
+from ugdatalab.models.gaia import GaiaData
 from ugdatalab.plotting import (
     TEXTWIDTH_IN,
     LW_NONE,
@@ -49,8 +49,67 @@ from ugdatalab.plotting import (
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 _CLASS_COLORS = {"RRab": "C0", "RRc": "C1", "RRd": "C2"}
 
+# --- Padding / margins ---
+# Generic axis padding as fraction of data range
+_PAD_FRACTION_DATA = 0.05
+# Symmetric residual-axis padding multiplier
+_RESIDUAL_PAD_FACTOR = 1.1
+
+# --- Phase grid resolution ---
+# Sample count for phase-folded curve evaluation
+_PHASE_GRID_POINTS = 1000
+
+# --- Subplot geometry ---
+# Vertical gap between raw and phase-folded panels
+_HSPACE_RAW_PHASED = 0.42
+# Horizontal gap for two-column row layouts
+_WSPACE_TWO_COL = 0.28
+# Main / residual panel height ratio
+_HEIGHT_RATIO_FOURIER_RESID = (2.5, 1)
+
+# --- Normalized residual histogram ---
+# Normalized-residual histogram range in σ
+_NORM_RESIDUAL_RANGE = (-5.0, 5.0)
+# Histogram bins across the residual range
+_NORM_RESIDUAL_BINS = 31
+# Smooth-curve sample count over the same range
+_NORM_RESIDUAL_GRID_POINTS = 400
+
+# --- Lightcurve extrapolation window ---
+# Days before last epoch shown in extrapolation panel
+_EXTRAP_LOOKBACK_DAYS = 5.0
+# Days after last epoch shown
+_EXTRAP_FORWARD_DAYS = 12.0
+# Offset for the predicted-magnitude marker
+_EXTRAP_PREDICTION_OFFSET_DAYS = 10.0
+
+# --- Sky / Galactic plotting ---
+# Half-width of the |b| band drawn on Aitoff plots
+_GALACTIC_LATITUDE_BAND_DEG = 30
+
+# --- Period / log-scale ticks ---
+# Minor-tick fractions on log-period axes
+_LOG_LOCATOR_SUBS_PERIOD = [0.2, 0.4, 0.6, 0.8, 1.0]
+
+# --- Corner / contour ---
+# 1σ and 2σ enclosed-mass contour levels
+_CORNER_CONTOUR_LEVELS = (0.393, 0.865)
+
+# --- Reddening / SFD comparison ---
+# Y-axis ceiling for the full empirical-A_G panel
+_EXTINCTION_CEILING_MAG = 20.0
+# Y-axis ceiling for the large-SFD regime panel
+_EXTINCTION_LARGE_REGIME_MAG = 10.0
+# Lower colorbar percentile for reddening maps
+_PERCENTILE_LOW = 0.5
+# Upper colorbar percentile for reddening maps
+_PERCENTILE_HIGH = 99.5
+# Minimum points in a bin to compute a median trend
+_MIN_POINTS_PER_BIN = 10
+
 
 def savefig(fig, name):
+    """Write *fig* to ``report/figures/<name>``, creating the directory if needed."""
     _FIGURES_DIR.mkdir(parents=True, exist_ok=True)
     fig.savefig(_FIGURES_DIR / name)
 
@@ -72,7 +131,7 @@ def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
 
     fig, ax = columnwidth_figure(33 / 4)
     ax.remove()
-    axes = subpanels(fig, 2, hspace=0.42, sharex=False, sharey=True)
+    axes = subpanels(fig, 2, hspace=_HSPACE_RAW_PHASED, sharex=False, sharey=True)
 
     axes[0].errorbar(epoch, mag, yerr=mag_err, ecolor="C0", fmt="none", alpha=ALPHA_FAINT, zorder=1, **ERRORBAR_STYLE)
     axes[0].scatter(epoch, mag, s=SS_MICRO, alpha=ALPHA_STANDARD, color="C0",
@@ -139,7 +198,7 @@ def plot_vari_rrlyrae_period_comparison(rrlyrae):
 
     fig, ax = textwidth_figure(10)
     ax.remove()
-    axes = subpanels(fig, 1, 2, sharex=False, wspace=0.28)
+    axes = subpanels(fig, 1, 2, sharex=False, wspace=_WSPACE_TWO_COL)
     ax_f, ax_o = axes
 
     # --- Left panel: P_F vs P_LS ---
@@ -219,7 +278,7 @@ def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
     order = np.argsort(phase)
     epoch, phase, mag, mag_err = epoch[order], phase[order], mag[order], mag_err[order]
 
-    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+    phase_grid = np.linspace(0.0, 1.0, _PHASE_GRID_POINTS, endpoint=False)
     epoch_grid = phase_grid * period
     ncols = 2
     nrows = (len(K_values) + 1) // 2
@@ -233,7 +292,7 @@ def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
 
     for i in range(len(K_values)):
         row, col = i // ncols, i % ncols
-        ax_c, ax_r = subpanels(subfigs[row, col], 2, height_ratios=(2.5, 1))
+        ax_c, ax_r = subpanels(subfigs[row, col], 2, height_ratios=_HEIGHT_RATIO_FOURIER_RESID)
         axes[i, 0] = ax_c
         axes[i, 1] = ax_r
 
@@ -321,13 +380,13 @@ def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, bes
 
     train, cv = result.train_idx, result.cv_idx
 
-    bins = np.linspace(-5.0, 5.0, 31)
-    x_gauss = np.linspace(-5.0, 5.0, 400)
+    bins = np.linspace(*_NORM_RESIDUAL_RANGE, _NORM_RESIDUAL_BINS)
+    x_gauss = np.linspace(*_NORM_RESIDUAL_RANGE, _NORM_RESIDUAL_GRID_POINTS)
     gaussian = np.exp(-0.5 * x_gauss**2) / np.sqrt(2.0 * np.pi)
 
     fig, ax = textwidth_figure(3)
     ax.remove()
-    axes = subpanels(fig, 1, 2, wspace=0.28, sharex=True)
+    axes = subpanels(fig, 1, 2, wspace=_WSPACE_TWO_COL, sharex=True)
 
     panels = [
         (axes[0], low_fit, rf"Low $K = {low_fit.k}$"),
@@ -374,16 +433,16 @@ def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_
     period = best_fit.period
     train_phase = phase_fold(epochs[train], period)
     cv_phase = phase_fold(epochs[cv], period)
-    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+    phase_grid = np.linspace(0.0, 1.0, _PHASE_GRID_POINTS, endpoint=False)
     epoch_grid = phase_grid * period
 
     all_mags = np.concatenate([mags[train], mags[cv]])
-    pad = 0.05 * (np.max(all_mags) - np.min(all_mags))
+    pad = _PAD_FRACTION_DATA * (np.max(all_mags) - np.min(all_mags))
     y_lim = (np.max(all_mags) + pad, np.min(all_mags) - pad)
 
     fig, ax = textwidth_figure(3)
     ax.remove()
-    axes = subpanels(fig, 1, 2, wspace=0.28, sharex=False)
+    axes = subpanels(fig, 1, 2, wspace=_WSPACE_TWO_COL, sharex=False)
 
     for ax, fit, K in [(axes[0], best_fit, best_fit.k), (axes[1], high_fit, high_fit.k)]:
         ax.scatter(train_phase, mags[train], s=SS_MICRO, alpha=ALPHA_EXTRA_LIGHT,
@@ -441,7 +500,7 @@ def plot_mean_g_catalog_comparison(rrlyrae):
     valid_f = np.isfinite(fourier_g) & np.isfinite(int_g) & np.isfinite(resid_f)
     all_mag = np.concatenate([int_g[valid_s], simple_g[valid_s],
                               int_g[valid_f], fourier_g[valid_f]])
-    pad = 0.05 * (np.max(all_mag) - np.min(all_mag))
+    pad = _PAD_FRACTION_DATA * (np.max(all_mag) - np.min(all_mag))
     mag_lo = np.min(all_mag) - pad
     mag_hi = np.max(all_mag) + pad
 
@@ -449,7 +508,7 @@ def plot_mean_g_catalog_comparison(rrlyrae):
         resid_s[valid_s] - resid_s_err[valid_s], resid_s[valid_s] + resid_s_err[valid_s],
         resid_f[valid_f] - resid_f_err[valid_f], resid_f[valid_f] + resid_f_err[valid_f],
     ])
-    resid_max = 1.1 * np.nanmax(np.abs(all_resid))
+    resid_max = _RESIDUAL_PAD_FACTOR * np.nanmax(np.abs(all_resid))
 
     panels = [
         (ax_s, ax_sr, simple_g, simple_g_err, resid_s, resid_s_err, valid_s,
@@ -494,13 +553,13 @@ def plot_fourier_extrapolation(fit):
     mag_errs = fit.y_err
 
     epoch_last = np.max(epochs)
-    epoch_start = epoch_last - 5.0
-    epoch_end = epoch_last + 12.0
+    epoch_start = epoch_last - _EXTRAP_LOOKBACK_DAYS
+    epoch_end = epoch_last + _EXTRAP_FORWARD_DAYS
     epoch_grid = np.linspace(epoch_start, epoch_end, 2000)
     mag_grid = fit.predict(epoch_grid)
     mag_grid_err = fit.predict_std(epoch_grid)
 
-    epoch_pred = epoch_last + 10.0
+    epoch_pred = epoch_last + _EXTRAP_PREDICTION_OFFSET_DAYS
     mag_pred = fit.predict(np.array([epoch_pred]))[0]
     mag_pred_err = fit.predict_std(np.array([epoch_pred]))[0]
 
@@ -542,7 +601,7 @@ def _prepare_shape_panels(rrlyrae, rr_class):
     """Build per-source panel data for shape comparison."""
     lc = rrlyrae.lightcurves
     period_col = "p1_o" if rr_class == "RRc" else "pf"
-    phase_grid = np.linspace(0.0, 1.0, 1000, endpoint=False)
+    phase_grid = np.linspace(0.0, 1.0, _PHASE_GRID_POINTS, endpoint=False)
 
     panels = []
     for row in rrlyrae.data:
@@ -596,11 +655,11 @@ def plot_rrlyrae_shape_comparison(rrab, rrc):
         all_resid.append(p["residuals"][r_finite])
 
     mag_vals = np.concatenate(all_mag)
-    pad = max(0.05 * (np.max(mag_vals) - np.min(mag_vals)), 0.05)
+    pad = max(_PAD_FRACTION_DATA * (np.max(mag_vals) - np.min(mag_vals)), _PAD_FRACTION_DATA)
     y_lim = (np.min(mag_vals) - pad, np.max(mag_vals) + pad)
 
     resid_vals = np.concatenate(all_resid)
-    resid_max = max(np.max(np.abs(resid_vals)), 0.05) * 1.1
+    resid_max = max(np.max(np.abs(resid_vals)), _PAD_FRACTION_DATA) * _RESIDUAL_PAD_FACTOR
     resid_lim = (-resid_max, resid_max)
 
     nrows = max(len(rrab_panels), len(rrc_panels))
@@ -665,6 +724,7 @@ def plot_rrlyrae_shape_comparison(rrab, rrc):
 # ---------------------------------------------------------------------------
 
 def _to_rad(data):
+    """Return galactic (l, b) wrapped to [-180, 180) deg and converted to radians."""
     l_wrap = np.where(data["l"] > 180, data["l"] - 360, data["l"])
     return np.deg2rad(l_wrap), np.deg2rad(data["b"])
 
@@ -690,8 +750,8 @@ def plot_aitoff_diff(source: GaiaData, filtered: GaiaData):
                rasterized=True, zorder=2, label=f"Kept ($N$={len(kept_data)})")
 
     longs = np.linspace(-np.pi, np.pi, 1000)
-    ax.fill_between(longs, np.full_like(longs, np.deg2rad(-30)),
-                    np.full_like(longs, np.deg2rad(30)),
+    ax.fill_between(longs, np.full_like(longs, np.deg2rad(-_GALACTIC_LATITUDE_BAND_DEG)),
+                    np.full_like(longs, np.deg2rad(_GALACTIC_LATITUDE_BAND_DEG)),
                     color="C3", alpha=ALPHA_EXTRA_LIGHT,
                     label=r"$|b| < 30^\circ$ band")
 
@@ -726,7 +786,7 @@ def plot_period_abs_mag(data):
                    s=SS_MICRO, alpha=ALPHA_STANDARD, rasterized=True, zorder=2)
 
     ax.set_xscale("log")
-    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=_LOG_LOCATOR_SUBS_PERIOD))
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.autoscale_view()
@@ -783,7 +843,7 @@ def plot_period_abs_mag_c12_comparison(source: GaiaData, filtered: GaiaData):
                        rasterized=True, zorder=3)
 
     ax.set_xscale("log")
-    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=_LOG_LOCATOR_SUBS_PERIOD))
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.autoscale_view()
@@ -807,10 +867,16 @@ def plot_period_abs_mag_c12_comparison(source: GaiaData, filtered: GaiaData):
 # 16. Inlier probability period-luminosity comparison
 # ---------------------------------------------------------------------------
 
-def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deoutlier):
-    """P-M_G colored by inlier probability, with removed points marked."""
+def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: GaiaData):
+    """P-M_G colored by inlier probability, with removed points marked.
+
+    *source* must already carry the ``inlier_prob`` column (built via a
+    pipeline that includes ``AttachInlierProbColumn()``); *clean* is the
+    same pipeline with ``AttachInlierProbColumn(prob_threshold=...)``
+    in place of the bare attach call.
+    """
     pre_data = source.data
-    inlier_prob = clean.inlier_probs
+    inlier_prob = pre_data["inlier_prob"]
 
     periods = pre_data["rrlyrae_representative_period"]
     m_g = pre_data["M_G"]
@@ -830,7 +896,7 @@ def plot_inlier_prob_period_luminosity_comparison(source: GaiaData, clean: Deout
     fig.colorbar(sc, ax=ax, label="Posterior inlier probability")
 
     ax.set_xscale("log")
-    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=_LOG_LOCATOR_SUBS_PERIOD))
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.autoscale_view()
@@ -882,7 +948,7 @@ def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native, output_name)
             fill_contours=False,
             plot_datapoints=False,
             plot_density=False,
-            levels=(0.393, 0.865),
+            levels=_CORNER_CONTOUR_LEVELS,
             smooth=1.0,
             hist_kwargs=dict(
                 density=True, histtype="step", linewidth=LW_STANDARD, alpha=ALPHA_LIGHT,
@@ -947,7 +1013,7 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
             ax.plot(p_grid, pp["median"], color=color, **FIT_STYLE, zorder=5)
 
         ax.set_xscale("log")
-        ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+        ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=_LOG_LOCATOR_SUBS_PERIOD))
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
         ax.xaxis.set_minor_formatter(mticker.NullFormatter())
         ax.autoscale_view()
@@ -1009,7 +1075,7 @@ def plot_period_color_comparison(rrab_result, rrc_result,
         ax.plot(p_grid, pp["median"], color=color, **FIT_STYLE, zorder=5)
 
     ax.set_xscale("log")
-    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=[0.2, 0.4, 0.6, 0.8, 1.0]))
+    ax.xaxis.set_major_locator(mticker.LogLocator(base=10, subs=_LOG_LOCATOR_SUBS_PERIOD))
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}"))
     ax.xaxis.set_minor_formatter(mticker.NullFormatter())
     ax.autoscale_view()
@@ -1056,10 +1122,10 @@ def plot_empirical_vs_catalog_extinction(population):
         rasterized=True, zorder=2, label="RRab",
     )
     lo = min(catalog_ag.min(), empirical_ag.min())
-    margin = 0.05 * (20.0 - lo)
-    ax.plot([lo - margin, 20.0], [lo - margin, 20.0], **GUIDE_STYLE, label="1:1")
-    ax.set_xlim(lo - margin, 20.0)
-    ax.set_ylim(lo - margin, 20.0)
+    margin = _PAD_FRACTION_DATA * (_EXTINCTION_CEILING_MAG - lo)
+    ax.plot([lo - margin, _EXTINCTION_CEILING_MAG], [lo - margin, _EXTINCTION_CEILING_MAG], **GUIDE_STYLE, label="1:1")
+    ax.set_xlim(lo - margin, _EXTINCTION_CEILING_MAG)
+    ax.set_ylim(lo - margin, _EXTINCTION_CEILING_MAG)
     ax.set_aspect("equal", adjustable="box")
     ax.set_xlabel(r"Gaia DR3 $g_{\mathrm{absorption}}$ [mag]")
     ax.set_ylabel(r"Empirical $A_G$ [mag]")
@@ -1097,8 +1163,8 @@ def plot_aitoff_reddening(l_deg, b_deg, values):
     values : array-like
         Color excess values to map.
     """
-    vmin = float(min(0.0, np.nanpercentile(values, 0.5)))
-    vmax = float(np.nanpercentile(values, 99.5))
+    vmin = float(min(0.0, np.nanpercentile(values, _PERCENTILE_LOW)))
+    vmax = float(np.nanpercentile(values, _PERCENTILE_HIGH))
 
     fig, ax = _aitoff_figure()
 
@@ -1130,8 +1196,8 @@ def plot_aitoff_sfd(l_deg, b_deg, sfd_ebv):
     sfd_ebv : array-like
         SFD E(B-V) values.
     """
-    vmin = float(max(0.0, np.nanpercentile(sfd_ebv, 0.5)))
-    vmax = float(np.nanpercentile(sfd_ebv, 99.5))
+    vmin = float(max(0.0, np.nanpercentile(sfd_ebv, _PERCENTILE_LOW)))
+    vmax = float(np.nanpercentile(sfd_ebv, _PERCENTILE_HIGH))
 
     fig, ax = _aitoff_figure()
 
@@ -1160,8 +1226,8 @@ def plot_aitoff_sfd(l_deg, b_deg, sfd_ebv):
 def plot_sfd_regime_decomposition(
     sfd_ebv, empirical, similar_mask, large_mask,
     slope, intercept,
-    similar_scale_max=2.0, large_sfd_min=10.0,
-    bin_count=18,
+    similar_scale_max, large_sfd_min,
+    bin_count,
 ):
     """Two-panel: similar-scale hexbin with fit + median, large-SFD scatter.
 
@@ -1180,7 +1246,7 @@ def plot_sfd_regime_decomposition(
     """
     fig, ax_dummy = textwidth_figure(33 / 4)
     ax_dummy.remove()
-    axes = subpanels(fig, 1, ncols=2, wspace=0.28, sharex=False, sharey=False)
+    axes = subpanels(fig, 1, ncols=2, wspace=_WSPACE_TWO_COL, sharex=False, sharey=False)
 
     # --- left: similar scale (hexbin + fit + binned median) ---
     x_sim = sfd_ebv[similar_mask]
@@ -1199,7 +1265,7 @@ def plot_sfd_regime_decomposition(
     centers, medians = [], []
     for lo, hi in zip(edges[:-1], edges[1:]):
         sel = (x_sim >= lo) & (x_sim < hi)
-        if sel.sum() >= 10:
+        if sel.sum() >= _MIN_POINTS_PER_BIN:
             centers.append(0.5 * (lo + hi))
             medians.append(float(np.nanmedian(y_sim[sel])))
     axes[0].plot(centers, medians, color="C3", **MODEL_STYLE, label="Binned median")
@@ -1215,10 +1281,10 @@ def plot_sfd_regime_decomposition(
         x_lg, y_lg,
         s=SS_MICRO, alpha=ALPHA_FAINT, color="C0", rasterized=True,
     )
-    axes[1].axhline(10.0, **GUIDE_STYLE, label=r"$E = 10$ ceiling")
+    axes[1].axhline(_EXTINCTION_LARGE_REGIME_MAG, **GUIDE_STYLE, label=r"$E = 10$ ceiling")
     lo_y = min(y_lg.min(), 0) if len(y_lg) else -1
-    margin = 0.05 * (10.0 - lo_y)
-    axes[1].set_ylim(lo_y - margin, 10.0 + margin)
+    margin = _PAD_FRACTION_DATA * (_EXTINCTION_LARGE_REGIME_MAG - lo_y)
+    axes[1].set_ylim(lo_y - margin, _EXTINCTION_LARGE_REGIME_MAG + margin)
     axes[1].set_xlabel(r"SFD $E(B-V)$ [mag]")
     axes[1].set_ylabel(r"$E(G_{\mathrm{BP}} - G_{\mathrm{RP}})$ [mag]")
     axes[1].legend(loc="upper right")

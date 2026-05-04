@@ -19,6 +19,11 @@ _LOGIT_F_PRIOR_MU = 0.0            # logit(0.5) — neutral on inlier fraction
 _LOGIT_F_PRIOR_SIGMA = 3.0         # wide → essentially uniform on f
 
 
+# ---------------------------------------------------------------------------
+# Likelihood ABCs
+# ---------------------------------------------------------------------------
+
+
 class Likelihood(ABC):
     """Base class for likelihood objects consumable by ``nuts_sample``.
 
@@ -82,6 +87,11 @@ class MixtureLikelihood(Likelihood):
     def inlier_probs(self, trace, model_var_names: list[str]) -> np.ndarray:
         """Return per-point posterior inlier probabilities from a trace."""
         ...
+
+
+# ---------------------------------------------------------------------------
+# Gaussian inlier+outlier mixture base
+# ---------------------------------------------------------------------------
 
 
 class GaussianLikelihood(MixtureLikelihood):
