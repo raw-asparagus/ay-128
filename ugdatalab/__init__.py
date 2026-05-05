@@ -46,6 +46,7 @@ _LAZY_EXPORTS = {
     "APOGEESpectra":                 "ugdatalab.models.apogee",
     "APOGEESpectrum":                "ugdatalab.models.apogee",
     # ugdatalab.models.galaxy_zoo
+    "GalaxyImages":                  "ugdatalab.models.galaxy_zoo",
     "GalaxyZooData":                 "ugdatalab.models.galaxy_zoo",
     "GalaxyZooImages":               "ugdatalab.models.galaxy_zoo",
     "GalaxyZooDataset":              "ugdatalab.models.galaxy_zoo",

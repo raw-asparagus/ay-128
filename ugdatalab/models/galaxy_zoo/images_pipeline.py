@@ -1,20 +1,23 @@
-"""Galaxy Zoo per-image preprocessing helpers: load, crop, resize."""
+"""Galaxy Zoo per-image preprocessing helpers and ``Compose``-style stages.
 
-from pathlib import Path
+The class wrappers (``CropFraction``, ``Resize``) operate on a single
+``(H, W, 3)`` float32 image and follow the
+:class:`~ugdatalab.utils.compose.Compose` ``T -> T`` contract, so they
+can be combined with each other or with the runtime augmentation stages
+in :mod:`ugdatalab.methods.neural_network.augmentation`.
+"""
+
+from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
-from tqdm.auto import tqdm
+
+from ugdatalab.models.galaxy_zoo.constants import _UINT8_MAX
 
 
-# uint8 max — denominator for normalizing 8-bit images to [0, 1].
-_UINT8_MAX = 255.0
-
-
-def _load_image(path: Path) -> np.ndarray:
-    """Read a JPEG image and return it as a float32 (H, W, 3) array in [0, 1]."""
-    img = Image.open(path).convert("RGB")
-    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+# ---------------------------------------------------------------------------
+# Per-image helpers
+# ---------------------------------------------------------------------------
 
 
 def _crop_center(image: np.ndarray, crop_fraction: float) -> np.ndarray:
@@ -25,6 +28,24 @@ def _crop_center(image: np.ndarray, crop_fraction: float) -> np.ndarray:
     return image[dy:h - dy, dx:w - dx]
 
 
+@dataclass
+class CropFraction:
+    """Center-crop an image by removing ``crop_fraction`` of each border.
+
+    Parameters
+    ----------
+    crop_fraction : float
+        Fraction of each side to discard. Default ``0.25`` — keeps the
+        central 50% of the image; the convention used across lab 03's
+        preprocessing pipeline.
+    """
+    crop_fraction: float = 0.25
+
+    def __call__(self, image: np.ndarray) -> np.ndarray:
+        """Return a center-cropped (H', W', 3) view of *image*."""
+        return _crop_center(image, self.crop_fraction)
+
+
 def _resize(image: np.ndarray, target_size: int) -> np.ndarray:
     """Lanczos-resize an (H, W, 3) float32 image to ``(target_size, target_size, 3)``."""
     img = Image.fromarray((image * _UINT8_MAX).astype(np.uint8))
@@ -32,19 +53,17 @@ def _resize(image: np.ndarray, target_size: int) -> np.ndarray:
     return np.asarray(img, dtype=np.float32) / _UINT8_MAX
 
 
-def _preprocess_images(
-    image_dir: Path,
-    galaxy_ids: np.ndarray,
-    crop_fraction: float,
-    target_size: int,
-) -> np.ndarray:
-    """Batch-load, center-crop, and resize JPEG images for the given galaxy IDs into an (N, target_size, target_size, 3) array."""
-    n = len(galaxy_ids)
-    images = np.empty((n, target_size, target_size, 3), dtype=np.float32)
-    for i, gid in enumerate(tqdm(galaxy_ids, desc="Loading images")):
-        path = image_dir / f"{gid}.jpg"
-        img = _load_image(path)
-        img = _crop_center(img, crop_fraction)
-        img = _resize(img, target_size)
-        images[i] = img
-    return images
+@dataclass
+class Resize:
+    """Lanczos-resize an image to a square ``target_size`` × ``target_size``.
+
+    Parameters
+    ----------
+    target_size : int
+        Output side length in pixels.
+    """
+    target_size: int
+
+    def __call__(self, image: np.ndarray) -> np.ndarray:
+        """Return a Lanczos-resized (target_size, target_size, 3) image."""
+        return _resize(image, self.target_size)

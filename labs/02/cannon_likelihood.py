@@ -18,18 +18,29 @@ class CannonLabelLikelihood(Likelihood):
     Attributes
     ----------
     x : ndarray
-        Wavelength array (fulfills ABC; also used by MCMCResult.predict).
+        Wavelength array, restricted to good pixels.
     y : ndarray
-        Observed normalized flux, shape (n_pixels,).
+        Observed normalized flux at good pixels.
     y_err : ndarray
-        Per-pixel errors, shape (n_pixels,).  1e6 sentinel for masked pixels.
+        Per-pixel errors at good pixels.
     model : CannonModel
-        Trained Cannon model.
+        Trained Cannon model (full pixel grid).
     """
     x: np.ndarray
     y: np.ndarray
     y_err: np.ndarray
     model: object
+
+    def __post_init__(self):
+        """Filter to pixels with finite, non-sentinel error and finite scatter."""
+        y_err = np.asarray(self.y_err, dtype=float)
+        good = np.isfinite(y_err) & (y_err < 1e5) & np.isfinite(self.model.scatter)
+        self._good = good
+        self.x = np.asarray(self.x, dtype=float)[good]
+        self.y = np.asarray(self.y, dtype=float)[good]
+        self.y_err = y_err[good]
+        self._scatter_good = np.asarray(self.model.scatter, dtype=float)[good]
+        self._theta_good = np.asarray(self.model.theta, dtype=float)[good]
 
     @property
     def param_labels(self) -> list[str]:
@@ -41,15 +52,15 @@ class CannonLabelLikelihood(Likelihood):
         return list(self.model.label_names)
 
     def predict(self, x, theta):
-        """Predict spectrum given label vector *theta* (5,).
+        """Predict spectrum at good pixels given label vector *theta* (5,).
 
         *x* is ignored — wavelength is baked into the model.
         """
-        return self.model.predict(np.asarray(theta, dtype=float))
+        return self.model.predict(np.asarray(theta, dtype=float))[self._good]
 
     def total_variance(self, theta):
-        """Total per-pixel variance: measurement noise + intrinsic scatter."""
-        return self.y_err ** 2 + self.model.scatter
+        """Total per-pixel variance at good pixels: noise + intrinsic scatter."""
+        return self.y_err ** 2 + self._scatter_good
 
     def _build_cannon_design_vector_pytensor(self, labels_scaled):
         """Build (21,) design vector from (5,) scaled labels in PyTensor."""
@@ -68,11 +79,10 @@ class CannonLabelLikelihood(Likelihood):
         Priors are weakly informative Normals centered on training-set
         means with width = 2 × training-set standard deviations.
         """
-        good = np.isfinite(self.y_err) & (self.y_err < 1e5) & np.isfinite(self.model.scatter)
-        y_obs = pt.as_tensor_variable(self.y[good])
-        sigma2_obs = pt.as_tensor_variable(self.y_err[good] ** 2)
-        s2 = pt.as_tensor_variable(self.model.scatter[good])
-        theta_matrix = pt.as_tensor_variable(self.model.theta[good])
+        y_obs = pt.as_tensor_variable(self.y)
+        sigma2_obs = pt.as_tensor_variable(self.y_err ** 2)
+        s2 = pt.as_tensor_variable(self._scatter_good)
+        theta_matrix = pt.as_tensor_variable(self._theta_good)
 
         means = self.model.label_means
         stds = self.model.label_stds

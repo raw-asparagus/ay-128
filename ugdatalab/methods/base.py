@@ -9,11 +9,6 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-# Sentinel: y_err values at or above this magnitude are treated as masked.
-# Matches APOGEE's filler-value convention; safe upper bound for any
-# physically meaningful uncertainty in the surveys we consume.
-_MASKED_ERR_THRESHOLD = 1e5
-
 
 class Fit(ABC):
     """Fitted model that predicts y at arbitrary x."""
@@ -64,14 +59,11 @@ class DataFit(Fit):
     def chi2_r(self) -> float:
         """Return reduced chi-squared at the best-fit parameters.
 
-        Masks points where ``y_err`` is non-finite or above
-        ``_MASKED_ERR_THRESHOLD``, then divides the weighted sum of
-        squared residuals by ``max(N_good - n_params, 1)``.
+        Computes the weighted sum of squared residuals divided by
+        ``max(len(y) - n_params, 1)``. Callers must pass already-clean
+        ``(x, y, y_err)`` — non-finite or sentinel-masked entries are
+        the caller's responsibility to filter out.
         """
-        y_pred = self.predict(self.x)
-        var = self.total_variance()
-        good = (np.isfinite(self.y_err) & (self.y_err < _MASKED_ERR_THRESHOLD)
-                & np.isfinite(self.y) & np.isfinite(y_pred))
-        nu = max(int(good.sum()) - self.n_params, 1)
-        resid = (self.y - y_pred)[good]
-        return float(np.sum(resid ** 2 / var[good]) / nu)
+        resid = self.y - self.predict(self.x)
+        nu = max(len(self.y) - self.n_params, 1)
+        return float(np.sum(resid ** 2 / self.total_variance()) / nu)

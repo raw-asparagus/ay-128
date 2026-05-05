@@ -7,6 +7,9 @@ questions in the Galaxy Zoo 2 decision tree.
 
 N_LABELS = 37
 
+# uint8 max — denominator for normalizing 8-bit images to [0, 1].
+_UINT8_MAX = 255.0
+
 LABEL_COLUMNS = [
     "Class1.1", "Class1.2", "Class1.3",
     "Class2.1", "Class2.2",
