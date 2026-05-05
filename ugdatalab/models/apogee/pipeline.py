@@ -12,10 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from astropy import table
 
-from ugdatalab.models.apogee.constants import _FILLER_VALUE
-
-
-_DEFAULT_LABEL_COLUMNS = ("teff", "logg", "fe_h", "mg_fe", "si_fe")
+from ugdatalab.models.apogee.constants import LABEL_NAMES, _FILLER_VALUE
 
 
 # ---------------------------------------------------------------------------
@@ -31,15 +28,15 @@ class APOGEELabelCompletenessCut:
     ----------
     label_columns : tuple of str
         Column names that must all be finite and not equal to ``sentinel``.
-        Default ``("teff", "logg", "fe_h", "mg_fe", "si_fe")`` — the five
-        labels The Cannon is trained against. Override to relax the
-        requirement to a subset of labels.
+        Default ``tuple(LABEL_NAMES)`` (``("teff", "logg", "fe_h",
+        "mg_fe", "si_fe")``) — the five labels The Cannon is trained
+        against. Override to relax the requirement to a subset of labels.
     sentinel : float
         Filler value APOGEE writes for missing pipeline outputs. Default
         ``-9999.0`` from ``ugdatalab.models.apogee.constants._FILLER_VALUE``;
         avoid changing unless DR conventions change.
     """
-    label_columns: tuple = field(default=_DEFAULT_LABEL_COLUMNS)
+    label_columns: tuple = field(default_factory=lambda: tuple(LABEL_NAMES))
     sentinel: float = _FILLER_VALUE
 
     def __call__(self, data: table.Table) -> table.Table:

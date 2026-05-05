@@ -2,13 +2,13 @@
 
 APOGEE_BAD_PIXMASK_BITS = [0, 1, 2, 3, 4, 5, 6, 7, 12]
 
-LABEL_NAMES = ["TEFF", "LOGG", "FE_H", "MG_FE", "SI_FE"]
+LABEL_NAMES = ["teff", "logg", "fe_h", "mg_fe", "si_fe"]
 LABEL_LATEX = {
-    "TEFF":  r"$T_{\rm eff}$",
-    "LOGG":  r"$\log g$",
-    "FE_H":  r"$[\mathrm{Fe/H}]$",
-    "MG_FE": r"$[\mathrm{Mg/Fe}]$",
-    "SI_FE": r"$[\mathrm{Si/Fe}]$",
+    "teff":  r"$T_{\rm eff}$",
+    "logg":  r"$\log g$",
+    "fe_h":  r"$[\mathrm{Fe/H}]$",
+    "mg_fe": r"$[\mathrm{Mg/Fe}]$",
+    "si_fe": r"$[\mathrm{Si/Fe}]$",
 }
 N_LABELS = 5
 _FILLER_VALUE = -9999.0

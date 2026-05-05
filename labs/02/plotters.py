@@ -655,9 +655,9 @@ def plot_gradient_spectra(model):
 
         # Mark known spectral lines
         lines = []
-        if model.label_names[i] == "MG_FE":
+        if model.label_names[i] == "mg_fe":
             lines = _MG_LINES
-        elif model.label_names[i] == "SI_FE":
+        elif model.label_names[i] == "si_fe":
             lines = _SI_LINES
 
         for wl in lines:

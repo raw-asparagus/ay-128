@@ -8,13 +8,7 @@ from astropy import table
 from ugdatalab.models.base import Data
 from ugdatalab.utils.cache import cache_stable
 from ugdatalab.utils.tables import _sanitize_table
-from ugdatalab.models.apogee.constants import _APOGEE_SCHEMA
-
-
-# Lowercase column names for the five Cannon training labels. Matches the
-# table-side names produced by ``_sanitize_table`` (uppercase ``LABEL_NAMES``
-# in ``constants.py`` is the report/plot-axis form).
-_LABEL_COLUMNS = ("teff", "logg", "fe_h", "mg_fe", "si_fe")
+from ugdatalab.models.apogee.constants import LABEL_NAMES, _APOGEE_SCHEMA
 
 
 @cache_stable(module="ugdatalab.apogee")
@@ -61,4 +55,4 @@ class APOGEEData(Data):
     @property
     def labels(self) -> np.ndarray:
         """Cannon training labels stacked from ``self.data``, shape ``(N, 5)``."""
-        return np.column_stack([self.data[col] for col in _LABEL_COLUMNS])
+        return np.column_stack([self.data[col] for col in LABEL_NAMES])
