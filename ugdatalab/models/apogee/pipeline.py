@@ -2,7 +2,7 @@
 
 Each stage is a small ``__call__``-able (dataclass when parameterized)
 that takes an ``astropy.table.Table`` and returns one. Compose with
-:class:`~ugdatalab.methods.compose.Compose` to build pipelines that
+:class:`~ugdatalab.utils.compose.Compose` to build pipelines that
 :class:`~ugdatalab.models.apogee.apogee.APOGEEData` runs immediately
 after fetching and sanitizing.
 """

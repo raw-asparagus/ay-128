@@ -10,7 +10,7 @@ import numpy as np
 from ugdatalab.methods.fourier import fourier_fit, phase_fold
 from ugdatalab.methods.cross_validate import cross_validate
 from ugdatalab.plotters.bayesian import predict_posterior
-from ugdatalab.models.gaia import GaiaData
+from ugdatalab.models.gaia import GaiaData, GaiaLightcurves
 from ugdatalab.plotting import (
     TEXTWIDTH_IN,
     LW_NONE,
@@ -120,7 +120,7 @@ def savefig(fig, name):
 
 def plot_raw_phase_folded_lightcurve(rrlyrae, source_id):
     """Two-panel plot: raw time series (top) and phase-folded lightcurve (bottom)."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     data = lc[lc["source_id"] == source_id]
 
     period = data["rrlyrae_representative_period"][0]
@@ -183,7 +183,7 @@ def plot_lomb_scargle_periodogram(result):
 
 def plot_vari_rrlyrae_period_comparison(rrlyrae):
     """Two-panel comparison of catalog periods to Lomb-Scargle periods."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     _, first_idx = np.unique(lc["source_id"], return_index=True)
     rows = lc[first_idx]
 
@@ -266,7 +266,7 @@ def plot_vari_rrlyrae_period_comparison(rrlyrae):
 
 def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
     """Grid of phase-folded Fourier fits at different harmonic orders."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     data = lc[lc["source_id"] == source_id]
 
     period = data["period_ls"][0]
@@ -372,7 +372,7 @@ def plot_fourier_cross_validation(result):
 
 def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, best_fit):
     """Two-panel histogram of normalized residuals for low-K and best-K fits."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     lc = lc[lc["source_id"] == source_id]
     epochs = lc["g_transit_time"]
     mags = lc["g_transit_mag"]
@@ -423,7 +423,7 @@ def plot_fourier_cv_residual_histograms(rrlyrae, source_id, result, low_fit, bes
 
 def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_fit):
     """Two-panel phase-folded comparison showing train/CV split for best and high K."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     lc = lc[lc["source_id"] == source_id]
     epochs = lc["g_transit_time"]
     mags = lc["g_transit_mag"]
@@ -475,7 +475,7 @@ def plot_fourier_cv_phase_comparison(rrlyrae, source_id, result, best_fit, high_
 
 def plot_mean_g_catalog_comparison(rrlyrae):
     """Two-column comparison of epoch-mean and Fourier-mean G vs Gaia int_average_g."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     _, first_idx = np.unique(lc["source_id"], return_index=True)
     rows = lc[first_idx]
 
@@ -599,12 +599,12 @@ def plot_fourier_extrapolation(fit):
 
 def _prepare_shape_panels(rrlyrae, rr_class):
     """Build per-source panel data for shape comparison."""
-    lc = rrlyrae.lightcurves
+    lc = rrlyrae.data
     period_col = "p1_o" if rr_class == "RRc" else "pf"
     phase_grid = np.linspace(0.0, 1.0, _PHASE_GRID_POINTS, endpoint=False)
 
     panels = []
-    for row in rrlyrae.data:
+    for row in rrlyrae.source.data:
         sid = row["source_id"]
         period = row[period_col]
         star = lc[lc["source_id"] == sid]

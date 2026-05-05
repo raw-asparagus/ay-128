@@ -70,16 +70,7 @@ def rmse_loss(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
 
 
 def count_parameters(model: nn.Module) -> int:
-    """Return the total number of trainable parameters in *model*.
-
-    Parameters
-    ----------
-    model : nn.Module
-
-    Returns
-    -------
-    int
-    """
+    """Return the total number of trainable parameters in *model*."""
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 

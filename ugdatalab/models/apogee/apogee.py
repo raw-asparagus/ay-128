@@ -1,13 +1,20 @@
-"""APOGEE DR17 SQL query loader; quality cuts live in ``cuts.py``."""
+"""APOGEE DR17 SQL query loader; pipeline stages live in ``pipeline.py``."""
 
 from dataclasses import dataclass
 
+import numpy as np
 from astropy import table
 
 from ugdatalab.models.base import Data
 from ugdatalab.utils.cache import cache_stable
 from ugdatalab.utils.tables import _sanitize_table
 from ugdatalab.models.apogee.constants import _APOGEE_SCHEMA
+
+
+# Lowercase column names for the five Cannon training labels. Matches the
+# table-side names produced by ``_sanitize_table`` (uppercase ``LABEL_NAMES``
+# in ``constants.py`` is the report/plot-axis form).
+_LABEL_COLUMNS = ("teff", "logg", "fe_h", "mg_fe", "si_fe")
 
 
 @cache_stable(module="ugdatalab.apogee")
@@ -37,6 +44,9 @@ class APOGEEData(Data):
     ----------
     data : astropy.table.Table
         Sanitized (and cut) query result.
+    labels : ndarray, shape (N, 5)
+        Stacked Cannon training labels ``(teff, logg, fe_h, mg_fe, si_fe)``
+        in catalog order; computed on access from ``self.data``.
     """
     query: str
 
@@ -47,3 +57,8 @@ class APOGEEData(Data):
     def _sanitize(self, raw: table.Table) -> None:
         """Coerce columns to the APOGEE schema in place."""
         _sanitize_table(raw, _APOGEE_SCHEMA)
+
+    @property
+    def labels(self) -> np.ndarray:
+        """Cannon training labels stacked from ``self.data``, shape ``(N, 5)``."""
+        return np.column_stack([self.data[col] for col in _LABEL_COLUMNS])

@@ -6,7 +6,7 @@ from ugdatalab.models.gaia.pipeline import (
     AttachInlierProbColumn,
     AttachReddening,
     AttachRepresentativePeriod,
-    GaiaFiniteCut,
+    GaiaCompletenessCut,
     HighLatitudeCut,
     HighParallaxSnrCut,
     LindegrenC1Cut,
@@ -21,9 +21,13 @@ from ugdatalab.models.gaia.wise_pipeline import (
     AddW2PhotometryColumns,
     MarreseOneToOneMatchCut,
     W2PhotometryQualityCut,
-    WISEFiniteCut,
+    WISECompletenessCut,
 )
-from ugdatalab.models.gaia.lightcurves import (
-    RRLYRAE_PERIOD_MIN,
-    RRLYRAE_PERIOD_MAX,
+from ugdatalab.models.gaia.constants import RRLYRAE_PERIOD_MIN, RRLYRAE_PERIOD_MAX
+from ugdatalab.models.gaia.lightcurves import GaiaLightcurves
+from ugdatalab.models.gaia.lightcurves_pipeline import (
+    AttachDerivedEpochColumns,
+    AttachFourierMeanMagnitudes,
+    AttachPeriodogramPeriods,
+    LightcurveCompletenessCut,
 )

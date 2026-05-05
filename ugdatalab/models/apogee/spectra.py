@@ -1,4 +1,9 @@
-"""APOGEE apStar spectrum download, bitmask masking, and continuum normalization."""
+"""APOGEE apStar spectrum loader.
+
+Per-spectrum bitmask masking and continuum normalization helpers
+(``_apply_bitmask``, ``_normalize_spectrum``) live in
+:mod:`ugdatalab.models.apogee.spectra_pipeline`.
+"""
 
 import io
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -7,26 +12,22 @@ from pathlib import Path
 
 import numpy as np
 import requests
+from astropy import table
 from astropy.io import fits
-from numpy.polynomial.chebyshev import Chebyshev
 from tqdm.auto import tqdm
 
+from ugdatalab.models.base import Data
 from ugdatalab.utils.cache import cache_stable
-from ugdatalab.models.apogee.constants import (
-    APOGEE_BAD_PIXMASK_BITS,
-    APOGEE_DR17_URL,
-    _APOGEE_SENTINEL_ERROR
-)
+from ugdatalab.models.apogee.constants import APOGEE_DR17_URL
 from ugdatalab.models.apogee.apogee import APOGEEData
-
-
-# Continuum-fit pixels with errors at or above this magnitude are masked
-# out before the per-chip Chebyshev fit. Matches APOGEE's filler convention.
-_VALID_ERROR_MAX = 1e5
+from ugdatalab.models.apogee.spectra_pipeline import (
+    _apply_bitmask,
+    _normalize_spectrum,
+)
 
 
 # ---------------------------------------------------------------------------
-# APOGEE Spectra I/O
+# FITS-header helpers
 # ---------------------------------------------------------------------------
 
 
@@ -45,6 +46,11 @@ def _identify_chips(header) -> list[slice]:
         slice(int(header["GMIN"]), int(header["GMAX"]) + 1),
         slice(int(header["RMIN"]), int(header["RMAX"]) + 1),
     ]
+
+
+# ---------------------------------------------------------------------------
+# APOGEE Spectra I/O
+# ---------------------------------------------------------------------------
 
 
 @cache_stable(module="ugdatalab.apogee")
@@ -93,136 +99,31 @@ def _fetch_apstar_batch(
 
 
 # ---------------------------------------------------------------------------
-# Spectrum masking and normalization
+# APOGEESpectrum (single-spectrum, file-driven)
 # ---------------------------------------------------------------------------
 
 
-def _apply_bitmask(
-    flux: np.ndarray,
-    error: np.ndarray,
-    bitmask: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Flag bad pixels by inflating their errors to the APOGEE sentinel and NaN'ing negative or missing flux."""
-    flux = flux.copy()
-    error = error.copy()
+@dataclass(frozen=True)
+class APOGEESpectrum:
+    """A single continuum-normalized APOGEE spectrum loaded from a FITS file.
 
-    bm_bad = np.zeros(len(bitmask), dtype=bool)
-    for bit in APOGEE_BAD_PIXMASK_BITS:
-        bm_bad |= (bitmask & (1 << bit)) != 0
-    # Ignore pixels with finite errors already above the sentinel value
-    needs_sentinel = bm_bad & np.isfinite(error) & (error < _APOGEE_SENTINEL_ERROR)
-    error[needs_sentinel] = _APOGEE_SENTINEL_ERROR
-
-    bad = (flux < 0) | np.isnan(flux)
-    flux[bad] = np.nan
-    error[bad] = np.nan
-    return flux, error
-
-
-def _normalize_spectrum(
-    flux: np.ndarray,
-    error: np.ndarray,
-    wavelength: np.ndarray,
-    continuum_mask: np.ndarray,
-    chips: list[slice],
-    degree: int = 4,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Normalize a spectrum by fitting per-chip Chebyshev continuum polynomials, returning (flux_norm, error_norm, continuum_fit)."""
-    n_pix = len(flux)
-    flux_norm = np.full(n_pix, np.nan)
-    error_norm = np.full(n_pix, np.nan)
-    continuum_fit = np.full(n_pix, np.nan)
-
-    for chip in chips:
-        valid = np.zeros(n_pix, dtype=bool)
-        valid[chip] = True
-        valid &= continuum_mask
-        valid &= np.isfinite(error) & (error < _VALID_ERROR_MAX)
-
-        if np.sum(valid) < degree + 1:
-            error_norm[chip] = np.nan
-            continue
-
-        poly = Chebyshev.fit(
-            wavelength[valid], flux[valid], deg=degree,
-            w=1 / error[valid] ** 2,
-        )
-        cont = poly(wavelength[chip])
-        continuum_fit[chip] = cont
-        flux_norm[chip] = flux[chip] / cont
-        error_norm[chip] = error[chip] / cont
-
-    return flux_norm, error_norm, continuum_fit
-
-
-def _fetch_normalized_spectra(
-    catalog,
-    continuum_path: str | Path,
-    degree: int = 4
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Download, mask, and normalize spectra for all stars in a catalog, returning (flux, error, wavelength, continuum_mask, apogee_ids)."""
-    continuum_data = np.load(continuum_path)
-    wavelength = continuum_data["wavelengths"]
-    continuum_mask = continuum_data["continuum"].astype(bool)
-
-    raw_spectra = _fetch_apstar_batch(catalog)
-
-    flux_all = []
-    error_all = []
-    apogee_ids = []
-
-    for spec in raw_spectra:
-        flux, error = _apply_bitmask(spec["flux"], spec["error"], spec["bitmask"])
-        flux_norm, error_norm, _ = _normalize_spectrum(
-            flux, error, wavelength, continuum_mask, spec["chips"], degree,
-        )
-        flux_all.append(flux_norm)
-        error_all.append(error_norm)
-        apogee_ids.append(spec["apogee_id"])
-
-    return (
-        np.array(flux_all),
-        np.array(error_all),
-        wavelength,
-        continuum_mask,
-        np.array(apogee_ids),
-    )
-
-
-# ---------------------------------------------------------------------------
-# APOGEESpectra
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class APOGEESpectra:
-    """Continuum-normalized APOGEE spectra container with flux/error arrays of shape (N, n_pixels).
-
-    Construct via ``from_fits`` (one apStar file) or ``from_catalog`` (bulk
-    download from an APOGEEData catalog). The dataclass ``__init__`` takes
-    pre-built arrays and is rarely called directly.
+    Construct via :meth:`from_fits`. This is the catalog-less counterpart
+    to :class:`APOGEESpectra`: shapes are 1D rather than ``(N, n_pixels)``,
+    and there is no ``Data`` lifecycle, no source catalog, and no
+    pipeline.
 
     Attributes
     ----------
-    flux, error : ndarray, shape (N, n_pixels)
-        Continuum-normalized flux and error for N spectra.
-    wavelength : ndarray, shape (n_pixels,)
-        Common wavelength grid.
-    continuum_mask : ndarray of bool, shape (n_pixels,)
-        Continuum pixel mask used for the per-chip normalization.
-    apogee_ids : ndarray of str, shape (N,)
-        APOGEE identifiers; the FITS-file stem when constructed from a single FITS.
+    flux, error, wavelength : ndarray, shape (n_pixels,)
+        Continuum-normalized 1D arrays sharing the apStar wavelength grid.
+    apogee_id : str
+        Identifier for the spectrum (FITS-file stem when constructed via
+        :meth:`from_fits`).
     """
-
     flux: np.ndarray
     error: np.ndarray
     wavelength: np.ndarray
-    continuum_mask: np.ndarray
-    apogee_ids: np.ndarray
-
-    def __len__(self):
-        """Return the number of spectra (rows of ``flux``)."""
-        return self.flux.shape[0]
+    apogee_id: str
 
     @classmethod
     def from_fits(
@@ -230,22 +131,32 @@ class APOGEESpectra:
         fits_path: str | Path,
         continuum_path: str | Path,
         degree: int = 4,
-    ) -> "APOGEESpectra":
-        """Construct from a single apStar FITS file.
+    ) -> "APOGEESpectrum":
+        """Bitmask-correct and continuum-normalize a spectrum from an apStar FITS file.
 
-        Args:
-            fits_path: Path to the apStar FITS file.
-            continuum_path: Path to the ``.npz`` file holding the wavelength
-                grid and continuum mask.
-            degree: Per-chip Chebyshev continuum polynomial degree.
+        Parameters
+        ----------
+        fits_path : str or Path
+            apStar FITS file.
+        continuum_path : str or Path
+            ``.npz`` file holding the wavelength grid and continuum mask.
+        degree : int
+            Per-chip Chebyshev continuum polynomial degree. Default ``4`` —
+            matches the bulk ``APOGEESpectra`` default.
 
-        Returns:
-            APOGEESpectra with N = 1.
+        Returns
+        -------
+        APOGEESpectrum
+            ``flux``, ``error``, ``wavelength`` are 1D arrays of shape
+            ``(n_pixels,)``; ``apogee_id`` is the FITS-file stem.
         """
         hdul = fits.open(fits_path)
-        flux_raw = np.array(hdul[1].data, dtype=float)
-        error_raw = np.array(hdul[2].data, dtype=float)
-        bitmask = np.array(hdul[3].data, dtype=np.int16)
+        # ``np.atleast_2d(...)[0]`` accepts both apStar files (2D, coadd
+        # at row 0) and pre-extracted 1D spectra without forcing the
+        # caller to reshape.
+        flux_raw = np.atleast_2d(np.asarray(hdul[1].data, dtype=float))[0]
+        error_raw = np.atleast_2d(np.asarray(hdul[2].data, dtype=float))[0]
+        bitmask = np.atleast_2d(np.asarray(hdul[3].data, dtype=np.int16))[0]
         chips = _identify_chips(hdul[0].header)
         hdul.close()
 
@@ -258,39 +169,112 @@ class APOGEESpectra:
             flux_masked, error_masked, wavelength, continuum_mask, chips, degree,
         )
         return cls(
-            flux=flux_norm[np.newaxis, :],
-            error=error_norm[np.newaxis, :],
+            flux=flux_norm,
+            error=error_norm,
             wavelength=wavelength,
-            continuum_mask=continuum_mask,
-            apogee_ids=np.array([Path(fits_path).stem]),
+            apogee_id=Path(fits_path).stem,
         )
 
-    @classmethod
-    def from_catalog(
-        cls,
-        source: APOGEEData,
-        continuum_path: str | Path,
-        degree: int = 4,
-    ) -> "APOGEESpectra":
-        """Construct by downloading and normalizing all spectra in a catalog.
 
-        Args:
-            source: APOGEEData catalog whose ``data`` rows drive the apStar
-                download list.
-            continuum_path: Path to the ``.npz`` file holding the wavelength
-                grid and continuum mask.
-            degree: Per-chip Chebyshev continuum polynomial degree.
+# ---------------------------------------------------------------------------
+# APOGEESpectra (catalog-driven bulk loader)
+# ---------------------------------------------------------------------------
 
-        Returns:
-            APOGEESpectra with N = len(source.data).
-        """
-        flux, error, wavelength, continuum_mask, apogee_ids = (
-            _fetch_normalized_spectra(source.data, continuum_path, degree=degree)
-        )
-        return cls(
-            flux=flux,
-            error=error,
-            wavelength=wavelength,
-            continuum_mask=continuum_mask,
-            apogee_ids=apogee_ids,
-        )
+
+@dataclass
+class APOGEESpectra(Data):
+    """Bulk-download and continuum-normalize APOGEE spectra for an ``APOGEEData`` catalog.
+
+    Downloads each source's apStar FITS file (joblib-cached),
+    bitmask-corrects and Chebyshev-normalizes it, then stacks the
+    results into one table with vector-valued ``flux`` and ``error``
+    columns of shape ``(N, n_pixels)`` and the common wavelength grid
+    stored in ``meta``.
+
+    Parameters
+    ----------
+    source : APOGEEData
+        Catalog whose ``data`` rows drive the apStar download list
+        (each row supplies ``apogee_id``, ``telescope``, ``field``).
+    continuum_path : str or Path
+        ``.npz`` file holding the published wavelength grid and
+        continuum-pixel mask used for per-chip normalization.
+    degree : int
+        Per-chip Chebyshev continuum polynomial degree. Default ``4`` —
+        the canonical Cannon-paper choice; raise for stiffer fields,
+        lower for very noisy spectra.
+    pipeline : Compose, keyword-only
+        Inherited from :class:`~ugdatalab.models.base.Data`. Default
+        ``Compose([])`` — no post-stack transformations.
+
+    Attributes
+    ----------
+    data : astropy.table.Table
+        Columns ``apogee_id`` (N,), ``flux`` (N, n_pixels), ``error``
+        (N, n_pixels). ``meta["wavelength"]`` holds the common
+        ``(n_pixels,)`` grid. The convenience properties ``flux``,
+        ``error``, ``wavelength``, ``apogee_ids`` forward to the columns
+        and meta entry.
+
+    See Also
+    --------
+    APOGEESpectrum
+        Single-spectrum, file-driven counterpart for the catalog-less
+        case (e.g., loading a standalone apStar FITS file).
+    """
+    source: APOGEEData
+    continuum_path: str | Path
+    degree: int = 4
+
+    def _fetch(self) -> table.Table:
+        """Download, bitmask-correct, and continuum-normalize every spectrum in the source catalog."""
+        continuum_data = np.load(self.continuum_path)
+        wavelength = continuum_data["wavelengths"]
+        continuum_mask = continuum_data["continuum"].astype(bool)
+
+        raw_spectra = _fetch_apstar_batch(self.source.data)
+
+        # Bitmask + normalize run here rather than as ``_required_stages``
+        # callables: they operate per-spectrum on 1D arrays before
+        # stacking, and need ``wavelength``/``continuum_mask``/``chips``/
+        # ``degree`` parameters that don't fit the stateless
+        # ``Table -> Table`` pipeline-stage contract.
+        flux_all = []
+        error_all = []
+        apogee_ids = []
+        for spec in raw_spectra:
+            flux, error = _apply_bitmask(spec["flux"], spec["error"], spec["bitmask"])
+            flux_norm, error_norm, _ = _normalize_spectrum(
+                flux, error, wavelength, continuum_mask, spec["chips"], self.degree,
+            )
+            flux_all.append(flux_norm)
+            error_all.append(error_norm)
+            apogee_ids.append(spec["apogee_id"])
+
+        out = table.Table({
+            "apogee_id": np.array(apogee_ids),
+            "flux": np.array(flux_all),
+            "error": np.array(error_all),
+        })
+        out.meta["wavelength"] = wavelength
+        return out
+
+    @property
+    def flux(self) -> np.ndarray:
+        """Continuum-normalized flux, shape ``(N, n_pixels)``."""
+        return np.asarray(self.data["flux"])
+
+    @property
+    def error(self) -> np.ndarray:
+        """Continuum-normalized per-pixel error, shape ``(N, n_pixels)``."""
+        return np.asarray(self.data["error"])
+
+    @property
+    def wavelength(self) -> np.ndarray:
+        """Common wavelength grid, shape ``(n_pixels,)``."""
+        return self.data.meta["wavelength"]
+
+    @property
+    def apogee_ids(self) -> np.ndarray:
+        """APOGEE identifiers, shape ``(N,)``."""
+        return np.asarray(self.data["apogee_id"])

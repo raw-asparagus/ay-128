@@ -1,7 +1,7 @@
 """Galaxy Zoo 2 classification labels, image preprocessing, and PyTorch Dataset."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -83,9 +83,7 @@ class GalaxyZooData(Data):
     pipeline : Compose, keyword-only
         Inherited from :class:`~ugdatalab.models.base.Data`. Pipeline of
         cuts and column augmentations applied immediately after CSV load
-        + sanitize. Default ``Compose([])`` — no transformations. Galaxy
-        Zoo has no built-in cuts today; the parameter is here for
-        symmetry with the other data classes (Gaia, WISE, APOGEE).
+        + sanitize. Default ``Compose([])`` — no transformations.
 
     Attributes
     ----------
@@ -114,16 +112,16 @@ class GalaxyZooData(Data):
 
 
 @dataclass
-class GalaxyZooImages:
+class GalaxyZooImages(Data):
     """Preprocessed in-memory Galaxy Zoo image array.
 
-    Loads all images from disk, center-crops, and resizes them to a
-    uniform square size.
+    Loads all images for ``source``'s galaxy IDs from disk, center-crops,
+    and resizes them to a uniform square size on construction.
 
     Parameters
     ----------
     source : GalaxyZooData
-        Data source providing galaxy IDs.
+        Catalog providing galaxy IDs.
     image_dir : Path
         Directory containing JPEG images named by GalaxyID.
     crop_fraction : float
@@ -131,23 +129,35 @@ class GalaxyZooImages:
         the central 50% of the image).
     target_size : int
         Output image dimension (``target_size`` × ``target_size`` pixels).
+    pipeline : Compose, keyword-only
+        Inherited from :class:`~ugdatalab.models.base.Data`. Default
+        ``Compose([])`` — no transformations.
+
+    Attributes
+    ----------
+    data : ndarray, shape (N, target_size, target_size, 3)
+        Preprocessed images in [0, 1], float32.
+    images : ndarray
+        Alias of ``data``.
     """
     source: GalaxyZooData
     image_dir: Path
     crop_fraction: float
     target_size: int
 
-    images: np.ndarray = field(init=False, repr=False)
-
-    def __post_init__(self):
-        """Load and preprocess all images for the source's galaxy IDs into memory."""
-        self.image_dir = Path(self.image_dir)
-        self.images = _preprocess_images(
-            self.image_dir,
+    def _fetch(self) -> np.ndarray:
+        """Load, center-crop, and resize all images for the source's galaxy IDs."""
+        return _preprocess_images(
+            Path(self.image_dir),
             self.source.galaxy_ids,
             self.crop_fraction,
             self.target_size,
         )
+
+    @property
+    def images(self) -> np.ndarray:
+        """Return the preprocessed image array (alias of ``self.data``)."""
+        return self.data
 
 
 class GalaxyZooDataset(Dataset):
@@ -161,10 +171,8 @@ class GalaxyZooDataset(Dataset):
         Classification labels in [0, 1].
     transform : callable
         Transform applied to each image (numpy HWC array) before
-        conversion to tensor. Required: cached images are typically
-        larger than the model input, so callers must compose at minimum
-        a ``CenterCrop`` to the model's input size. Pass ``Compose([])``
-        for a true no-op.
+        conversion to tensor. Required (no default); pass
+        ``Compose([])`` for a no-op.
     """
     def __init__(
         self,

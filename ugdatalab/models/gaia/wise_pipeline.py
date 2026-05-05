@@ -2,7 +2,7 @@
 
 Each stage is a small ``__call__``-able (dataclass when parameterized)
 that takes an ``astropy.table.Table`` and returns one. Compose with
-:class:`~ugdatalab.methods.compose.Compose` to build pipelines that
+:class:`~ugdatalab.utils.compose.Compose` to build pipelines that
 :class:`~ugdatalab.models.gaia.wise.WISEData` runs immediately after
 fetching and sanitizing.
 
@@ -50,14 +50,12 @@ class AddW2PhotometryColumns:
 # ---------------------------------------------------------------------------
 
 
-class WISEFiniteCut:
+class WISECompletenessCut:
     """Drop rows whose AllWISE join produced non-finite or non-positive W2 values.
 
-    Sanity bundle ensuring that downstream WISE code sees only rows
-    where the AllWISE counterpart exists (``allwise_oid`` is finite —
-    the LEFT OUTER JOIN can return NaN here) and the W2 magnitude plus
-    its error are finite with positive error. The WISE analogue of
-    :class:`~ugdatalab.models.gaia.pipeline.GaiaFiniteCut`.
+    Keeps rows where ``allwise_oid`` is finite (the LEFT OUTER JOIN can
+    return NaN here when no AllWISE counterpart exists), ``w2mpro`` and
+    ``w2mpro_error`` are finite, and ``w2mpro_error`` is strictly positive.
     """
 
     def __call__(self, data: table.Table) -> table.Table:
@@ -76,9 +74,7 @@ class MarreseOneToOneMatchCut:
     Keeps rows whose AllWISE neighbourhood has exactly one Gaia
     counterpart and no rival mates. Discards ambiguous matches where a
     Gaia source has multiple AllWISE candidates (mates > 0) or the
-    AllWISE source has multiple Gaia candidates (neighbours > 1) —
-    either case makes the W2 photometry unsafe to associate with the
-    Gaia astrometry.
+    AllWISE source has multiple Gaia candidates (neighbours > 1).
 
     Parameters
     ----------
@@ -110,9 +106,8 @@ class MarreseOneToOneMatchCut:
 class W2PhotometryQualityCut:
     """AllWISE W2 photometric-quality flags (Cutri et al. 2013, AllWISE Explanatory Supplement).
 
-    Bundled because all three flags come from the same AllWISE pipeline
-    table and tend to be tuned together as one "stricter/looser
-    photometry" knob.
+    Filters on three W2 pipeline flags: photometric quality grade,
+    contamination/confusion flag, and extended-source flag.
 
     Parameters
     ----------

@@ -10,15 +10,15 @@ Re-exports common data loaders (``GaiaData``, ``WISEData``, ``APOGEEData``,
 import importlib
 
 _LAZY_EXPORTS = {
-    # ugdatalab.methods.compose
-    "Compose":                       "ugdatalab.methods.compose",
+    # ugdatalab.utils.compose
+    "Compose":                       "ugdatalab.utils.compose",
     # ugdatalab.models.gaia (loader + pipeline stages)
     "GaiaData":                      "ugdatalab.models.gaia",
     "AddPhotometryColumns":          "ugdatalab.models.gaia",
     "AttachInlierProbColumn":        "ugdatalab.models.gaia",
     "AttachReddening":               "ugdatalab.models.gaia",
     "AttachRepresentativePeriod":    "ugdatalab.models.gaia",
-    "GaiaFiniteCut":                 "ugdatalab.models.gaia",
+    "GaiaCompletenessCut":           "ugdatalab.models.gaia",
     "HighLatitudeCut":               "ugdatalab.models.gaia",
     "HighParallaxSnrCut":            "ugdatalab.models.gaia",
     "LindegrenC1Cut":                "ugdatalab.models.gaia",
@@ -27,13 +27,15 @@ _LAZY_EXPORTS = {
     "StrictBPRPCut":                 "ugdatalab.models.gaia",
     "StrictGCut":                    "ugdatalab.models.gaia",
     "StrictReddeningCut":            "ugdatalab.models.gaia",
+    "GaiaLightcurves":               "ugdatalab.models.gaia",
+    "LightcurveCompletenessCut":     "ugdatalab.models.gaia",
     "WISEData":                      "ugdatalab.models.gaia",
     "AddW2PhotometryColumns":        "ugdatalab.models.gaia",
     "MarreseOneToOneMatchCut":       "ugdatalab.models.gaia",
     "W2PhotometryQualityCut":        "ugdatalab.models.gaia",
-    "WISEFiniteCut":                 "ugdatalab.models.gaia",
-    "RRLYRAE_PERIOD_MIN":            "ugdatalab.models.gaia.lightcurves",
-    "RRLYRAE_PERIOD_MAX":            "ugdatalab.models.gaia.lightcurves",
+    "WISECompletenessCut":           "ugdatalab.models.gaia",
+    "RRLYRAE_PERIOD_MIN":            "ugdatalab.models.gaia.constants",
+    "RRLYRAE_PERIOD_MAX":            "ugdatalab.models.gaia.constants",
     # ugdatalab.models.apogee (loader + pipeline stages)
     "APOGEEData":                    "ugdatalab.models.apogee",
     "APOGEEGiantCut":                "ugdatalab.models.apogee",
@@ -42,6 +44,7 @@ _LAZY_EXPORTS = {
     "APOGEESnrCut":                  "ugdatalab.models.apogee",
     "APOGEETempCut":                 "ugdatalab.models.apogee",
     "APOGEESpectra":                 "ugdatalab.models.apogee",
+    "APOGEESpectrum":                "ugdatalab.models.apogee",
     # ugdatalab.models.galaxy_zoo
     "GalaxyZooData":                 "ugdatalab.models.galaxy_zoo",
     "GalaxyZooImages":               "ugdatalab.models.galaxy_zoo",

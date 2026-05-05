@@ -31,9 +31,8 @@ def get_mist_isochrone(
     Resolves the file hierarchically — snapping ``vvcrit`` to the
     nearest available rotation rate, then ``alpha_fe`` to the nearest
     [α/Fe] *among files at that vvcrit*, then ``feh`` to the nearest
-    [Fe/H] *among files at that (vvcrit, alpha_fe)* — so the chosen
-    ``.iso`` file is guaranteed to exist regardless of grid completeness.
-    Within the chosen file, picks the rows of the age block whose
+    [Fe/H] *among files at that (vvcrit, alpha_fe)*. Within the chosen
+    file, picks the rows of the age block whose
     ``log10_isochrone_age_yr`` is closest to ``log10(age_gyr * 1e9)`` via
     a two-pass scan (first pass discovers the available age tokens,
     second pass collects only the rows in the chosen block). Adds derived

@@ -3,7 +3,7 @@
 import numpy as np
 from PIL import Image
 
-from ugdatalab.methods.compose import Compose
+from ugdatalab.utils.compose import Compose
 
 __all__ = ["Compose", "CenterCrop", "RandomRotation360"]
 

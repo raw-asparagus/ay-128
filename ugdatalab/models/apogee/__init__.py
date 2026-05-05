@@ -1,4 +1,4 @@
-"""APOGEE DR17 catalog and spectrum loaders for The Cannon training."""
+"""APOGEE DR17 catalog and spectrum loaders."""
 
 from ugdatalab.models.apogee.apogee import APOGEEData
 from ugdatalab.models.apogee.pipeline import (
@@ -8,4 +8,4 @@ from ugdatalab.models.apogee.pipeline import (
     APOGEESnrCut,
     APOGEETempCut,
 )
-from ugdatalab.models.apogee.spectra import APOGEESpectra
+from ugdatalab.models.apogee.spectra import APOGEESpectra, APOGEESpectrum

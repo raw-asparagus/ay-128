@@ -7,7 +7,7 @@
 - **Private functions / methods** (names prefixed with `_`): a single-line docstring describing what the function does.
 - **Public functions / methods / classes**: PEP 257 format — one-line summary on the first line, a blank line, optional extended description, then `Args` / `Returns` / `Raises` sections (Google or NumPy style — match whatever the surrounding module already uses).
 - **Module docstrings**: same shape — one-line summary, blank line, optional details.
-- Docstrings must **describe** what the symbol does (behavior, inputs, outputs, side effects). They must **not justify** the symbol's existence (no "we need this because…", no rationale for design choices, no historical context). Justification belongs in commit messages or PR descriptions, not docstrings.
+- Docstrings must **describe** what the symbol does (behavior, inputs, outputs, side effects). They must **not justify** the symbol's existence at the module, class, function, or parameter level (no "we need this because…", no rationale for design choices, no historical context). Justification belongs in commit messages or PR descriptions, not docstrings. **Exception:** justification IS allowed inside *default-value descriptions* — per audit rule 19, every default must explain what the value is, why it was chosen, and when a caller should override it.
 - Keep docstrings accurate: no references to removed parameters, renamed types, or stale behavior.
 
 ## Audit: "audit ugdatalab"

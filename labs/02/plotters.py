@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ugdatalab.models.apogee.constants import APOGEE_BAD_PIXMASK_BITS, LABEL_LATEX
-from ugdatalab.models.apogee.spectra import _apply_bitmask
+from ugdatalab.models.apogee.spectra_pipeline import _apply_bitmask
 from ugdatalab.plotters.bayesian import plot_corner
 from ugdatalab.plotting import (
     LW_FINE,

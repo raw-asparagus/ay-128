@@ -1,6 +1,6 @@
 """Gaia/AllWISE photometric loader.
 
-WISE-specific pipeline stages (``WISEFiniteCut``,
+WISE-specific pipeline stages (``WISECompletenessCut``,
 ``MarreseOneToOneMatchCut``, ``W2PhotometryQualityCut``,
 ``AddW2PhotometryColumns``) live in
 :mod:`ugdatalab.models.gaia.wise_pipeline`. Shared parallax/latitude

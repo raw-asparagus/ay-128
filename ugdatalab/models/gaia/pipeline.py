@@ -2,7 +2,7 @@
 
 Each stage is a small ``__call__``-able (dataclass when parameterized)
 that takes an ``astropy.table.Table`` and returns one. Compose with
-:class:`~ugdatalab.methods.compose.Compose` to build pipelines that
+:class:`~ugdatalab.utils.compose.Compose` to build pipelines that
 :class:`~ugdatalab.models.gaia.gaia.GaiaData` runs immediately after
 fetching and sanitizing.
 """
@@ -48,16 +48,8 @@ class AttachRepresentativePeriod:
     (set to ``pf`` for RRab and ``p1_o`` for RRc/RRd; NaN otherwise) and
     its propagated error ``rrlyrae_representative_period_error``.
 
-    This stage is auto-prepended to the user pipeline by
-    :class:`~ugdatalab.models.gaia.gaia.GaiaData` and
-    :class:`~ugdatalab.models.gaia.wise.WISEData` via the
-    ``_required_stages`` mechanism on
-    :class:`~ugdatalab.models.base.Data`, so callers normally do not
-    need to include it explicitly.
-
     Requires columns ``best_classification``, ``pf``, ``pf_error``,
-    ``p1_o``, ``p1_o_error`` — present in any
-    ``gaiadr3.vari_rrlyrae``-derived query.
+    ``p1_o``, ``p1_o_error``.
     """
 
     def __call__(self, data: table.Table) -> table.Table:
@@ -90,8 +82,7 @@ class AddPhotometryColumns:
     """Attach G-band and parallax-derived photometry columns.
 
     Adds ``sigma_G``, ``mu``, ``sigma_mu``, ``M_G``, ``sigma_M`` to the
-    table. Mutates the underlying table in place via the existing
-    :func:`_add_gaia_photometry_columns` helper, then returns it.
+    table. Mutates the table in place and returns it.
     """
 
     def __call__(self, data: table.Table) -> table.Table:
@@ -108,8 +99,7 @@ class AttachReddening:
     period-color fit, computes ``E_bprp = bp_rp_obs - bp_rp_int``,
     ``A_G = 2 * E_bprp``, and propagates a per-source ``sigma_E`` that
     combines BP/RP photometric noise with the model's intrinsic scatter.
-    Restricts the output to RRab and RRc subclasses (RRd is dropped — the
-    period-color fit isn't defined for them).
+    Restricts the output to RRab and RRc subclasses; RRd rows are dropped.
 
     Parameters
     ----------
@@ -117,11 +107,6 @@ class AttachReddening:
         Period-color NUTS results (provide ``predict`` and ``theta``).
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean ``log10(P/day)`` used to center each fit.
-
-    Notes
-    -----
-    All four parameters are required and have no defaults — they come
-    from upstream MCMC and there is no sensible package-level default.
     """
     rrab_pc: MCMCResult
     rrc_pc: MCMCResult
@@ -163,18 +148,13 @@ class AttachReddening:
 # ---------------------------------------------------------------------------
 
 
-class GaiaFiniteCut:
+class GaiaCompletenessCut:
     """Drop rows whose downstream-required Gaia values are non-finite or non-positive.
 
-    Sanity bundle ensuring that ``AddPhotometryColumns`` and any
-    parallax-based cut downstream see only rows where ``parallax``,
-    ``parallax_error``, ``phot_g_mean_flux``, and
-    ``phot_g_mean_flux_error`` are all finite, and the two scale
-    quantities (``parallax`` and the two errors) are strictly
-    positive. Without this cut, ``np.log10(parallax)`` and
-    ``np.log(flux_err / flux)`` silently produce NaN / -inf for bad
-    rows; with it, the bad rows are removed up front. The
-    Gaia-specific analogue of :class:`WISEFiniteCut`.
+    Keeps rows where ``parallax``, ``parallax_error``,
+    ``phot_g_mean_flux``, and ``phot_g_mean_flux_error`` are all finite,
+    and where ``parallax``, ``parallax_error``, and ``phot_g_mean_flux_error``
+    are strictly positive.
     """
 
     def __call__(self, data: table.Table) -> table.Table:
@@ -324,7 +304,6 @@ class LindegrenC2Cut:
 
     Accepts sources satisfying
     ``1.0 + 0.015 * bp_rp**2 < phot_bp_rp_excess_factor < 1.3 + 0.06 * bp_rp**2``.
-    Hardcoded coefficients are the Lindegren+21 published bounds.
     """
 
     def __call__(self, data: table.Table) -> table.Table:
@@ -373,8 +352,7 @@ class AttachInlierProbColumn:
 
     Requires columns ``best_classification``,
     ``rrlyrae_representative_period``,
-    ``rrlyrae_representative_period_error``, ``M_G``, ``sigma_M`` —
-    so this augmentation must follow :class:`AddPhotometryColumns`.
+    ``rrlyrae_representative_period_error``, ``M_G``, ``sigma_M``.
 
     Parameters
     ----------
