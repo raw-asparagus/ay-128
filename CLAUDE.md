@@ -47,7 +47,7 @@ When the user says "audit lab NN" (e.g., "audit lab 01"), perform the following 
 
 ### Reuse & imports
 
-1. **ugdatalab reuse** — no reimplementation of logic that exists in ugdatalab (e.g., hand-rolling chi-squared when `_chi2r` exists, manual periodograms when `lomb_scargle` exists, manual distance modulus when `_add_gaia_photometry_columns` does it)
+1. **ugdatalab reuse** — no reimplementation of logic that exists in ugdatalab (e.g., hand-rolling chi-squared when `DataFit.chi2_r` / `_mean_chi2` exists, manual periodograms when `lomb_scargle` exists, manual distance modulus when `_add_gaia_photometry_columns` does it)
 2. **No raw astroquery/requests** — all Gaia queries go through `GaiaData`/`GaiaSample`/`WISEData` or the cached `_get_gaia`; no uncached ad-hoc calls
 3. **Plotting style imports** — plotters import constants/helpers from `ugdatalab.plotting`, not hardcoded equivalents (no bare `lw=0.6` when `LW_FINE` exists, no `alpha=0.75` when `ALPHA_STANDARD` exists)
 4. **Figure creation** — all figures use `textwidth_figure`, `columnwidth_figure`, `landscapewidth_figure`, or `corner_figure`; no raw `plt.figure(figsize=(...))` with ad-hoc dimensions
