@@ -12,7 +12,7 @@ from ugdatalab.models.apogee.constants import LABEL_LATEX
 class CannonLabelLikelihood(Likelihood):
     """Likelihood for fitting stellar labels given a trained Cannon model.
 
-    Wraps a ``CannonModel`` as a ``Likelihood`` so that ``nuts_sample``
+    Wraps a ``CannonModel`` as a ``Likelihood`` so that ``NUTSSampler``
     can estimate labels via MCMC.
 
     Attributes

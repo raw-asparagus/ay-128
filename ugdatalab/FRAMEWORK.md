@@ -89,9 +89,10 @@ and return frozen dataclass results.
 
 Two ABC ladders define the contracts:
 
-- **`Fit`** — every fitted model exposes `predict(x) -> ndarray`. Use this
-  for trained-model artifacts that aren't bound to specific data (e.g.
-  `CannonModel`).
+- **`Fit`** — every fitted model exposes `predict(x) -> ndarray` and
+  `predict_std(x) -> ndarray` (std of the mean prediction from parameter
+  uncertainty only). Use this for trained-model artifacts that aren't
+  bound to specific data (e.g. `CannonModel`).
 - **`DataFit(Fit)`** — adds `x, y, y_err`, abstract `n_params`, and a
   derived `chi2_r` property (computed from `predict` + `total_variance`).
   Use for fits bound to the data they were produced from
@@ -139,7 +140,7 @@ All results are frozen dataclasses carrying everything downstream code needs:
 - **`PeriodogramResult`**: `periods`, `power`, `best_period`, `best_power`,
   `fap`.
 - **`ValidationResult`** (and subclasses): `param_values`, `chi2r_train`,
-  `chi2r_cv`, `best_param`.
+  `mean_chi2_cv`, `best_param`.
 
 Results are immutable and self-contained. Plotters and notebooks consume
 them without needing to know how they were produced.

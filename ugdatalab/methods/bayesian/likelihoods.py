@@ -1,114 +1,147 @@
-"""Concrete Bayesian likelihood implementations (linear, etc.)."""
-
-from dataclasses import dataclass
+"""Concrete Bayesian likelihoods built by composing inlier + outlier components."""
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ugdatalab.methods.bayesian.base import GaussianLikelihood
+from ugdatalab.methods.bayesian.base import (
+    InlierComponent,
+    Likelihood,
+    MixtureLikelihood,
+    OutlierComponent,
+    Parameter,
+)
+from ugdatalab.methods.bayesian.components import GaussianOutlier, LinearInlier
 
 
-# Prior-scale multipliers (data-driven weakly informative widths).
-# 2.5σ Normal covers ~99% of the data range under the slope/intercept.
-_PRIOR_SCALE_SLOPE_INTERCEPT = 2.5
-# log10(σ_s) prior width of 2.0 lets intrinsic scatter span ~2 decades.
-_PRIOR_LOG10_SIG_WIDTH = 2.0
-# Numerical floor to avoid log(0) when residuals are perfectly fit.
-_LOG_FLOOR = 1e-300
+class ComposedLikelihood(Likelihood):
+    """Likelihood assembled from an :class:`InlierComponent`.
+
+    The inlier component supplies the model form: predictions, prior,
+    parameter metadata, and per-point variance. Use
+    :class:`ComposedMixtureLikelihood` when an outlier mixture is
+    required.
+
+    Parameters
+    ----------
+    x, y, y_err : array-like
+        Observations and per-point uncertainties on ``y``.
+    inlier : InlierComponent
+        Strategy describing the inlier (signal) part of the model.
+    """
+
+    def __init__(self, x, y, y_err, inlier: InlierComponent):
+        self.x = np.asarray(x, dtype=float)
+        self.y = np.asarray(y, dtype=float)
+        self.y_err = np.asarray(y_err, dtype=float)
+        self.inlier = inlier
+
+    @property
+    def parameters(self) -> list[Parameter]:
+        """Delegate to the inlier component."""
+        return self.inlier.parameters
+
+    def predict(self, x, theta):
+        """Delegate to the inlier component."""
+        return self.inlier.predict(x, theta)
+
+    def total_variance(self, theta):
+        """Delegate to the inlier component, supplying ``self.x`` and ``self.y_err``."""
+        return self.inlier.total_variance(self.x, self.y_err, theta)
+
+    def build_pymc(self):
+        """Return a PyMC model with ``y ~ N(mu_in, sqrt(var_in))``."""
+        with pm.Model() as model:
+            mu_in, var_in = self.inlier.build_pymc(self.x, self.y, self.y_err)
+            pm.Normal("obs", mu=mu_in, sigma=pt.sqrt(var_in), observed=self.y)
+        return model
 
 
-@dataclass
-class LinearGaussianLikelihood(GaussianLikelihood):
-    """Linear model with Gaussian noise and intrinsic scatter.
+class ComposedMixtureLikelihood(ComposedLikelihood, MixtureLikelihood):
+    """Composed likelihood with an outlier mixture branch.
+
+    Adds an :class:`OutlierComponent` to a :class:`ComposedLikelihood`
+    and implements the :class:`MixtureLikelihood` contract by routing
+    ``build_pymc_mixture`` and ``inlier_probs`` through both
+    components.
+
+    Parameters
+    ----------
+    x, y, y_err : array-like
+        Observations and per-point uncertainties on ``y``.
+    inlier : InlierComponent
+        Strategy describing the inlier (signal) part of the model.
+    outlier : OutlierComponent
+        Strategy supplying the outlier branch of the mixture.
+    """
+
+    def __init__(
+        self,
+        x,
+        y,
+        y_err,
+        inlier: InlierComponent,
+        outlier: OutlierComponent,
+    ):
+        super().__init__(x, y, y_err, inlier)
+        self.outlier = outlier
+
+    def build_pymc_mixture(self):
+        """Return a PyMC inlier+outlier mixture model."""
+        with pm.Model() as model:
+            mu_in, var_in = self.inlier.build_pymc(self.x, self.y, self.y_err)
+            self.outlier.build_pymc_mixture(self.y, self.y_err, mu_in, var_in)
+        return model
+
+    def inlier_probs(self, samples, f_samples) -> np.ndarray:
+        """Return per-point posterior inlier probabilities.
+
+        Evaluates the inlier prediction and variance at every posterior
+        draw, then delegates to the outlier component to combine those
+        with the mixture weight ``f``.
+        """
+        mu_in_samples = np.array([
+            self.inlier.predict(self.x, s) for s in samples
+        ])
+        var_in_samples = np.array([
+            self.inlier.total_variance(self.x, self.y_err, s) for s in samples
+        ])
+        return self.outlier.inlier_probs(
+            self.y, self.y_err, mu_in_samples, var_in_samples, f_samples,
+        )
+
+
+class LinearGaussianLikelihood(ComposedMixtureLikelihood):
+    """Linear model with Gaussian noise, intrinsic scatter, and a Gaussian outlier mixture.
+
+    Convenience class that wires :class:`LinearInlier` and
+    :class:`GaussianOutlier` into a :class:`ComposedMixtureLikelihood`
+    with the constructor surface used throughout the labs.
 
     Model::
 
         y = a * x + b
         V_i = sigma_yi**2 + sigma_s**2 + (a * sigma_xi)**2
 
-    Posterior parameters exposed in ``MCMCResult.samples`` / ``theta``:
-    ``a`` (slope), ``b`` (intercept), ``sigma_s`` (intrinsic scatter).
+    Posterior parameters exposed in ``MCMCResult.samples``: ``a``
+    (slope), ``b`` (intercept), ``sigma_s`` (intrinsic scatter).
 
-    Attributes
+    Parameters
     ----------
-    x, y, y_err : ndarray
-        Independent variable, dependent variable, and uncertainties.
-    x_err : ndarray, optional
-        Uncertainties on ``x``; defaults to zeros.
+    x, y, y_err : array-like
+        Independent variable, dependent variable, and uncertainties on ``y``.
+    x_err : array-like, optional
+        Uncertainties on ``x``. Defaults to zero, matching the
+        no-x-error special case of the variance expression.
     """
-    x: np.ndarray
-    y: np.ndarray
-    y_err: np.ndarray
-    x_err: np.ndarray = None
 
-    def __post_init__(self):
-        """Coerce x, y, y_err, and x_err to float ndarrays, defaulting x_err to zeros."""
-        self.x = np.asarray(self.x, dtype=float)
-        self.y = np.asarray(self.y, dtype=float)
-        self.y_err = np.asarray(self.y_err, dtype=float)
-        self.x_err = np.asarray(self.x_err, dtype=float) if self.x_err is not None else np.zeros_like(self.x)
-
-    @property
-    def param_labels(self) -> list[str]:
-        """Return LaTeX labels for slope, intercept, intrinsic scatter."""
-        return [r"$a$", r"$b$", r"$\sigma_s$"]
-
-    @property
-    def physical_param_names(self) -> list[str]:
-        """Return physical parameter names to extract from the trace."""
-        return ["a", "b", "sigma_s"]
-
-    def predict(self, x, theta):
-        """Return ``a * x + b`` for ``theta = (a, b, ...)``."""
-        a, b, *_ = theta
-        return a * np.asarray(x, dtype=float) + b
-
-    def total_variance(self, theta):
-        """Return ``y_err**2 + sigma_s**2 + (a * x_err)**2``."""
-        a, _, sigma_s = theta
-        return self.y_err**2 + sigma_s**2 + (a * self.x_err)**2
-
-    def _initial_guess(self):
-        """Return an OLS-based starting point ``(a, b, log10(std(resid)))``."""
-        A = np.column_stack([self.x, np.ones_like(self.x)])
-        a0, b0 = np.linalg.lstsq(A, self.y, rcond=None)[0]
-        resid = self.y - (a0 * self.x + b0)
-        sig_resid = max(np.std(resid), _LOG_FLOOR)
-        return np.array([a0, b0, np.log10(sig_resid)])
-
-    def _prior_scales(self):
-        """Return data-driven weakly informative prior widths for ``(a, b, log10_sig)``."""
-        sy = float(np.std(self.y))
-        sx = float(np.std(self.x))
-        return np.array([
-            _PRIOR_SCALE_SLOPE_INTERCEPT * sy / sx,
-            _PRIOR_SCALE_SLOPE_INTERCEPT * sy,
-            _PRIOR_LOG10_SIG_WIDTH,
-        ])
-
-    def _pymc_inlier_model(self, model):
-        """Add linear inlier priors to *model* and return ``(mu_in, var_in)``."""
-        x = pt.as_tensor_variable(self.x)
-        y_err = pt.as_tensor_variable(self.y_err)
-        guess = self._initial_guess()
-        scales = self._prior_scales()
-
-        a = pm.Normal("a", mu=guess[0], sigma=scales[0])
-        b = pm.Normal("b", mu=guess[1], sigma=scales[1])
-        log10_sig = pm.Normal("log10_sig", mu=guess[2], sigma=scales[2])
-        # Publish the physical scatter so MCMCResult.samples is in σ-space,
-        # not log10(σ)-space. ``log10_sig`` remains the sampled internal RV;
-        # users never see it.
-        sigma_s = pm.Deterministic("sigma_s", 10.0**log10_sig)
-        mu_in = a * x + b
-        x_err = pt.as_tensor_variable(self.x_err)
-        var_in = y_err**2 + sigma_s**2 + (a * x_err)**2
-        return mu_in, var_in
-
-    def build_pymc(self):
-        """Return a PyMC model with ``y ~ N(a*x + b, sqrt(var_in))``."""
-        with pm.Model() as model:
-            mu_in, var_in = self._pymc_inlier_model(model)
-            pm.Normal("obs", mu=mu_in, sigma=pt.sqrt(var_in), observed=self.y)
-        return model
+    def __init__(self, x, y, y_err, x_err=None):
+        x = np.asarray(x, dtype=float)
+        x_err = np.zeros_like(x) if x_err is None else x_err
+        super().__init__(
+            x=x,
+            y=y,
+            y_err=y_err,
+            inlier=LinearInlier(x_err=x_err),
+            outlier=GaussianOutlier(),
+        )

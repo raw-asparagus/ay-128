@@ -15,7 +15,6 @@ from ugdatalab.models.gaia.constants import (
 )
 from ugdatalab.methods.periodogram import lomb_scargle
 from ugdatalab.methods.fourier import FourierFit, fourier_fit, build_design_matrix
-from ugdatalab.methods.cross_validate import cross_validate
 
 
 # Number of phase-grid points used when integrating Fourier fits to compute
@@ -23,9 +22,43 @@ from ugdatalab.methods.cross_validate import cross_validate
 # RR Lyrae cadence we work with.
 _EPOCH_GRID_N = 1000
 
-# Upper bound on the harmonic-order grid passed to ``cross_validate`` when
-# selecting the best Fourier order per source.
+# Upper bound on the harmonic-order grid swept when selecting the best
+# Fourier order per source.
 _MAX_HARMONIC_K = 25
+
+# Held-out fraction and seed for the per-source Fourier-order CV.
+_FOURIER_CV_FRACTION = 0.2
+_FOURIER_CV_SEED = 346
+
+
+def _select_fourier_order(
+    times: np.ndarray,
+    mags: np.ndarray,
+    mag_err: np.ndarray,
+    period: float,
+    k_grid: np.ndarray,
+) -> int:
+    """Pick the Fourier order minimizing held-out χ² on a single light curve.
+
+    A single 80/20 train/holdout split scored by mean χ² per held-out
+    point.
+    """
+    rng = np.random.default_rng(_FOURIER_CV_SEED)
+    idx = rng.permutation(len(times))
+    n_cv = round(_FOURIER_CV_FRACTION * len(times))
+    train_idx, cv_idx = idx[n_cv:], idx[:n_cv]
+
+    best_k, best_score = k_grid[0], np.inf
+    for k in k_grid:
+        fit = fourier_fit(
+            times[train_idx], mags[train_idx], mag_err[train_idx],
+            period, k,
+        )
+        resid = mags[cv_idx] - fit.predict(times[cv_idx])
+        score = np.mean((resid / mag_err[cv_idx]) ** 2)
+        if score < best_score:
+            best_k, best_score = k, score
+    return int(best_k)
 
 
 # ---------------------------------------------------------------------------
@@ -116,13 +149,12 @@ def _attach_fourier_mean_magnitudes(data: table.Table) -> None:
     means = np.empty(len(grouped.groups))
     errs = np.empty(len(grouped.groups))
     for i, g in enumerate(grouped.groups):
-        period = float(g["period_ls"][0])
-        cv_result = cross_validate(
+        period = g["period_ls"][0]
+        best_k = _select_fourier_order(
             g["g_transit_time"], g["g_transit_mag"], g["g_transit_mag_err"],
-            lambda x, y, ye, k, p=period: fourier_fit(x, y, ye, p, k),
-            np.arange(1, _MAX_HARMONIC_K + 1, dtype=int),
+            period,
+            np.arange(1, _MAX_HARMONIC_K + 1),
         )
-        best_k = int(cv_result.best_param)
         fit = fourier_fit(
             g["g_transit_time"], g["g_transit_mag"], g["g_transit_mag_err"],
             period, best_k,

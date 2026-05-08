@@ -90,39 +90,50 @@ SCATTER_STYLE = dict(s=SS_FINE, alpha=ALPHA_STANDARD, lw=LW_NONE)
 # rcParams
 # ---------------------------------------------------------------------------
 
-mpl.rcParams.update(
-    {
-        # LaTeX rendering
-        "text.usetex": True,
-        "font.family": "serif",
-        "font.serif": ["Computer Modern Roman"],
-        "mathtext.fontset": "cm",
-        "text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{amsmath}\usepackage{amssymb}",
-        "axes.unicode_minus": False,
-        # Font sizes
-        "legend.fontsize": LEGEND_SIZE,
-        # Axes
-        "axes.linewidth": LW_LIGHT,
-        "axes.grid": True,
-        # Ticks
-        "xtick.direction": "in",
-        "ytick.direction": "in",
-        "xtick.top": True,
-        "ytick.right": True,
-        "xtick.major.size": 4,
-        "ytick.major.size": 4,
-        "xtick.major.width": LW_FINE,
-        "ytick.major.width": LW_FINE,
-        # Grid
-        "grid.linewidth": GRID_STYLE["lw"],
-        "grid.alpha": GRID_STYLE["alpha"],
-        "grid.linestyle": GRID_STYLE["ls"],
-        "grid.color": GRID_STYLE["color"],
-        # Figure
-        "figure.dpi": 300,
-        "savefig.bbox": "tight",
-    }
-)
+_RC_PARAMS = {
+    # LaTeX rendering
+    "text.usetex": True,
+    "font.family": "serif",
+    "font.serif": ["Computer Modern Roman"],
+    "mathtext.fontset": "cm",
+    "text.latex.preamble": r"\usepackage[T1]{fontenc}\usepackage{amsmath}\usepackage{amssymb}",
+    "axes.unicode_minus": False,
+    # Font sizes
+    "legend.fontsize": LEGEND_SIZE,
+    # Axes
+    "axes.linewidth": LW_LIGHT,
+    "axes.grid": True,
+    # Ticks
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+    "xtick.top": True,
+    "ytick.right": True,
+    "xtick.major.size": 4,
+    "ytick.major.size": 4,
+    "xtick.major.width": LW_FINE,
+    "ytick.major.width": LW_FINE,
+    # Grid
+    "grid.linewidth": GRID_STYLE["lw"],
+    "grid.alpha": GRID_STYLE["alpha"],
+    "grid.linestyle": GRID_STYLE["ls"],
+    "grid.color": GRID_STYLE["color"],
+    # Figure
+    "figure.dpi": 300,
+    "savefig.bbox": "tight",
+}
+
+
+def apply_style() -> None:
+    """Apply the ugdatalab matplotlib rcParams globally.
+
+    Called automatically on first import of this module. Re-call
+    explicitly after any code that mutates ``mpl.rcParams`` (e.g.,
+    ``plt.style.use``) when you want the ugdatalab style restored.
+    """
+    mpl.rcParams.update(_RC_PARAMS)
+
+
+apply_style()
 
 
 # ---------------------------------------------------------------------------

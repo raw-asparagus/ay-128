@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 
 from ugdatalab.methods.fourier import fourier_fit, phase_fold
-from ugdatalab.methods.cross_validate import cross_validate
+from cross_validate import cross_validate
 from ugdatalab.plotters.bayesian import predict_posterior
 from ugdatalab.models.gaia import GaiaData, GaiaLightcurves
 from ugdatalab.plotting import (
@@ -333,25 +333,25 @@ def plot_fourier_harmonic_fits(rrlyrae, source_id, K_values):
 # ---------------------------------------------------------------------------
 
 def plot_fourier_cross_validation(result):
-    """Plot training and CV reduced chi-squared vs harmonic order."""
+    """Plot training reduced chi-squared and CV mean chi-squared vs harmonic order."""
     Ks = result.param_values
     chi2r_train = result.chi2r_train
-    chi2r_cv = result.chi2r_cv
+    mean_chi2_cv = result.mean_chi2_cv
     best_K = result.best_param
 
-    valid = np.isfinite(chi2r_train) & np.isfinite(chi2r_cv)
-    cv_best = chi2r_cv[Ks == best_K][0]
+    valid = np.isfinite(chi2r_train) & np.isfinite(mean_chi2_cv)
+    cv_best = mean_chi2_cv[Ks == best_K][0]
 
     fig, ax = columnwidth_figure(21 / 4)
 
     ax.plot(Ks[valid], chi2r_train[valid], marker="o", ls="none", ms=MS_FINE,
             alpha=ALPHA_STANDARD, label=r"Training $\chi_r^2$")
-    ax.plot(Ks[valid], chi2r_cv[valid], marker="o", ls="none", ms=MS_FINE,
-            alpha=ALPHA_STANDARD, label=r"Cross-validation $\chi_r^2$")
+    ax.plot(Ks[valid], mean_chi2_cv[valid], marker="o", ls="none", ms=MS_FINE,
+            alpha=ALPHA_STANDARD, label=r"Cross-validation $\langle\chi^2\rangle$")
     ax.axvline(best_K, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT,
                label=rf"Best $K={best_K}$")
     ax.axhline(cv_best, color="C2", ls=":", lw=LW_LIGHT, alpha=ALPHA_LIGHT,
-               label=rf"Best CV $\chi_r^2={cv_best:.3f}$")
+               label=rf"Best CV $\langle\chi^2\rangle={cv_best:.3f}$")
     ax.set_yscale("log")
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda y, _: f"{y:g}"))
     ax.yaxis.set_minor_locator(mticker.LogLocator(base=10.0, subs=np.arange(2, 10)))

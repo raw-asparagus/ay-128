@@ -29,3 +29,9 @@ labs = ["arviz", "dustmaps", "scikit-learn"]
 [tool.uv.build-backend]
 module-name = "ugdatalab"
 module-root = ""
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.20",
+    "ipykernel>=7.2.0",
+]

@@ -1,36 +1,58 @@
-"""Base classes for Bayesian likelihoods consumable by the NUTS sampler.
+"""Abstract contracts for Bayesian likelihoods and their building blocks.
 
-``Likelihood`` is the minimal contract. ``MixtureLikelihood`` adds a
-two-component outlier-mixture contract. ``GaussianLikelihood`` provides
-a shared inlier+outlier Gaussian-mixture implementation.
+``Likelihood`` is the minimal contract consumed by ``NUTSSampler.sample``.
+``MixtureLikelihood`` extends it with the inlier+outlier mixture path
+consumed by ``NUTSSampler.sample_mixture``. ``InlierComponent`` and
+``OutlierComponent`` are strategies that ``ComposedLikelihood`` /
+``ComposedMixtureLikelihood`` glue together via composition; this
+replaces the prior inheritance chain with two independent axes (model
+form, outlier treatment) that can vary independently.
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import numpy as np
-import pymc as pm
-import pytensor.tensor as pt
-
-
-# GaussianLikelihood mixture model — outlier background and prior on
-# the inlier fraction. Both are deliberately wide (weakly informative).
-_OUTLIER_WIDTH_STDS = 3.0          # background σ as a multiple of std(y)
-_LOGIT_F_PRIOR_MU = 0.0            # logit(0.5) — neutral on inlier fraction
-_LOGIT_F_PRIOR_SIGMA = 3.0         # wide → essentially uniform on f
 
 
 # ---------------------------------------------------------------------------
-# Likelihood ABCs
+# Parameter metadata
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Parameter:
+    """Metadata for one fitted parameter.
+
+    Single source of truth for the ``(name, label)`` pair so that
+    posterior-trace extraction, plotting labels, and ``samples``
+    column ordering can never drift apart.
+
+    Attributes
+    ----------
+    name : str
+        Trace variable name in the PyMC model; used to extract draws
+        from the posterior.
+    label : str
+        LaTeX-formatted parameter label in physical units; used for
+        plot axes, corner plots, and tables.
+    """
+    name: str
+    label: str
+
+
+# ---------------------------------------------------------------------------
+# Likelihood
 # ---------------------------------------------------------------------------
 
 
 class Likelihood(ABC):
-    """Base class for likelihood objects consumable by ``nuts_sample``.
+    """Minimal contract for an MCMC-sampleable likelihood.
 
-    Subclasses hold the data ``(x, y, y_err)`` and implement
-    ``build_pymc``, ``predict``, ``param_labels``, and
-    ``physical_param_names``; ``total_variance`` defaults to
-    ``y_err ** 2`` and may be overridden.
+    Subclasses hold ``(x, y, y_err)`` and implement ``build_pymc``,
+    ``predict``, and ``parameters``. ``total_variance`` defaults to
+    ``y_err ** 2`` and may be overridden when the model adds
+    intrinsic scatter or x-uncertainty.
     """
     x: np.ndarray
     y: np.ndarray
@@ -38,19 +60,23 @@ class Likelihood(ABC):
 
     @property
     @abstractmethod
-    def param_labels(self) -> list[str]:
-        """Return LaTeX-formatted parameter labels in physical units."""
+    def parameters(self) -> list[Parameter]:
+        """Return the fitted parameters in trace/sample-column order.
+
+        The order defines the *theta* component indexing consumed by
+        ``predict`` and ``total_variance``.
+        """
         ...
 
     @property
-    @abstractmethod
-    def physical_param_names(self) -> list[str]:
-        """Return trace variable names to extract into ``samples``/``theta``.
+    def param_labels(self) -> list[str]:
+        """LaTeX-formatted parameter labels, derived from :attr:`parameters`."""
+        return [p.label for p in self.parameters]
 
-        Order matches ``param_labels`` and defines the *theta* component
-        indexing consumed by ``predict`` and ``total_variance``.
-        """
-        ...
+    @property
+    def physical_param_names(self) -> list[str]:
+        """Trace variable names, derived from :attr:`parameters`."""
+        return [p.name for p in self.parameters]
 
     @abstractmethod
     def build_pymc(self):
@@ -72,108 +98,135 @@ class Likelihood(ABC):
 
 
 class MixtureLikelihood(Likelihood):
-    """Likelihood with a two-component (inlier + outlier) mixture contract.
+    """Likelihood that supports an inlier+outlier mixture sampling path.
 
-    Subclasses build a PyMC mixture model and report per-point posterior
-    inlier probabilities; consumed by ``mixture_contamination``.
+    Subclasses add ``build_pymc_mixture`` and ``inlier_probs``. A
+    ``Likelihood`` that is *not* a ``MixtureLikelihood`` cannot be
+    passed to :meth:`NUTSSampler.sample_mixture` — the distinction is
+    expressed at the type level rather than as a runtime guard.
     """
 
     @abstractmethod
     def build_pymc_mixture(self):
-        """Return a PyMC inlier+outlier mixture model for NUTS sampling."""
+        """Return a PyMC inlier+outlier mixture model ready for NUTS sampling."""
         ...
 
     @abstractmethod
-    def inlier_probs(self, trace, model_var_names: list[str]) -> np.ndarray:
-        """Return per-point posterior inlier probabilities from a trace."""
-        ...
-
-
-# ---------------------------------------------------------------------------
-# Gaussian inlier+outlier mixture base
-# ---------------------------------------------------------------------------
-
-
-class GaussianLikelihood(MixtureLikelihood):
-    """Intermediate base for likelihoods with Gaussian noise and Gaussian outliers."""
-
-    @property
-    def mu_bg(self) -> float:
-        """Return the background mean, fixed to ``median(y)``."""
-        return float(np.median(self.y))
-
-    @property
-    def sig_bg(self) -> float:
-        """Return the background width, fixed to ``_OUTLIER_WIDTH_STDS * std(y)``."""
-        return float(_OUTLIER_WIDTH_STDS * np.std(self.y))
-
-    @abstractmethod
-    def _pymc_inlier_model(self, model):
-        """Add inlier priors/variables to *model* and return ``(mu_in, var_in)``."""
-        ...
-
-    def inlier_probs(self, trace, model_var_names) -> np.ndarray:
-        """Return per-point posterior inlier probabilities.
-
-        For each draw ``s`` and point ``i``::
-
-            r_si = f_s * N_in / (f_s * N_in + (1 - f_s) * N_out)
-
-        Returns ``mean_s(r_si)``.
+    def inlier_probs(
+        self, samples: np.ndarray, f_samples: np.ndarray
+    ) -> np.ndarray:
+        """Return per-point posterior inlier probabilities, shape ``(len(x),)``.
 
         Parameters
         ----------
-        trace : arviz.InferenceData
-            Posterior trace from ``pm.sample``.
-        model_var_names : list of str
-            Names of physical inlier parameters to read from
-            ``trace.posterior``.
-
-        Returns
-        -------
-        ndarray, shape (len(self.x),)
+        samples : ndarray, shape ``(n_draws, n_params)``
+            Inlier-parameter posterior draws.
+        f_samples : ndarray, shape ``(n_draws,)``
+            Posterior draws of the inlier-fraction RV.
         """
-        posterior = trace.posterior
-        param_samples = np.column_stack([
-            posterior[name].values.flatten() for name in model_var_names
-        ])
-        f_samples = posterior["f"].values.flatten()
+        ...
 
-        var_out = self.y_err**2 + self.sig_bg**2
-        n_samples = len(f_samples)
-        responsibilities = np.empty((n_samples, len(self.x)), dtype=float)
 
-        for s in range(n_samples):
-            theta_s = param_samples[s]
-            y_pred = self.predict(self.x, theta_s)
-            var_in = self.total_variance(theta_s)
-            f = f_samples[s]
+# ---------------------------------------------------------------------------
+# Composable strategies
+# ---------------------------------------------------------------------------
 
-            ll_in = np.log(f) - 0.5 * (np.log(2 * np.pi * var_in) + (self.y - y_pred)**2 / var_in)
-            ll_out = np.log(1 - f) - 0.5 * (np.log(2 * np.pi * var_out) + (self.y - self.mu_bg)**2 / var_out)
-            responsibilities[s] = np.exp(ll_in - np.logaddexp(ll_in, ll_out))
 
-        return responsibilities.mean(axis=0)
+class InlierComponent(ABC):
+    """Strategy describing the inlier (signal) portion of a likelihood.
 
-    def build_pymc_mixture(self):
-        """Return a PyMC two-component Gaussian mixture model.
+    An ``InlierComponent`` is a stateless (or near-stateless) strategy
+    that knows how to (1) add inlier random variables to a PyMC model
+    and produce the per-point ``(mu_in, var_in)`` tensors, (2) evaluate
+    the deterministic prediction in NumPy, and (3) report the
+    parameter metadata that flows into ``MCMCResult``.
+    """
 
-        Inlier component is supplied by ``_pymc_inlier_model``; the
-        outlier component is ``N(mu_bg, y_err**2 + sig_bg**2)`` mixed
-        via a logit-Normal weight ``f``.
+    @property
+    @abstractmethod
+    def parameters(self) -> list[Parameter]:
+        """Return the inlier parameters in trace/sample-column order."""
+        ...
+
+    @property
+    def param_labels(self) -> list[str]:
+        """LaTeX-formatted parameter labels, derived from :attr:`parameters`."""
+        return [p.label for p in self.parameters]
+
+    @property
+    def physical_param_names(self) -> list[str]:
+        """Trace variable names, derived from :attr:`parameters`."""
+        return [p.name for p in self.parameters]
+
+    @abstractmethod
+    def build_pymc(self, x: np.ndarray, y: np.ndarray, y_err: np.ndarray):
+        """Add inlier RVs to the active PyMC model, return ``(mu_in, var_in)``.
+
+        Must be called inside an active ``pm.Model()`` context.
         """
-        y = pt.as_tensor_variable(self.y)
-        y_err = pt.as_tensor_variable(self.y_err)
+        ...
 
-        with pm.Model() as model:
-            mu_in, var_in = self._pymc_inlier_model(model)
-            logit_f = pm.Normal("logit_f", mu=_LOGIT_F_PRIOR_MU, sigma=_LOGIT_F_PRIOR_SIGMA)
-            f = pm.math.sigmoid(logit_f)
-            pm.Deterministic("f", f)
-            var_out = y_err**2 + self.sig_bg**2
+    @abstractmethod
+    def predict(self, x: np.ndarray, theta: np.ndarray) -> np.ndarray:
+        """Return the noiseless inlier prediction at *x* for *theta*."""
+        ...
 
-            ll_in = pt.log(f) - 0.5 * (pt.log(2 * np.pi * var_in) + (y - mu_in)**2 / var_in)
-            ll_out = pt.log(1 - f) - 0.5 * (pt.log(2 * np.pi * var_out) + (y - self.mu_bg)**2 / var_out)
-            pm.Potential("mixture_loglike", pt.sum(pt.logaddexp(ll_in, ll_out)))
+    @abstractmethod
+    def total_variance(
+        self, x: np.ndarray, y_err: np.ndarray, theta: np.ndarray
+    ) -> np.ndarray:
+        """Return per-point inlier variance at *x* for *theta*."""
+        ...
 
-        return model
+
+class OutlierComponent(ABC):
+    """Strategy describing the outlier (background) portion of a mixture.
+
+    An ``OutlierComponent`` knows how to (1) extend an active PyMC
+    model with the outlier mixture potential given the inlier
+    ``(mu_in, var_in)`` tensors, and (2) compute per-point posterior
+    inlier probabilities from precomputed per-sample inlier prediction
+    arrays. The component never holds a back-reference to the
+    likelihood — the ``ComposedMixtureLikelihood`` evaluates the
+    inlier model and passes the resulting numerics in.
+    """
+
+    @abstractmethod
+    def build_pymc_mixture(
+        self,
+        y: np.ndarray,
+        y_err: np.ndarray,
+        mu_in,
+        var_in,
+    ) -> None:
+        """Add outlier RVs and the mixture log-likelihood to the active model.
+
+        Must be called inside an active ``pm.Model()`` context. The
+        ``mu_in`` / ``var_in`` arguments are PyTensor expressions
+        produced by :meth:`InlierComponent.build_pymc`.
+        """
+        ...
+
+    @abstractmethod
+    def inlier_probs(
+        self,
+        y: np.ndarray,
+        y_err: np.ndarray,
+        mu_in_samples: np.ndarray,
+        var_in_samples: np.ndarray,
+        f_samples: np.ndarray,
+    ) -> np.ndarray:
+        """Return per-point posterior inlier probabilities, shape ``(len(y),)``.
+
+        Parameters
+        ----------
+        y, y_err : ndarray, shape ``(n_points,)``
+            Observations and per-point uncertainties on ``y``.
+        mu_in_samples : ndarray, shape ``(n_draws, n_points)``
+            Inlier mean prediction evaluated at each posterior draw.
+        var_in_samples : ndarray, shape ``(n_draws, n_points)``
+            Inlier per-point variance evaluated at each posterior draw.
+        f_samples : ndarray, shape ``(n_draws,)``
+            Posterior draws of the inlier-fraction RV.
+        """
+        ...

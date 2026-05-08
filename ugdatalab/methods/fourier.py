@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ugdatalab.methods.base import DataFit
+from ugdatalab.methods.base import Fit
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +66,7 @@ def build_design_matrix(x: np.ndarray, omega: float, k: int) -> np.ndarray:
 
 
 @dataclass(frozen=True)
-class FourierFit(DataFit):
+class FourierFit(Fit):
     """Result of a weighted least-squares Fourier fit.
 
     Attributes
@@ -79,7 +79,7 @@ class FourierFit(DataFit):
         Input independent variable, dependent variable, and uncertainties.
     beta : ndarray
         Fitted coefficients (length ``2*k + 1``).
-    beta_cov : ndarray or None
+    beta_cov : ndarray
         Covariance matrix of ``beta``.
     """
     period: float
@@ -88,7 +88,7 @@ class FourierFit(DataFit):
     y: np.ndarray
     y_err: np.ndarray
     beta: np.ndarray
-    beta_cov: np.ndarray | None
+    beta_cov: np.ndarray
 
     def predict(self, x: np.ndarray) -> np.ndarray:
         """Evaluate the fitted Fourier series at *x*.
@@ -169,6 +169,11 @@ def fourier_fit(
     ------
     ValueError
         If ``len(x) <= 2 * k + 1``.
+    numpy.linalg.LinAlgError
+        If the weighted normal matrix is singular — typically a sign
+        the data does not constrain ``2*k + 1`` Fourier coefficients
+        (too few unique epochs, or perfect harmonic aliasing). Reduce
+        ``k`` or add more data rather than catching this.
     """
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
@@ -188,10 +193,7 @@ def fourier_fit(
 
     inv_var = 1.0 / np.square(y_err)
     normal_matrix = X.T @ (X * inv_var[:, None])
-    try:
-        beta_cov = np.linalg.inv(normal_matrix)
-    except np.linalg.LinAlgError:
-        beta_cov = np.linalg.pinv(normal_matrix)
+    beta_cov = np.linalg.inv(normal_matrix)
 
     # Inflate covariance by chi²_r when the fit is worse than expected under
     # the stated y_err — a standard rescaling so beta_cov reflects observed

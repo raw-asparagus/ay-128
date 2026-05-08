@@ -2,8 +2,8 @@
 
 Re-exports common data loaders (``GaiaData``, ``WISEData``, ``APOGEEData``,
 ``GalaxyZooData``), composable quality cuts (Gaia/WISE/APOGEE ``*Cut`` classes,
-``Compose``), and analysis methods (``FourierFit``, ``lomb_scargle``,
-``cross_validate``) at the package top level. Import as
+``Compose``), and analysis methods (``FourierFit``, ``lomb_scargle``) at
+the package top level. Import as
 ``from ugdatalab import GaiaData, Compose, HighParallaxSnrCut``.
 """
 
@@ -56,8 +56,6 @@ _LAZY_EXPORTS = {
     "phase_fold":                    "ugdatalab.methods.fourier",
     "PeriodogramResult":             "ugdatalab.methods.periodogram",
     "lomb_scargle":                  "ugdatalab.methods.periodogram",
-    "ValidationResult":              "ugdatalab.methods.cross_validate",
-    "cross_validate":                "ugdatalab.methods.cross_validate",
 }
 
 

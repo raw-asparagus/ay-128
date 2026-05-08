@@ -201,8 +201,8 @@ def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_S
     mean_draws = np.empty((len(pool), n_grid))
     pred_draws = np.empty_like(mean_draws)
     for i, theta in enumerate(pool):
-        mu = result.predict(x_grid, theta)
-        sigma_pred = np.sqrt(np.interp(x_grid, x[order], result.total_variance(theta)[order]))
+        mu = result.predict_at(x_grid, theta)
+        sigma_pred = np.sqrt(np.interp(x_grid, x[order], result.total_variance_at(theta)[order]))
         mean_draws[i] = mu
         pred_draws[i] = rng.normal(mu, sigma_pred)
 

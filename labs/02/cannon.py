@@ -4,9 +4,6 @@ import numpy as np
 from scipy.optimize import minimize_scalar, least_squares
 from tqdm.auto import tqdm
 
-from ugdatalab.methods.base import Fit
-
-
 def _build_cannon_design_matrix(labels: np.ndarray) -> np.ndarray:
     """Build design matrix from centered/scaled labels.
 
@@ -116,7 +113,7 @@ def _train_pixel(flux_pixel, error_pixel, design_matrix) -> tuple:
 
 
 @dataclass(frozen=True)
-class CannonModel(Fit):
+class CannonModel:
     """Result of training The Cannon spectral model.
 
     Attributes

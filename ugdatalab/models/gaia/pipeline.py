@@ -13,8 +13,7 @@ import numpy as np
 from astropy import table
 
 from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
-from ugdatalab.methods.bayesian.mcmc import MCMCResult
-from ugdatalab.methods.bayesian.mixture import mixture_contamination
+from ugdatalab.methods.bayesian.mcmc import MCMCResult, NUTSSampler
 from ugdatalab.models.gaia.constants import ZP_ERR_G
 
 
@@ -335,7 +334,7 @@ def _compute_inlier_probs(data: table.Table) -> np.ndarray:
             y_err=subset["sigma_M"],
             x_err=sigma_logp,
         )
-        result = mixture_contamination(likelihood)
+        result = NUTSSampler().sample_mixture(likelihood)
         inlier_probs[mask] = result.inlier_prob
     return inlier_probs
 
