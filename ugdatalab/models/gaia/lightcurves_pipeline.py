@@ -140,7 +140,7 @@ def _fourier_mean_mag_with_err(fit: FourierFit) -> tuple[float, float]:
     mean_mag = -2.5 * np.log10(mean_flux) + ZP_G
     grad = np.mean(X_grid * flux_grid[:, None], axis=0) / mean_flux
     mean_mag_var = grad @ fit.beta_cov @ grad
-    return mean_mag, float(np.sqrt(np.clip(mean_mag_var, 0.0, None)))
+    return mean_mag, np.sqrt(np.clip(mean_mag_var, 0.0, None))
 
 
 def _attach_fourier_mean_magnitudes(data: table.Table) -> None:

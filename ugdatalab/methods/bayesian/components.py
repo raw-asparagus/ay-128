@@ -59,7 +59,7 @@ class LinearInlier(InlierComponent):
     def predict(self, x, theta):
         """Return ``a * x + b`` for ``theta = (a, b, ...)``."""
         a, b, *_ = theta
-        return a * np.asarray(x, dtype=float) + b
+        return a * x + b
 
     def total_variance(self, x, y_err, theta):
         """Return ``y_err**2 + sigma_s**2 + (a * x_err)**2``."""
@@ -127,7 +127,6 @@ class GaussianOutlier(OutlierComponent):
     @staticmethod
     def _background_stats(y: np.ndarray) -> tuple[float, float]:
         """Return ``(mu_bg, sig_bg)`` for the broad-Gaussian background."""
-        y = np.asarray(y, dtype=float)
         return float(np.median(y)), float(_OUTLIER_WIDTH_STDS * np.std(y))
 
     def build_pymc_mixture(self, y, y_err, mu_in, var_in):

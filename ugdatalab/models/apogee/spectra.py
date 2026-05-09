@@ -262,12 +262,12 @@ class APOGEESpectra(Data):
     @property
     def flux(self) -> np.ndarray:
         """Continuum-normalized flux, shape ``(N, n_pixels)``."""
-        return np.asarray(self.data["flux"])
+        return self.data["flux"]
 
     @property
     def error(self) -> np.ndarray:
         """Continuum-normalized per-pixel error, shape ``(N, n_pixels)``."""
-        return np.asarray(self.data["error"])
+        return self.data["error"]
 
     @property
     def wavelength(self) -> np.ndarray:
@@ -277,4 +277,4 @@ class APOGEESpectra(Data):
     @property
     def apogee_ids(self) -> np.ndarray:
         """APOGEE identifiers, shape ``(N,)``."""
-        return np.asarray(self.data["apogee_id"])
+        return self.data["apogee_id"]
