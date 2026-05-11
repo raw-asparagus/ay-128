@@ -1,70 +1,85 @@
-from dataclasses import dataclass
+"""Cannon-model spectral likelihood, composed via the ugdatalab Bayesian framework."""
 
 import numpy as np
 import pymc as pm
 import pytensor.tensor as pt
 
-from ugdatalab.methods.bayesian.base import Likelihood
+from ugdatalab.methods.bayesian.base import GridInlierComponent, Parameter
+from ugdatalab.methods.bayesian.likelihoods import ComposedGridLikelihood
 from ugdatalab.models.apogee.constants import LABEL_LATEX
 
 
-@dataclass
-class CannonLabelLikelihood(Likelihood):
-    """Likelihood for fitting stellar labels given a trained Cannon model.
+class CannonInlier(GridInlierComponent):
+    """Inlier strategy wrapping a trained Cannon model.
 
-    Wraps a ``CannonModel`` as a ``Likelihood`` so that ``NUTSSampler``
-    can estimate labels via MCMC.
+    Declares one ``pm.Normal`` per stellar label with weakly-informative
+    priors (mean = training-set mean, sigma = 2 x training-set std),
+    builds the Cannon design vector in PyTensor, and returns the
+    per-pixel ``(mu, var)`` tensors. Variance combines the per-pixel
+    observational error with the model's per-pixel intrinsic scatter.
 
-    Attributes
+    Parameters
     ----------
-    x : ndarray
-        Wavelength array, restricted to good pixels.
-    y : ndarray
-        Observed normalized flux at good pixels.
-    y_err : ndarray
-        Per-pixel errors at good pixels.
     model : CannonModel
-        Trained Cannon model (full pixel grid).
+        Trained Cannon model. Provides ``theta`` (design matrix),
+        ``scatter`` (per-pixel intrinsic scatter), ``label_names``,
+        ``label_means``, ``label_stds``, and ``predict``.
+    good_mask : ndarray of bool, shape (n_pixels,)
+        Pixel mask selecting the entries of ``model.theta`` and
+        ``model.scatter`` that correspond to the filtered ``(y, y_err)``
+        passed to :meth:`build_pymc`.
     """
-    x: np.ndarray
-    y: np.ndarray
-    y_err: np.ndarray
-    model: object
 
-    def __post_init__(self):
-        """Filter to pixels with finite, non-sentinel error and finite scatter."""
-        y_err = np.asarray(self.y_err, dtype=float)
-        good = np.isfinite(y_err) & (y_err < 1e5) & np.isfinite(self.model.scatter)
-        self._good = good
-        self.x = np.asarray(self.x, dtype=float)[good]
-        self.y = np.asarray(self.y, dtype=float)[good]
-        self.y_err = y_err[good]
-        self._scatter_good = np.asarray(self.model.scatter, dtype=float)[good]
-        self._theta_good = np.asarray(self.model.theta, dtype=float)[good]
+    def __init__(self, model, good_mask: np.ndarray):
+        self.model = model
+        self._good_mask = good_mask
+        self._theta_good = np.asarray(model.theta, dtype=float)[good_mask]
+        self._scatter_good = np.asarray(model.scatter, dtype=float)[good_mask]
 
     @property
-    def param_labels(self) -> list[str]:
-        return list(LABEL_LATEX.values())
+    def parameters(self) -> list[Parameter]:
+        """Return one :class:`Parameter` per stellar label, in model order."""
+        return [
+            Parameter(name=name, label=LABEL_LATEX[name])
+            for name in self.model.label_names
+        ]
 
-    @property
-    def physical_param_names(self) -> list[str]:
-        # All parameters are sampled in physical units (no reparameterization).
-        return list(self.model.label_names)
+    def build_pymc(self, y, y_err):
+        """Add label RVs to the active model and return ``(flux_pred, var_total)``."""
+        means = self.model.label_means
+        stds = self.model.label_stds
+        n_labels = len(means)
 
-    def predict(self, x, theta):
-        """Predict spectrum at good pixels given label vector *theta* (5,).
+        labels = [
+            pm.Normal(name, mu=means[i], sigma=2 * stds[i])
+            for i, name in enumerate(self.model.label_names)
+        ]
+        labels_vec = pt.stack(labels)
+        labels_scaled = (
+            labels_vec - pt.as_tensor_variable(means)
+        ) / pt.as_tensor_variable(stds)
 
-        *x* is ignored — wavelength is baked into the model.
+        dv = self._design_vector(labels_scaled, n_labels)
+        theta_matrix = pt.as_tensor_variable(self._theta_good)
+        flux_pred = pt.dot(theta_matrix, dv)
+
+        var_total = pt.as_tensor_variable(y_err ** 2 + self._scatter_good)
+        return flux_pred, var_total
+
+    def predict_at(self, theta):
+        """Predict spectrum at good pixels for label vector *theta*."""
+        return self.model.predict(np.asarray(theta, dtype=float))[self._good_mask]
+
+    def total_variance_at(self, y_err, theta):
+        """Per-pixel variance: observational + intrinsic scatter.
+
+        ``theta`` is unused; the Cannon scatter is fixed by training and
+        does not depend on labels.
         """
-        return self.model.predict(np.asarray(theta, dtype=float))[self._good]
+        return y_err ** 2 + self._scatter_good
 
-    def total_variance(self, theta):
-        """Total per-pixel variance at good pixels: noise + intrinsic scatter."""
-        return self.y_err ** 2 + self._scatter_good
-
-    def _build_cannon_design_vector_pytensor(self, labels_scaled):
-        """Build (21,) design vector from (5,) scaled labels in PyTensor."""
-        n_labels = len(self.model.label_names)
+    def _design_vector(self, labels_scaled, n_labels):
+        """Build the (1 + n + n*(n+1)/2,) Cannon design vector from scaled labels."""
         terms = [pt.ones(1)]
         for i in range(n_labels):
             terms.append(labels_scaled[i : i + 1])
@@ -73,33 +88,37 @@ class CannonLabelLikelihood(Likelihood):
                 terms.append(labels_scaled[i : i + 1] * labels_scaled[j : j + 1])
         return pt.concatenate(terms)
 
-    def build_pymc(self):
-        """Build a PyMC model for NUTS sampling over 5 stellar labels.
 
-        Priors are weakly informative Normals centered on training-set
-        means with width = 2 × training-set standard deviations.
-        """
-        y_obs = pt.as_tensor_variable(self.y)
-        sigma2_obs = pt.as_tensor_variable(self.y_err ** 2)
-        s2 = pt.as_tensor_variable(self._scatter_good)
-        theta_matrix = pt.as_tensor_variable(self._theta_good)
+class CannonLabelLikelihood(ComposedGridLikelihood):
+    """Likelihood for fitting stellar labels given a trained Cannon model.
 
-        means = self.model.label_means
-        stds = self.model.label_stds
-        n_labels = len(means)
+    Composes a :class:`CannonInlier` so that ``NUTSSampler`` can
+    estimate the stellar labels via MCMC. The constructor filters
+    ``(y, y_err)`` to pixels with finite, non-sentinel error and
+    finite model scatter before delegating to
+    :class:`ComposedGridLikelihood`. The wavelength grid is read from
+    the trained model and stored as ``coords`` for plotting.
 
-        with pm.Model() as model:
-            labels = []
-            for i in range(n_labels):
-                name = self.model.label_names[i]
-                labels.append(pm.Normal(name, mu=means[i], sigma=2 * stds[i]))
-            labels_vec = pt.stack(labels)
+    Parameters
+    ----------
+    y : array-like
+        Observed normalized flux (full pixel grid).
+    y_err : array-like
+        Per-pixel observational errors (full pixel grid).
+    model : CannonModel
+        Trained Cannon model.
+    """
 
-            labels_scaled = (labels_vec - pt.as_tensor_variable(means)) / pt.as_tensor_variable(stds)
-            dv = self._build_cannon_design_vector_pytensor(labels_scaled)
-            flux_pred = pt.dot(theta_matrix, dv)
-
-            var_total = sigma2_obs + s2
-            pm.Normal("obs", mu=flux_pred, sigma=pt.sqrt(var_total), observed=y_obs)
-
-        return model
+    def __init__(self, y, y_err, model):
+        y_err_arr = np.asarray(y_err, dtype=float)
+        good = (
+            np.isfinite(y_err_arr)
+            & (y_err_arr < 1e5)
+            & np.isfinite(np.asarray(model.scatter, dtype=float))
+        )
+        super().__init__(
+            coords=np.asarray(model.wavelength, dtype=float)[good],
+            y=np.asarray(y, dtype=float)[good],
+            y_err=y_err_arr[good],
+            inlier=CannonInlier(model, good_mask=good),
+        )

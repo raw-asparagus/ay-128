@@ -82,83 +82,139 @@ Re-running a notebook after the first fetch is fast.
 
 ## Layer 2 — Analysis Engines (`methods/`)
 
-Methods are survey-agnostic. They operate on numpy arrays (`x`, `y`, `y_err`)
-and return frozen dataclass results.
+Methods are survey-agnostic. They operate on numpy arrays (`x`, `y`, `y_err`
+or equivalent) and return frozen dataclass results.
 
-### Contracts
+### Bayesian framework: three orthogonal axes
 
-Two ABC ladders define the contracts:
+The Bayesian subpackage (`methods/bayesian/`) is built on three axes that
+compose freely. A *fit* picks one value from each:
 
-- **`Fit`** — every fitted model exposes `predict(x) -> ndarray` and
-  `predict_std(x) -> ndarray` (std of the mean prediction from parameter
-  uncertainty only). Use this for trained-model artifacts that aren't
-  bound to specific data (e.g. `CannonModel`).
-- **`DataFit(Fit)`** — adds `x, y, y_err`, abstract `n_params`, and a
-  derived `chi2_r` property (computed from `predict` + `total_variance`).
-  Use for fits bound to the data they were produced from
-  (`MCMCResult`, `FourierFit`).
-- **`Likelihood`** — Bayesian models expose `param_labels`,
-  `physical_param_names`, `build_pymc()`, `predict(x, theta)`, and
-  `total_variance(theta)`.
-- **`MixtureLikelihood(Likelihood)`** — additionally exposes
-  `build_pymc_mixture()` and `inlier_probs()`. Required by
-  `mixture_contamination`.
+| Axis | Choices | Where it lives |
+|---|---|---|
+| **Data layout** | `RegressionLikelihood` (`y_i = f(x_i; θ)`), `GridLikelihood` (`y = f(θ)` at fixed coords) | sibling ABCs of `Likelihood` |
+| **Inlier model** | `LinearInlier`, `CannonInlier`, future `PolyInlier`, `GPInlier`, ... | `RegressionInlierComponent` / `GridInlierComponent` strategies |
+| **Outlier treatment** | none, `GaussianOutlier`, future `LaplaceOutlier`, ... | `OutlierComponent` strategies (data-shape-agnostic, shared between branches) |
 
-Engines consume these contracts without knowing the concrete implementation:
+A *posterior result* adds a fourth axis — **point estimate**: `median`, `map`,
+or `mean` — exposed via `PosteriorResult.as_fit(estimator=...)`.
+
+### Likelihood contracts
+
+`Likelihood` is the minimal contract: two methods, `parameters` (for trace
+extraction and plot labels) and `build_pymc()` (the PyMC model). Concrete
+likelihoods inherit from a shape ABC, never the bare base.
 
 ```
-Likelihood (ABC)
-    └── GaussianLikelihood (ABC — Gaussian noise + outlier background)
-            └── LinearGaussianLikelihood (concrete — y = ax + b + σ_s)
-            └── PolynomialGaussianLikelihood (concrete — future lab)
+Likelihood (ABC: parameters, build_pymc)
+    ├── RegressionLikelihood (adds x, y, y_err, predict_at(x, θ), total_variance_at(θ))
+    │       └── ComposedRegressionLikelihood (composes a RegressionInlierComponent)
+    │               └── ComposedMixtureRegressionLikelihood (+ OutlierComponent + MixtureLikelihood mixin)
+    │                       └── LinearGaussianLikelihood   (LinearInlier + GaussianOutlier convenience)
+    └── GridLikelihood     (adds coords, y, y_err, predict_at(θ), total_variance_at(θ))
+            └── ComposedGridLikelihood       (composes a GridInlierComponent)
+                    └── ComposedMixtureGridLikelihood (+ OutlierComponent + MixtureLikelihood mixin)
+                            └── (e.g. CannonLabelLikelihood for spectral fits, defined in labs/02/)
+
+MixtureLikelihood (mixin — orthogonal to data shape)
 ```
 
-### Engine functions
+`MixtureLikelihood` is a `Likelihood` subtype: any concrete mixture
+likelihood inherits both its data-shape ABC and `MixtureLikelihood`.
+`NUTSSampler.sample_mixture` accepts any `MixtureLikelihood` regardless of
+underlying shape.
 
-Engines are stateless functions that take a `Likelihood` and return a
-frozen result:
+### Strategy components
+
+Inlier and outlier strategies live in `methods/bayesian/components.py`:
+
+- **`LinearInlier(RegressionInlierComponent)`** — `y = a x + b` with intrinsic
+  scatter and per-point x-error. Data-driven weakly informative priors.
+- **`GaussianOutlier(OutlierComponent)`** — broad-Gaussian background with
+  logit-Normal mixture weight `f`. Shape-agnostic — works with both regression
+  and grid inliers.
+
+Lab-specific inliers (e.g. `CannonInlier` in `labs/02/cannon_likelihood.py`)
+live alongside the lab they support.
+
+### Sampler
+
+`NUTSSampler` encapsulates `(n_steps, n_burn, seed)` and exposes:
+
+| Method | Input | Returns |
+|---|---|---|
+| `sample(likelihood)` | any `Likelihood` | shape-appropriate result |
+| `sample_mixture(likelihood)` | any `MixtureLikelihood` | shape-appropriate result with `f_samples`, `inlier_prob` |
+
+Result type is dispatched by the likelihood's data-shape ABC: a
+`RegressionLikelihood` produces a `RegressionMCMCResult`; a `GridLikelihood`
+produces a `GridMCMCResult`. Add a sibling shape ABC and the sampler picks
+it up via `_result_for(likelihood)` without any change to its sampling logic.
+
+### Result containers
+
+```
+_PosteriorResultBase  (private — samples, log_probs, likelihood, theta, theta_map,
+ │                     theta_mean, n_params, labels, credible_interval, as_fit,
+ │                     plus optional f_samples / inlier_prob for mixtures)
+ ├── RegressionMCMCResult (Fit)  — adds x, y, y_err, predict(x), predict_at(x, θ),
+ │                                 total_variance, total_variance_at(θ), predict_std(x), chi2_r
+ │                                 — alias: MCMCResult
+ └── GridMCMCResult              — adds coords, y, y_err, predict() (no x),
+                                   predict_at(θ), total_variance, total_variance_at(θ),
+                                   predict_std() (no x), chi2_r
+```
+
+`MCMCFit` is the materialized `Fit` view returned by `as_fit(estimator='median' |
+'map' | 'mean')`. It binds a chosen `theta` and exposes the `Fit` protocol —
+useful when you want `chi2_r` at the joint MAP rather than the marginal median,
+for example.
+
+### Other engines (non-Bayesian)
 
 | Engine | Input | Output | Purpose |
 |---|---|---|---|
-| `nuts_sample` | `Likelihood` | `MCMCResult` | NUTS parameter estimation |
-| `mixture_contamination` | `Likelihood` | `MixtureResult` | Outlier rejection via mixture model |
 | `lomb_scargle` | `x, y, y_err` | `PeriodogramResult` | Period detection |
 | `fourier_fit` | `x, y, y_err, period, k` | `FourierFit` | Weighted Fourier series fit |
-| `cross_validate` | `x, y, y_err, fit_fn, params, *, n_folds=1, cv_fraction=0.2` | `ValidationResult` | Holdout (n_folds=1) or k-fold model selection |
+| `cross_validate` | `x, y, y_err, fit_fn, params, n_folds=1, cv_fraction=0.2` | `ValidationResult` | Holdout / k-fold model selection |
 
-### Result dataclasses
+These are stateless functions that take numpy arrays and return frozen result
+dataclasses. They do not flow through the Bayesian framework.
 
-All results are frozen dataclasses carrying everything downstream code needs:
+### Adding a new Bayesian model
 
-- **`MCMCResult`**: `theta`, `samples`, `log_probs`, `labels`, `chi2_r`,
-  `x`, `y`, `y_err`, plus `predict(x, theta=None)`, `total_variance(theta=None)`,
-  and `predict_std(x)`. Self-contained — no Likelihood back-reference.
-- **`MixtureResult`**: `inlier_prob`, `theta`, `samples`, `log_probs`,
-  `labels`.
-- **`FourierFit`**: `beta`, `beta_cov`, `period`, `k`, `x`, `y`, `y_err`,
-  plus `predict()`, `predict_std()`, and inherited `chi2_r` (property).
-- **`PeriodogramResult`**: `periods`, `power`, `best_period`, `best_power`,
-  `fap`.
-- **`ValidationResult`** (and subclasses): `param_values`, `chi2r_train`,
-  `mean_chi2_cv`, `best_param`.
+The pattern depends on which axis you're extending.
 
-Results are immutable and self-contained. Plotters and notebooks consume
-them without needing to know how they were produced.
-
-### Adding a new likelihood
-
-To support a new model (e.g., polynomial), subclass `GaussianLikelihood`
-and implement three methods:
+**New model form (most common — adds one inlier).**
 
 ```python
-class PolynomialGaussianLikelihood(GaussianLikelihood):
-    def predict(self, x, theta) -> ndarray: ...
-    def total_variance(self, theta) -> ndarray: ...
-    def _pymc_inlier_model(self, model): ...
+class PolyInlier(RegressionInlierComponent):
+    def __init__(self, degree: int, x_err: np.ndarray | None = None):
+        self.degree = degree
+        self.x_err = x_err
+
+    @property
+    def parameters(self) -> list[Parameter]:
+        return [Parameter(f"c_{i}", rf"$c_{i}$") for i in range(self.degree + 1)] + \
+               [Parameter("sigma_s", r"$\sigma_s$")]
+
+    def build_pymc(self, x, y, y_err): ...     # returns (mu_in, var_in)
+    def predict_at(self, x, theta): ...        # returns y at any x
+    def total_variance_at(self, x, y_err, theta): ...
 ```
 
-This plugs directly into `nuts_sample` and `mixture_contamination` with
-no changes to the engines.
+Drops straight into `ComposedRegressionLikelihood(x, y, y_err,
+inlier=PolyInlier(degree=3))`. Pair with `GaussianOutlier()` for mixture
+robustness — no further framework code.
+
+**New outlier treatment.** Subclass `OutlierComponent`. Works with any
+inlier, regression or grid.
+
+**New data layout** (e.g. multi-output regression, hierarchical, image fields).
+Add a sibling ABC alongside `RegressionLikelihood` / `GridLikelihood` in
+`methods/bayesian/base.py`. Provide an inlier component ABC for it, a
+composer pair, and a result subclass of `_PosteriorResultBase`. The
+sampler picks up the new shape via `_result_for`.
 
 ### Default arguments
 
@@ -205,10 +261,16 @@ and **lab-specific plotters** in each `labs/NN/plotters.py`.
 Reusable across labs. Consume result dataclasses directly:
 
 - `plot_trace(result)` — trace plot of MCMC parameters + log-probability.
-- `plot_corner(result)` — corner plot with 16/50/84 quantiles.
-- `plot_posterior(result, param_idx=)` — 1D posterior histogram.
-- `predict_posterior(result)` — compute posterior predictive summaries.
+  Works with any object exposing `samples`, `labels`, `log_probs`
+  (e.g. `RegressionMCMCResult`, `GridMCMCResult`, the lab `MHResult`).
+- `plot_corner(result)` — corner plot with 16/50/84 quantiles. Same loose
+  contract as `plot_trace`.
+- `plot_posterior(result, param_idx=...)` — 1-D posterior histogram.
+- `predict_posterior(result)` — compute posterior-predictive summaries.
+  **Regression-shape only** — uses `result.x`, `predict_at(x, θ)`,
+  `total_variance_at(θ)`.
 - `plot_posterior_predictive(result)` — data + median + credible bands.
+  **Regression-shape only.**
 
 ### Lab-specific plotters (`labs/NN/plotters.py`)
 
@@ -342,24 +404,26 @@ report to match the notebook.
 
 ## Putting It Together
 
-A typical analysis pipeline, from raw data to report figure:
+A typical Bayesian analysis pipeline, from raw data to report figure:
 
 ```python
 # 1. Data acquisition (models/)
 sample = GaiaSample(query)
 clean  = StrictSNR(Local(sample))
 
-# 2. Analysis (methods/)
-lk     = LinearGaussianLikelihood(x, y, y_err)
-result = nuts_sample(lk)
+# 2. Analysis (methods/bayesian/) — three-axis composition
+lk     = LinearGaussianLikelihood(x, y, y_err)        # Regression × LinearInlier × GaussianOutlier
+result = NUTSSampler().sample_mixture(lk)             # → RegressionMCMCResult
+print(result.theta, result.chi2_r)                    # posterior median + reduced chi2
+fit    = result.as_fit('map')                          # joint-MAP Fit view if you want it
 
 # 3. Visualization (plotters/)
 from ugdatalab.plotters.bayesian import plot_corner, plot_posterior_predictive
-plot_corner(result)                           # generic
-plot_posterior_predictive(result)              # generic
+plot_corner(result)
+plot_posterior_predictive(result)
 
 from plotters import plot_custom_figure
-plot_custom_figure(result, clean)             # lab-specific → report/figures/
+plot_custom_figure(result, clean)                     # lab-specific → report/figures/
 ```
 
 Each layer knows only about the layer above it: plotters consume result
@@ -430,6 +494,7 @@ from ugdatalab.models.sdss import SDSSData  # or whatever survey
 
 # ugdatalab — methods
 from ugdatalab import fourier_fit, lomb_scargle, cross_validate
+from ugdatalab.methods.bayesian import LinearGaussianLikelihood, NUTSSampler
 
 # lab plotters
 import plotters
@@ -446,12 +511,26 @@ following the existing `models/gaia/` pattern:
   `_sanitize_table`, derived columns, and filter subclasses.
 - Update `ugdatalab/__init__.py` to re-export the new public classes.
 
-### 5. Add new likelihoods to `ugdatalab` if needed
+### 5. Add new Bayesian models to `ugdatalab` (or alongside the lab) if needed
 
-If the lab requires a model beyond `LinearGaussianLikelihood`, add a new
-concrete class in `ugdatalab/methods/bayesian/likelihoods.py` (or a new
-file if substantially different). Subclass `GaussianLikelihood` and
-implement `predict`, `total_variance`, and `_pymc_inlier_model`.
+Decide which axis you're extending (see *Adding a new Bayesian model*
+above):
+
+- **New inlier model** — write a `RegressionInlierComponent` or
+  `GridInlierComponent`. If reusable across labs, add it to
+  `ugdatalab/methods/bayesian/components.py`. If lab-specific (like
+  `CannonInlier` in `labs/02/`), keep it next to the lab.
+- **New outlier treatment** — `OutlierComponent`, usually in
+  `ugdatalab/methods/bayesian/components.py` since outlier strategies
+  generalize across labs.
+- **New data layout** — sibling `Likelihood` ABC in
+  `ugdatalab/methods/bayesian/base.py`, plus its inlier component ABC,
+  composer pair, and result subclass.
+
+A lab-specific concrete likelihood that wires components into a
+convenience class (analogous to `LinearGaussianLikelihood`) is idiomatic
+when the same `(inlier, outlier)` pair is used across many notebook
+cells.
 
 ### 6. Build notebooks in pipeline order
 

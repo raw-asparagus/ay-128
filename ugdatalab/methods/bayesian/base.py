@@ -1,16 +1,36 @@
-"""Abstract contracts for Bayesian likelihoods and their building blocks.
+"""Abstract contracts for Bayesian likelihoods, components, and the posterior.
 
-``Likelihood`` is the minimal contract consumed by ``NUTSSampler.sample``.
-``MixtureLikelihood`` extends it with the inlier+outlier mixture path
-consumed by ``NUTSSampler.sample_mixture``. ``InlierComponent`` and
-``OutlierComponent`` are strategies that ``ComposedLikelihood`` /
-``ComposedMixtureLikelihood`` glue together via composition; this
-replaces the prior inheritance chain with two independent axes (model
-form, outlier treatment) that can vary independently.
+Three orthogonal axes structure the framework:
+
+1. **Data layout** — sibling ABCs of :class:`Likelihood`. Today
+   :class:`RegressionLikelihood` (``y_i = f(x_i; theta) + eps``, ``x``
+   either 1-D or k-D) and :class:`GridLikelihood` (``y = f(theta)`` on
+   fixed coordinates). Add a sibling for any new shape; the sampler
+   never inspects which shape it has.
+
+2. **Model form** — :class:`RegressionInlierComponent` and
+   :class:`GridInlierComponent` strategies. The composers in
+   :mod:`ugdatalab.methods.bayesian.likelihoods` glue these to the data.
+
+3. **Outlier treatment** — :class:`OutlierComponent` strategies. By the
+   time an outlier runs it sees only ``(mu_in, var_in)`` per
+   observation, so a single outlier strategy works for any data shape.
+
+:class:`MixtureLikelihood` is a :class:`Likelihood` subtype that adds
+an outlier branch. Concrete mixture likelihoods inherit both their
+data-shape ABC and :class:`MixtureLikelihood`;
+``NUTSSampler.sample_mixture`` accepts any :class:`MixtureLikelihood`
+regardless of underlying shape.
+
+:class:`Posterior` is the single result container: a sample cloud plus
+a reference to the bound likelihood, with shape-agnostic statistical
+summaries and shape-dispatched evaluators (``predict``,
+``total_variance``, ``chi2_r``) that delegate to the likelihood.
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 
@@ -25,8 +45,8 @@ class Parameter:
     """Metadata for one fitted parameter.
 
     Single source of truth for the ``(name, label)`` pair so that
-    posterior-trace extraction, plotting labels, and ``samples``
-    column ordering can never drift apart.
+    posterior-trace extraction, plotting labels, and ``samples`` column
+    ordering can never drift apart.
 
     Attributes
     ----------
@@ -42,30 +62,24 @@ class Parameter:
 
 
 # ---------------------------------------------------------------------------
-# Likelihood
+# Parameter-metadata mixin
 # ---------------------------------------------------------------------------
 
 
-class Likelihood(ABC):
-    """Minimal contract for an MCMC-sampleable likelihood.
+class HasParameters(ABC):
+    """Mixin contract for any object that exposes a list of :class:`Parameter`.
 
-    Subclasses hold ``(x, y, y_err)`` and implement ``build_pymc``,
-    ``predict``, and ``parameters``. ``total_variance`` defaults to
-    ``y_err ** 2`` and may be overridden when the model adds
-    intrinsic scatter or x-uncertainty.
+    Defines the single abstract :attr:`parameters` and derives
+    :attr:`param_labels` / :attr:`physical_param_names` from it. Inherited
+    by both :class:`Likelihood` (for trace extraction and plotting) and
+    the inlier component ABCs (for the parameters they contribute to a
+    composed model).
     """
-    x: np.ndarray
-    y: np.ndarray
-    y_err: np.ndarray
 
     @property
     @abstractmethod
     def parameters(self) -> list[Parameter]:
-        """Return the fitted parameters in trace/sample-column order.
-
-        The order defines the *theta* component indexing consumed by
-        ``predict`` and ``total_variance``.
-        """
+        """Return the parameters in trace/sample-column order."""
         ...
 
     @property
@@ -78,32 +92,144 @@ class Likelihood(ABC):
         """Trace variable names, derived from :attr:`parameters`."""
         return [p.name for p in self.parameters]
 
+
+# ---------------------------------------------------------------------------
+# Likelihood — minimal contract
+# ---------------------------------------------------------------------------
+
+
+class Likelihood(HasParameters):
+    """Minimal contract for an MCMC-sampleable likelihood.
+
+    Two abstractions only: :attr:`parameters` (for trace extraction
+    and plotting labels) and :meth:`build_pymc` (the PyMC model).
+    Data-layout concepts (``x``, ``coords``, ``y``, ``y_err``,
+    ``predict_at``, ``total_variance_at``, ``chi2_r_at``) live on the
+    shape-specific subclasses.
+
+    Concrete user-facing likelihoods subclass one of those shape ABCs,
+    never this base directly — unless a non-standard data layout
+    (hierarchical, state-space, etc.) is needed, in which case a new
+    sibling shape ABC is the right extension point.
+    """
+
     @abstractmethod
     def build_pymc(self):
         """Return a PyMC model ready for NUTS sampling."""
         ...
 
+
+class RegressionLikelihood(Likelihood):
+    """Regression-shaped likelihood: ``y_i = f(x_i; theta) + eps``.
+
+    ``x`` may be 1-D ``(n,)`` for univariate regression or k-D
+    ``(n, k)`` for multivariate regression; subclasses decide what
+    shape they accept. The framework treats ``x`` as opaque
+    per-observation input.
+
+    Attributes
+    ----------
+    x : ndarray, shape ``(n,)`` or ``(n, k)``
+        Independent-variable values.
+    y : ndarray, shape ``(n,)``
+        Dependent-variable observations.
+    y_err : ndarray, shape ``(n,)``
+        Per-point observational uncertainty on ``y``.
+    """
+    x: np.ndarray
+    y: np.ndarray
+    y_err: np.ndarray
+
     @abstractmethod
-    def predict(self, x: np.ndarray, theta: np.ndarray) -> np.ndarray:
-        """Return the noiseless model prediction at *x* for *theta*."""
+    def predict_at(self, x: np.ndarray, theta: np.ndarray) -> np.ndarray:
+        """Return the noiseless model prediction at *x* for *theta*.
+
+        ``x`` may differ from ``self.x`` — this is a parameterized
+        evaluation suitable for prediction grids, posterior-predictive
+        bands, and extrapolation.
+        """
         ...
 
-    def total_variance(self, theta: np.ndarray) -> np.ndarray:
+    def total_variance_at(self, theta: np.ndarray) -> np.ndarray:
         """Return per-point predictive variance at ``self.x`` for *theta*.
 
-        Default implementation returns ``y_err ** 2``. Subclasses with
-        intrinsic scatter or x-uncertainty override.
+        Default returns ``y_err ** 2``. Subclasses with intrinsic
+        scatter or x-uncertainty override.
         """
         return self.y_err ** 2
 
+    def chi2_r_at(self, theta: np.ndarray) -> float:
+        """Return reduced chi-squared at the bound data for *theta*.
+
+        Weighted sum of squared residuals at ``self.x`` divided by
+        ``max(len(y) - len(theta), 1)``.
+        """
+        resid = self.y - self.predict_at(self.x, theta)
+        nu = max(self.y.size - len(theta), 1)
+        return float(np.sum(resid ** 2 / self.total_variance_at(theta)) / nu)
+
+
+class GridLikelihood(Likelihood):
+    """Fixed-grid likelihood: ``y = f(theta)`` at locked coordinates.
+
+    The model has no notion of "evaluate at a new x" — output shape is
+    fixed at construction. ``coords`` is a coordinate label kept for
+    plotting and bookkeeping; the model itself does not consume it.
+
+    Attributes
+    ----------
+    coords : ndarray
+        Coordinate labels for the entries of ``y`` (wavelength, pixel
+        index, time, ...). Used by plotters, not by the model.
+    y : ndarray
+        Observations laid out on the fixed grid.
+    y_err : ndarray
+        Per-entry observational uncertainty, shape matching ``y``.
+    """
+    coords: np.ndarray
+    y: np.ndarray
+    y_err: np.ndarray
+
+    @abstractmethod
+    def predict_at(self, theta: np.ndarray) -> np.ndarray:
+        """Return the noiseless model prediction for *theta*.
+
+        Output shape matches ``y``. There is no ``x`` argument because
+        a grid model's output grid is fixed.
+        """
+        ...
+
+    def total_variance_at(self, theta: np.ndarray) -> np.ndarray:
+        """Return per-entry predictive variance for *theta*.
+
+        Default returns ``y_err ** 2``. Subclasses with intrinsic
+        scatter override.
+        """
+        return self.y_err ** 2
+
+    def chi2_r_at(self, theta: np.ndarray) -> float:
+        """Return reduced chi-squared on the fixed grid for *theta*.
+
+        Weighted sum of squared residuals divided by
+        ``max(y.size - len(theta), 1)``.
+        """
+        resid = self.y - self.predict_at(theta)
+        nu = max(self.y.size - len(theta), 1)
+        return float(np.sum(resid ** 2 / self.total_variance_at(theta)) / nu)
+
+
+# ---------------------------------------------------------------------------
+# Mixture likelihood — Likelihood subtype with an outlier branch
+# ---------------------------------------------------------------------------
+
 
 class MixtureLikelihood(Likelihood):
-    """Likelihood that supports an inlier+outlier mixture sampling path.
+    """Likelihood with an inlier+outlier mixture branch.
 
-    Subclasses add ``build_pymc_mixture`` and ``inlier_probs``. A
-    ``Likelihood`` that is *not* a ``MixtureLikelihood`` cannot be
-    passed to :meth:`NUTSSampler.sample_mixture` — the distinction is
-    expressed at the type level rather than as a runtime guard.
+    Concrete mixture likelihoods inherit their data-shape ABC (e.g.
+    :class:`RegressionLikelihood`) *and* this class.
+    ``NUTSSampler.sample_mixture`` accepts any :class:`MixtureLikelihood`
+    regardless of underlying shape.
     """
 
     @abstractmethod
@@ -115,7 +241,7 @@ class MixtureLikelihood(Likelihood):
     def inlier_probs(
         self, samples: np.ndarray, f_samples: np.ndarray
     ) -> np.ndarray:
-        """Return per-point posterior inlier probabilities, shape ``(len(x),)``.
+        """Return per-observation posterior inlier probabilities.
 
         Parameters
         ----------
@@ -128,67 +254,81 @@ class MixtureLikelihood(Likelihood):
 
 
 # ---------------------------------------------------------------------------
-# Composable strategies
+# Strategy components
 # ---------------------------------------------------------------------------
 
 
-class InlierComponent(ABC):
-    """Strategy describing the inlier (signal) portion of a likelihood.
+class RegressionInlierComponent(HasParameters):
+    """Strategy describing the inlier portion of a regression likelihood.
 
-    An ``InlierComponent`` is a stateless (or near-stateless) strategy
-    that knows how to (1) add inlier random variables to a PyMC model
-    and produce the per-point ``(mu_in, var_in)`` tensors, (2) evaluate
-    the deterministic prediction in NumPy, and (3) report the
-    parameter metadata that flows into ``MCMCResult``.
+    Stateless or near-stateless: data flows in through :meth:`build_pymc`
+    and the ``*_at`` evaluators rather than being held on the component.
+    A single component instance can be reused across datasets; the
+    composer owns data binding.
     """
-
-    @property
-    @abstractmethod
-    def parameters(self) -> list[Parameter]:
-        """Return the inlier parameters in trace/sample-column order."""
-        ...
-
-    @property
-    def param_labels(self) -> list[str]:
-        """LaTeX-formatted parameter labels, derived from :attr:`parameters`."""
-        return [p.label for p in self.parameters]
-
-    @property
-    def physical_param_names(self) -> list[str]:
-        """Trace variable names, derived from :attr:`parameters`."""
-        return [p.name for p in self.parameters]
 
     @abstractmethod
     def build_pymc(self, x: np.ndarray, y: np.ndarray, y_err: np.ndarray):
         """Add inlier RVs to the active PyMC model, return ``(mu_in, var_in)``.
 
-        Must be called inside an active ``pm.Model()`` context.
+        Must be called inside an active ``pm.Model()`` context. The
+        returned tensors are PyTensor expressions of shape ``y.shape``.
         """
         ...
 
     @abstractmethod
-    def predict(self, x: np.ndarray, theta: np.ndarray) -> np.ndarray:
+    def predict_at(self, x: np.ndarray, theta: np.ndarray) -> np.ndarray:
         """Return the noiseless inlier prediction at *x* for *theta*."""
         ...
 
     @abstractmethod
-    def total_variance(
-        self, x: np.ndarray, y_err: np.ndarray, theta: np.ndarray
+    def total_variance_at(
+        self, x: np.ndarray, y_err: np.ndarray, theta: np.ndarray,
     ) -> np.ndarray:
         """Return per-point inlier variance at *x* for *theta*."""
+        ...
+
+
+class GridInlierComponent(HasParameters):
+    """Strategy describing the inlier portion of a grid likelihood.
+
+    The grid model has no ``x`` input — its output grid is locked by
+    training or instrument geometry — so :meth:`build_pymc` and the
+    ``*_at`` evaluators take only ``y``, ``y_err``, and ``theta``.
+    """
+
+    @abstractmethod
+    def build_pymc(self, y: np.ndarray, y_err: np.ndarray):
+        """Add inlier RVs to the active PyMC model, return ``(mu_in, var_in)``.
+
+        Must be called inside an active ``pm.Model()`` context. The
+        returned tensors are PyTensor expressions of shape ``y.shape``.
+        """
+        ...
+
+    @abstractmethod
+    def predict_at(self, theta: np.ndarray) -> np.ndarray:
+        """Return the noiseless inlier prediction for *theta*.
+
+        Output shape matches the data ``y``.
+        """
+        ...
+
+    @abstractmethod
+    def total_variance_at(
+        self, y_err: np.ndarray, theta: np.ndarray,
+    ) -> np.ndarray:
+        """Return per-entry inlier variance for *theta*."""
         ...
 
 
 class OutlierComponent(ABC):
     """Strategy describing the outlier (background) portion of a mixture.
 
-    An ``OutlierComponent`` knows how to (1) extend an active PyMC
-    model with the outlier mixture potential given the inlier
-    ``(mu_in, var_in)`` tensors, and (2) compute per-point posterior
-    inlier probabilities from precomputed per-sample inlier prediction
-    arrays. The component never holds a back-reference to the
-    likelihood — the ``ComposedMixtureLikelihood`` evaluates the
-    inlier model and passes the resulting numerics in.
+    Data-shape-agnostic: operates on per-observation ``(mu_in, var_in)``
+    tensors produced by the inlier, so a single outlier strategy works
+    for both :class:`RegressionInlierComponent` and
+    :class:`GridInlierComponent` siblings.
     """
 
     @abstractmethod
@@ -203,7 +343,7 @@ class OutlierComponent(ABC):
 
         Must be called inside an active ``pm.Model()`` context. The
         ``mu_in`` / ``var_in`` arguments are PyTensor expressions
-        produced by :meth:`InlierComponent.build_pymc`.
+        produced by an inlier component's ``build_pymc``.
         """
         ...
 
@@ -216,17 +356,98 @@ class OutlierComponent(ABC):
         var_in_samples: np.ndarray,
         f_samples: np.ndarray,
     ) -> np.ndarray:
-        """Return per-point posterior inlier probabilities, shape ``(len(y),)``.
+        """Return per-observation posterior inlier probabilities.
 
         Parameters
         ----------
-        y, y_err : ndarray, shape ``(n_points,)``
-            Observations and per-point uncertainties on ``y``.
-        mu_in_samples : ndarray, shape ``(n_draws, n_points)``
+        y, y_err : ndarray
+            Observations and per-entry uncertainties.
+        mu_in_samples : ndarray, shape ``(n_draws, *y.shape)``
             Inlier mean prediction evaluated at each posterior draw.
-        var_in_samples : ndarray, shape ``(n_draws, n_points)``
-            Inlier per-point variance evaluated at each posterior draw.
+        var_in_samples : ndarray, shape ``(n_draws, *y.shape)``
+            Inlier per-entry variance evaluated at each posterior draw.
         f_samples : ndarray, shape ``(n_draws,)``
             Posterior draws of the inlier-fraction RV.
         """
         ...
+
+
+# ---------------------------------------------------------------------------
+# Posterior — single result container
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Posterior:
+    """MCMC posterior over the parameters of a :class:`Likelihood`.
+
+    Shape-agnostic at the statistical level (``samples``, ``log_probs``,
+    ``theta``); shape-aware via dispatch through
+    :meth:`Likelihood.predict_at` for predictive evaluators
+    (``predict``, ``total_variance``, ``chi2_r``). A regression
+    posterior takes ``predict(x_new)``; a grid posterior takes
+    ``predict()``.
+
+    Attributes
+    ----------
+    samples : ndarray, shape ``(n_samples, n_params)``
+        Posterior samples with all chains flattened, parameter order
+        matches ``likelihood.parameters``.
+    log_probs : ndarray, shape ``(n_samples,)``
+        Log-posterior at each sample.
+    likelihood : RegressionLikelihood or GridLikelihood
+        Bound likelihood — sole source of ``predict_at``,
+        ``total_variance_at``, ``chi2_r_at``, and parameter metadata.
+        Typed as the union of the two shape ABCs so the predictive
+        evaluators are statically resolvable; extend the union when a
+        new shape ABC is added.
+    f_samples : ndarray, optional
+        Posterior draws of the inlier-fraction RV ``f``. ``None``
+        unless the likelihood was a :class:`MixtureLikelihood` sampled
+        via :meth:`NUTSSampler.sample_mixture`.
+    inlier_prob : ndarray, optional
+        Per-observation posterior inlier probability, averaged over
+        MCMC draws. ``None`` unless this is a mixture result.
+    """
+    samples: np.ndarray
+    log_probs: np.ndarray
+    likelihood: RegressionLikelihood | GridLikelihood
+    f_samples: Optional[np.ndarray] = None
+    inlier_prob: Optional[np.ndarray] = None
+
+    @property
+    def labels(self) -> list[str]:
+        """LaTeX-formatted parameter labels from the likelihood."""
+        return self.likelihood.param_labels
+
+    @property
+    def theta(self) -> np.ndarray:
+        """Per-parameter posterior median (marginal, not a joint draw)."""
+        return np.median(self.samples, axis=0)
+
+    @property
+    def n_params(self) -> int:
+        """Number of fitted inlier parameters (``samples.shape[1]``).
+
+        For mixture fits this *excludes* the inlier-fraction RV ``f``,
+        which is reported separately in :attr:`f_samples`.
+        """
+        return self.samples.shape[1]
+
+    def predict(self, *args) -> np.ndarray:
+        """Predict at the posterior median.
+
+        Forwards ``*args`` to :meth:`Likelihood.predict_at`. For a
+        regression likelihood pass ``x``; for a grid likelihood pass
+        nothing.
+        """
+        return self.likelihood.predict_at(*args, self.theta)
+
+    def total_variance(self) -> np.ndarray:
+        """Per-observation predictive variance at the posterior median."""
+        return self.likelihood.total_variance_at(self.theta)
+
+    @property
+    def chi2_r(self) -> float:
+        """Reduced chi-squared at the posterior median."""
+        return self.likelihood.chi2_r_at(self.theta)

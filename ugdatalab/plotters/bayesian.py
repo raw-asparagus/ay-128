@@ -47,7 +47,7 @@ def plot_trace(result):
 
     Parameters
     ----------
-    result : MCMCResult, MHResult, or similar
+    result : Posterior, MHResult, or similar
         Object exposing ``samples`` (shape ``(n_steps, n_params)``),
         ``labels``, and ``log_probs``.
 
@@ -85,7 +85,7 @@ def plot_corner(result, *, figsize="textwidth"):
 
     Parameters
     ----------
-    result : MCMCResult or similar
+    result : Posterior or similar
         Object exposing ``samples`` and ``labels``.
     figsize : {"textwidth", "corner"}, optional
         ``"textwidth"`` uses the full page width (better for five or more
@@ -121,7 +121,7 @@ def plot_posterior(result, *, param_idx=0, pdf_fn=None):
 
     Parameters
     ----------
-    result : MCMCResult or similar
+    result : Posterior or similar
         Object exposing ``samples`` and ``labels``.
     param_idx : int, optional
         Index of the parameter column to plot.
@@ -169,9 +169,10 @@ def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_S
 
     Parameters
     ----------
-    result : MCMCResult
-        Object exposing ``x``, ``samples``, ``predict``, and
-        ``total_variance``.
+    result : Posterior
+        Posterior bound to a regression likelihood (exposes ``samples``
+        and a ``likelihood`` carrying ``x``, ``predict_at``, and
+        ``total_variance_at``).
     n_grid : int, optional
         Number of grid points spanning the (margin-extended) data range.
     n_draws : int, optional
@@ -185,7 +186,8 @@ def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_S
         Mapping with keys ``x_grid``, ``median``, ``q16``, ``q84``,
         ``q025``, ``q975``; each value is an array of length ``n_grid``.
     """
-    x = result.x
+    likelihood = result.likelihood
+    x = likelihood.x
     samples = result.samples
 
     margin = _PP_X_MARGIN_FRAC * (np.max(x) - np.min(x))
@@ -201,8 +203,8 @@ def predict_posterior(result, n_grid=_PP_GRID_N, n_draws=_PP_N_DRAWS, seed=_PP_S
     mean_draws = np.empty((len(pool), n_grid))
     pred_draws = np.empty_like(mean_draws)
     for i, theta in enumerate(pool):
-        mu = result.predict_at(x_grid, theta)
-        sigma_pred = np.sqrt(np.interp(x_grid, x[order], result.total_variance_at(theta)[order]))
+        mu = likelihood.predict_at(x_grid, theta)
+        sigma_pred = np.sqrt(np.interp(x_grid, x[order], likelihood.total_variance_at(theta)[order]))
         mean_draws[i] = mu
         pred_draws[i] = rng.normal(mu, sigma_pred)
 
@@ -221,9 +223,9 @@ def plot_posterior_predictive(result, *, color="C0", data_label="Data", ax=None)
 
     Parameters
     ----------
-    result : MCMCResult
-        Object exposing ``x``, ``y``, ``y_err``, ``samples``, ``predict``,
-        and ``total_variance``.
+    result : Posterior
+        Posterior bound to a regression likelihood (the bound
+        ``likelihood`` supplies ``x``, ``y``, ``y_err``).
     color : str, optional
         Color used for the data points and predictive curves.
     data_label : str, optional
@@ -235,7 +237,8 @@ def plot_posterior_predictive(result, *, color="C0", data_label="Data", ax=None)
     -------
     matplotlib.axes.Axes
     """
-    x, y, y_err = result.x, result.y, result.y_err
+    likelihood = result.likelihood
+    x, y, y_err = likelihood.x, likelihood.y, likelihood.y_err
     pp = predict_posterior(result)
     x_grid = pp["x_grid"]
 

@@ -75,9 +75,12 @@ from ugdatalab.models.gaia import GaiaData, GaiaSample, LindegrenC1
 
 Generic, reusable analysis routines. 
 
-- **`Fit / DataFit`** -- ABCs for fitted models. `Fit` requires `predict(x)`; `DataFit(Fit)` adds `x, y, y_err` and a derived `chi2_r` property.
-- **`Likelihood → MixtureLikelihood → GaussianLikelihood → LinearGaussianLikelihood`** -- Bayesian model hierarchy. Likelihoods define the model; engines consume them.
-- **Bayesian engines** -- `nuts_sample` (parameter estimation; consumes `Likelihood`) and `mixture_contamination` (outlier rejection; consumes `MixtureLikelihood`).
+- **`Fit`** -- ABC for fitted models bound to `(x, y, y_err)`, with `predict(x)`, `predict_std(x)`, and a derived `chi2_r` property.
+- **Bayesian framework (`methods/bayesian/`)** -- three orthogonal axes:
+  - *Data layout*: `RegressionLikelihood` (`y_i = f(x_i; θ)`) and `GridLikelihood` (`y = f(θ)` at fixed coords) as sibling ABCs of `Likelihood`.
+  - *Inlier model*: `RegressionInlierComponent` / `GridInlierComponent` strategies (e.g. `LinearInlier`).
+  - *Outlier treatment*: shared `OutlierComponent` strategies (e.g. `GaussianOutlier`); `MixtureLikelihood` is the `Likelihood` subtype that adds the outlier branch.
+- **Bayesian sampler** -- `NUTSSampler.sample(likelihood)` for any `Likelihood`, `NUTSSampler.sample_mixture(likelihood)` for any `MixtureLikelihood`. Returns a `Posterior`. See `FRAMEWORK.md` for the full architecture.
 - **Signal detection** -- `lomb_scargle` (Lomb-Scargle periodogram).
 - **Fitting** -- `fourier_fit` (weighted least-squares Fourier series).
 - **Model selection** -- `cross_validate` (holdout when `n_folds=1`, k-fold when `n_folds>1`).

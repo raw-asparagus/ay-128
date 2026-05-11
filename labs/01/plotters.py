@@ -921,9 +921,9 @@ def plot_sampler_comparison_corner(mh, nuts_potential, nuts_native, output_name)
     ----------
     mh : MHResult
         Metropolis-Hastings result.
-    nuts_potential : MCMCResult
+    nuts_potential : Posterior
         NUTS with pm.Potential result.
-    nuts_native : MCMCResult
+    nuts_native : Posterior
         Native PyMC NUTS result.
     output_name : str
         Filename for the saved figure (e.g., ``"fig_methods_corner_rrab.pdf"``).
@@ -976,9 +976,9 @@ def plot_optical_vs_w2(rrab_optical, rrc_optical, rrab_w2, rrc_w2,
 
     Parameters
     ----------
-    rrab_optical, rrc_optical : MCMCResult
+    rrab_optical, rrc_optical : Posterior
         Optical G-band NUTS results for RRab and RRc.
-    rrab_w2, rrc_w2 : MCMCResult
+    rrab_w2, rrc_w2 : Posterior
         WISE W2-band NUTS results for RRab and RRc.
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean log10(P/day) used to center the predictor for RRab and RRc.
@@ -1047,7 +1047,7 @@ def plot_period_color_comparison(rrab_result, rrc_result,
 
     Parameters
     ----------
-    rrab_result, rrc_result : MCMCResult
+    rrab_result, rrc_result : Posterior
         Period-color NUTS results for RRab and RRc.
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean log10(P/day) used to center the predictor.

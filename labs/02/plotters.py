@@ -1136,7 +1136,7 @@ def plot_methods_corner(result):
 
     Parameters
     ----------
-    result : MCMCResult
+    result : Posterior
         NUTS result with ``.samples`` and ``.labels``.
     """
     fig = plot_corner(result)

@@ -13,7 +13,7 @@ import numpy as np
 from astropy import table
 
 from ugdatalab.methods.bayesian.likelihoods import LinearGaussianLikelihood
-from ugdatalab.methods.bayesian.mcmc import MCMCResult, NUTSSampler
+from ugdatalab.methods.bayesian.mcmc import NUTSSampler, Posterior
 from ugdatalab.models.gaia.constants import ZP_ERR_G
 
 
@@ -102,13 +102,13 @@ class AttachReddening:
 
     Parameters
     ----------
-    rrab_pc, rrc_pc : MCMCResult
-        Period-color NUTS results (provide ``predict`` and ``theta``).
+    rrab_pc, rrc_pc : Posterior
+        Period-color NUTS posteriors (provide ``predict`` and ``theta``).
     rrab_mean_log_p, rrc_mean_log_p : float
         Mean ``log10(P/day)`` used to center each fit.
     """
-    rrab_pc: MCMCResult
-    rrc_pc: MCMCResult
+    rrab_pc: Posterior
+    rrc_pc: Posterior
     rrab_mean_log_p: float
     rrc_mean_log_p: float
 

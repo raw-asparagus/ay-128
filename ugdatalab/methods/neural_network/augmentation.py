@@ -1,13 +1,35 @@
-"""Composable image transforms for CNN training (augmentation and cropping)."""
+"""Runtime image augmentation stages for CNN training.
+
+The class wrappers (``CenterCrop``, ``RandomRotation360``) operate on a
+single ``(H, W, 3)`` float32 image and follow the
+:class:`~ugdatalab.utils.compose.Compose` ``T -> T`` contract, so they
+can be combined with each other or with the per-image preprocessing
+stages in :mod:`ugdatalab.models.galaxy_zoo.images_pipeline`.
+"""
+
+from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
 
-from ugdatalab.utils.compose import Compose
 
-__all__ = ["Compose", "CenterCrop", "RandomRotation360"]
+_UINT8_MAX = 255
 
 
+# ---------------------------------------------------------------------------
+# Per-image helpers
+# ---------------------------------------------------------------------------
+
+
+def _center_crop(image: np.ndarray, size: int) -> np.ndarray:
+    """Slice the central ``(size, size, 3)`` region of an (H, W, 3) image."""
+    h, w = image.shape[:2]
+    top = (h - size) // 2
+    left = (w - size) // 2
+    return image[top:top + size, left:left + size]
+
+
+@dataclass
 class CenterCrop:
     """Center-crop an image to a square of ``size`` × ``size`` pixels.
 
@@ -20,18 +42,22 @@ class CenterCrop:
     size : int
         Output side length in pixels.
     """
-    def __init__(self, size: int):
-        """Store the target square crop side length in pixels."""
-        self.size = size
+    size: int
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
         """Return the central ``size`` × ``size`` crop of *image*."""
-        h, w = image.shape[:2]
-        top = (h - self.size) // 2
-        left = (w - self.size) // 2
-        return image[top:top + self.size, left:left + self.size]
+        return _center_crop(image, self.size)
 
 
+def _random_rotate(image: np.ndarray) -> np.ndarray:
+    """Rotate an (H, W, 3) float32 [0, 1] image by a uniform random angle in [0, 360)."""
+    angle = np.random.uniform(0, 360)
+    img = Image.fromarray((image * _UINT8_MAX).astype(np.uint8))
+    img = img.rotate(angle, resample=Image.LANCZOS, expand=False)
+    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+
+
+@dataclass
 class RandomRotation360:
     """Rotate an image by a uniformly random angle in ``[0, 360)`` degrees.
 
@@ -44,7 +70,4 @@ class RandomRotation360:
 
     def __call__(self, image: np.ndarray) -> np.ndarray:
         """Return *image* rotated by a uniformly random angle in [0, 360) degrees."""
-        angle = np.random.uniform(0, 360)
-        img = Image.fromarray((image * 255).astype(np.uint8))
-        img = img.rotate(angle, resample=Image.BILINEAR, expand=False)
-        return np.asarray(img, dtype=np.float32) / 255.0
+        return _random_rotate(image)
