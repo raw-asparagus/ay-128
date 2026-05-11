@@ -119,6 +119,7 @@ def plot_random_images(images, galaxy_ids, n_samples, seed):
         else:
             ax.set_visible(False)
 
+    savefig(fig, "fig_example_galaxy.pdf")
     return axes
 
 
@@ -744,6 +745,9 @@ def plot_label_conditional_montage(images, label_a, label_b, name_a, name_b,
             ax.axis("off")
         axes[row, 0].set_title(title, fontsize=LEGEND_SIZE - 1, loc="left")
 
+    safe_a = name_a.lower().replace(" ", "_").replace("/", "_")
+    safe_b = name_b.lower().replace(" ", "_").replace("/", "_")
+    savefig(fig, f"fig_montage_{safe_a}_vs_{safe_b}.pdf")
     return axes
 
 
@@ -805,6 +809,7 @@ def plot_pairwise_label_scatter(labels, pairs, label_descriptive_list):
         row, col = divmod(k, ncols)
         axes[row, col].set_visible(False)
 
+    savefig(fig, "fig_pairwise_label_scatter.pdf")
     return axes
 
 
@@ -872,6 +877,7 @@ def plot_pca_eigenspectrum(eigenvalues):
     ax_cum.set_ylabel("Cumulative\nvariance")
     ax_cum.set_ylim(0, 1.05)
 
+    savefig(fig, "fig_pca_eigenspectrum.pdf")
     return ax_eig, ax_cum
 
 
@@ -915,4 +921,93 @@ def plot_pixel_statistics(stats_smooth, stats_disk, stat_names):
 
     axes[0].legend(fontsize=LEGEND_SIZE)
 
+    savefig(fig, "fig_pixel_statistics.pdf")
     return axes
+
+
+# ---------------------------------------------------------------------------
+# 19. Bar charts — ablation, per-label RMSE, model progression
+# ---------------------------------------------------------------------------
+
+def plot_ablation_bar(names, val_rmse, title):
+    """Bar chart of validation RMSE across architecture variants.
+
+    Parameters
+    ----------
+    names : sequence of str
+        Variant labels.
+    val_rmse : array-like
+        Best validation RMSE for each variant, in the same order as ``names``.
+    title : str
+        Figure title; also used to derive the filename.
+    """
+    fig, ax = textwidth_figure(3)
+    x = np.arange(len(names))
+    ax.bar(x, val_rmse, color="C0", alpha=ALPHA_STANDARD)
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=15, ha="right", fontsize=LEGEND_SIZE)
+    ax.set_ylabel("Best validation RMSE")
+    ax.set_title(title, loc="left", fontsize=LABEL_SIZE)
+    for xi, v in zip(x, val_rmse):
+        ax.text(xi, v, f"{v:.4f}", ha="center", va="bottom",
+                fontsize=LEGEND_SIZE - 1)
+    ax.set_ylim(0, max(val_rmse) * 1.15)
+
+    safe_name = title.lower().replace(" ", "_").replace("(", "").replace(")", "")
+    savefig(fig, f"fig_ablation_{safe_name}.pdf")
+    return ax
+
+
+def plot_per_label_rmse_bar(label_names, rmse_values):
+    """Horizontal bar chart of per-label RMSE, sorted descending.
+
+    Parameters
+    ----------
+    label_names : sequence of str
+        Descriptive label names.
+    rmse_values : array-like
+        RMSE per label.
+    """
+    order = np.argsort(rmse_values)[::-1]
+    names = [label_names[i] for i in order]
+    values = np.asarray(rmse_values)[order]
+
+    fig, _ = textwidth_figure(8)
+    _.remove()
+    ax = subpanels(fig, 1, 1)
+    y = np.arange(len(names))
+    ax.barh(y, values, color="C0", alpha=ALPHA_STANDARD)
+    ax.set_yticks(y)
+    ax.set_yticklabels(names, fontsize=LEGEND_SIZE - 1)
+    ax.invert_yaxis()
+    ax.set_xlabel("Validation RMSE")
+    ax.set_title("Per-label RMSE (sorted)", loc="left", fontsize=LABEL_SIZE)
+
+    savefig(fig, "fig_per_label_rmse.pdf")
+    return ax
+
+
+def plot_model_progression_bar(names, val_rmse):
+    """Bar chart of best validation RMSE across the model progression.
+
+    Parameters
+    ----------
+    names : sequence of str
+        Model labels in progression order (e.g. baseline -> custom -> resnet -> ...).
+    val_rmse : array-like
+        Best validation RMSE per model.
+    """
+    fig, ax = textwidth_figure(3)
+    x = np.arange(len(names))
+    ax.bar(x, val_rmse, color="C2", alpha=ALPHA_STANDARD)
+    ax.set_xticks(x)
+    ax.set_xticklabels(names, rotation=20, ha="right", fontsize=LEGEND_SIZE)
+    ax.set_ylabel("Best validation RMSE")
+    ax.set_title("Model progression", loc="left", fontsize=LABEL_SIZE)
+    for xi, v in zip(x, val_rmse):
+        ax.text(xi, v, f"{v:.4f}", ha="center", va="bottom",
+                fontsize=LEGEND_SIZE - 1)
+    ax.set_ylim(0, max(val_rmse) * 1.15)
+
+    savefig(fig, "fig_model_progression.pdf")
+    return ax

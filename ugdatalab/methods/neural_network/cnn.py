@@ -150,7 +150,7 @@ def train_cnn(
     seed: int,
     optimizer_factory=lambda params, lr: torch.optim.SGD(params, lr=lr),
     scheduler_factory=None,
-    num_workers: int = 0,
+    num_workers: int = 16,
 ) -> CNNResult:
     """Train a CNN model on a classification dataset.
 
@@ -186,7 +186,7 @@ def train_cnn(
         rate scheduler whose ``step`` is invoked with the validation
         loss after each epoch.
     num_workers : int, optional
-        DataLoader worker count. Default 0.
+        DataLoader worker count. Default 16.
 
     Returns
     -------

@@ -6,7 +6,7 @@ with ``train_cnn``.
 
 import torch
 import torch.nn as nn
-from torchvision.models import resnet18 as _resnet18_factory
+from torchvision.models import resnet18
 
 
 # ---------------------------------------------------------------------------
@@ -14,35 +14,31 @@ from torchvision.models import resnet18 as _resnet18_factory
 # ---------------------------------------------------------------------------
 
 
-def build_resnet18(n_labels: int, input_size: int) -> nn.Module:
+def build_resnet18(n_labels: int) -> nn.Module:
     """Build a modified ResNet-18 for multi-label classification.
 
-    The final FC is replaced with ``Linear(..., n_labels) -> Sigmoid``
-    for ``[0, 1]`` multi-label output. For inputs smaller than 64 px,
-    the initial 7x7 conv is replaced with a stride-1 3x3 conv and the
-    initial max-pool is removed.
+    The initial 7x7 stride-2 conv and 3x3 stride-2 max-pool are replaced
+    with a stride-1 3x3 conv and an identity, preserving spatial
+    resolution on the 96x96 galaxy images. The final FC is replaced
+    with ``Linear(..., n_labels) -> Sigmoid`` for ``[0, 1]`` multi-label
+    output.
 
     Parameters
     ----------
     n_labels : int
         Number of output labels.
-    input_size : int
-        Spatial dimension of input images (``input_size x input_size``).
 
     Returns
     -------
     nn.Module
     """
-    model = _resnet18_factory(weights=None)
+    model = resnet18(weights=None)
 
-    # Adapt first conv for small images
-    if input_size < 64:
-        model.conv1 = nn.Conv2d(
-            3, 64, kernel_size=3, stride=1, padding=1, bias=False,
-        )
-        model.maxpool = nn.Identity()
+    model.conv1 = nn.Conv2d(
+        3, 64, kernel_size=3, stride=1, padding=1, bias=False,
+    )
+    model.maxpool = nn.Identity()
 
-    # Replace final FC + add sigmoid for [0, 1] output
     model.fc = nn.Sequential(
         nn.Linear(model.fc.in_features, n_labels),
         nn.Sigmoid(),
