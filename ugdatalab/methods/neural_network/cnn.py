@@ -104,6 +104,11 @@ def baseline_rmse(
 # ---------------------------------------------------------------------------
 
 
+def _auto_device() -> str:
+    """Return ``"cuda"`` if a CUDA device is available, else ``"cpu"``."""
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def _run_epoch(model, loader, optimizer, device, training: bool) -> float:
     """Run one epoch of training or evaluation and return the epoch RMSE."""
     model.train() if training else model.eval()
@@ -142,8 +147,8 @@ def train_cnn(
     batch_size: int,
     n_epochs: int,
     lr: float,
-    device: str,
     seed: int,
+    optimizer_factory=lambda params, lr: torch.optim.SGD(params, lr=lr),
     scheduler_factory=None,
     num_workers: int = 0,
 ) -> CNNResult:
@@ -166,11 +171,16 @@ def train_cnn(
     n_epochs : int
         Number of training epochs.
     lr : float
-        Initial learning rate for the Adam optimizer.
-    device : str
-        PyTorch device string (e.g. ``"cuda"`` or ``"cpu"``).
+        Initial learning rate passed to the optimizer factory.
     seed : int
         Random seed for reproducibility.
+    optimizer_factory : callable, optional
+        Called as ``optimizer_factory(model.parameters(), lr)`` to
+        construct the optimizer. Defaults to a factory returning
+        vanilla ``torch.optim.SGD`` — the foundational gradient-descent
+        rule. Override with Adam / AdamW for adaptive per-parameter
+        step sizes (typically faster convergence on deep CNNs), or
+        with SGD+momentum for the classical ResNet recipe.
     scheduler_factory : callable, optional
         Called as ``scheduler_factory(optimizer)`` to create a learning
         rate scheduler whose ``step`` is invoked with the validation
@@ -182,6 +192,7 @@ def train_cnn(
     -------
     CNNResult
     """
+    device = _auto_device()
     torch.manual_seed(seed)
     # Why: cudnn benchmark autotunes conv kernels for the given input shape;
     # huge speedup for ResNet on fixed-size inputs. We trade bit-exact
@@ -204,7 +215,7 @@ def train_cnn(
     )
 
     model = model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = optimizer_factory(model.parameters(), lr)
 
     scheduler = None
     if scheduler_factory is not None:
@@ -251,7 +262,6 @@ def train_cnn(
 def predict_cnn(
     model: nn.Module,
     dataset: Dataset,
-    device: str,
     batch_size: int,
 ) -> np.ndarray:
     """Run inference on *dataset* and return concatenated predictions.
@@ -262,8 +272,6 @@ def predict_cnn(
         Trained model already loaded with the desired ``state_dict``.
     dataset : Dataset
         Dataset to predict on.
-    device : str
-        PyTorch device string.
     batch_size : int
         Inference batch size.
 
@@ -271,6 +279,7 @@ def predict_cnn(
     -------
     ndarray, shape (N, n_labels)
     """
+    device = _auto_device()
     model = model.to(device)
     model.eval()
 
