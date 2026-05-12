@@ -15,12 +15,14 @@ from torchvision.models import resnet18
 
 
 def build_resnet18(n_labels: int) -> nn.Module:
-    """Build a modified ResNet-18 for multi-label classification.
+    """Build a ResNet-18 for multi-label classification.
 
-    The initial 7x7 stride-2 conv and 3x3 stride-2 max-pool are replaced
-    with a stride-1 3x3 conv and an identity, preserving spatial
-    resolution on the 96x96 galaxy images. The final FC is replaced
-    with ``Linear(..., n_labels) -> Sigmoid`` for ``[0, 1]`` multi-label
+    Uses the standard torchvision ResNet-18 stem (7x7 stride-2 conv +
+    3x3 stride-2 max-pool), which downsamples 96x96 input to 24x24
+    before stage 1 — keeping stage-1 activations and FLOPs comparable
+    to the textbook 224-input ResNet rather than the 16x more expensive
+    stride-1 variant. The final FC is replaced with
+    ``Linear(..., n_labels) -> Sigmoid`` for ``[0, 1]`` multi-label
     output.
 
     Parameters
@@ -33,11 +35,6 @@ def build_resnet18(n_labels: int) -> nn.Module:
     nn.Module
     """
     model = resnet18(weights=None)
-
-    model.conv1 = nn.Conv2d(
-        3, 64, kernel_size=3, stride=1, padding=1, bias=False,
-    )
-    model.maxpool = nn.Identity()
 
     model.fc = nn.Sequential(
         nn.Linear(model.fc.in_features, n_labels),
@@ -69,7 +66,7 @@ class _CustomCNN(nn.Module):
         n_channels_list: list[int],
         kernel_sizes: list[int],
         fc_sizes: list[int],
-        dropout_rate: float,
+        dropout_rate: float | list[float],
         pool_type: str,
         input_size: int,
     ):
@@ -86,7 +83,7 @@ class _CustomCNN(nn.Module):
             padding = ks // 2
             conv_layers.extend([
                 nn.Conv2d(in_channels, out_channels, kernel_size=ks,
-                          padding=padding),
+                          padding=padding, bias=False),
                 nn.BatchNorm2d(out_channels),
                 nn.ReLU(inplace=True),
                 pool_cls(kernel_size=2, stride=2),
@@ -99,14 +96,26 @@ class _CustomCNN(nn.Module):
         # Compute flattened feature size
         flat_size = in_channels * spatial * spatial
 
+        # Resolve per-FC dropout rates: scalar broadcasts to every layer; list
+        # gives one rate per layer and must match ``fc_sizes`` in length.
+        if isinstance(dropout_rate, (int, float)):
+            dropout_rates = [float(dropout_rate)] * len(fc_sizes)
+        else:
+            dropout_rates = [float(p) for p in dropout_rate]
+            if len(dropout_rates) != len(fc_sizes):
+                raise ValueError(
+                    f"dropout_rate has {len(dropout_rates)} entries but "
+                    f"fc_sizes has {len(fc_sizes)}"
+                )
+
         # Build FC blocks
         fc_layers = []
         in_features = flat_size
-        for out_features in fc_sizes:
+        for out_features, p in zip(fc_sizes, dropout_rates):
             fc_layers.extend([
                 nn.Linear(in_features, out_features),
                 nn.ReLU(inplace=True),
-                nn.Dropout(p=dropout_rate),
+                nn.Dropout(p=p),
             ])
             in_features = out_features
 
@@ -127,7 +136,7 @@ def build_custom_cnn(
     n_channels_list: list[int],
     kernel_sizes: list[int],
     fc_sizes: list[int],
-    dropout_rate: float,
+    dropout_rate: float | list[float],
     pool_type: str,
     input_size: int,
 ) -> nn.Module:
@@ -144,8 +153,11 @@ def build_custom_cnn(
         Must have same length as ``n_channels_list``.
     fc_sizes : list of int
         Hidden units for each fully connected layer (e.g. [256, 128]).
-    dropout_rate : float
-        Dropout probability in FC layers (e.g. 0.5).
+    dropout_rate : float or list of float
+        Dropout probability for the FC layers. A scalar broadcasts to every
+        FC layer (uniform dropout); a list assigns one rate per FC layer
+        and must match ``fc_sizes`` in length (e.g. ``[0.25, 0.1]`` for
+        tapered dropout on a two-layer head).
     pool_type : str
         ``"max"`` or ``"avg"`` — pooling layer type after each conv.
     input_size : int

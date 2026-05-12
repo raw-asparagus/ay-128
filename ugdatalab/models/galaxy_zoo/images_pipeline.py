@@ -1,7 +1,7 @@
 """Galaxy Zoo per-image preprocessing helpers and ``Compose``-style stages.
 
 The class wrappers (``CropFraction``, ``Resize``) operate on a single
-``(H, W, 3)`` float32 image and follow the
+``(H, W, 3)`` uint8 image and follow the
 :class:`~ugdatalab.utils.compose.Compose` ``T -> T`` contract, so they
 can be combined with each other or with the runtime augmentation stages
 in :mod:`ugdatalab.methods.neural_network.augmentation`.
@@ -11,8 +11,6 @@ from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
-
-from ugdatalab.models.galaxy_zoo.constants import _UINT8_MAX
 
 
 # ---------------------------------------------------------------------------
@@ -47,10 +45,10 @@ class CropFraction:
 
 
 def _resize(image: np.ndarray, target_size: int) -> np.ndarray:
-    """Lanczos-resize an (H, W, 3) float32 image to ``(target_size, target_size, 3)``."""
-    img = Image.fromarray((image * _UINT8_MAX).astype(np.uint8))
+    """Lanczos-resize an (H, W, 3) uint8 image to ``(target_size, target_size, 3)``."""
+    img = Image.fromarray(image)
     img = img.resize((target_size, target_size), Image.LANCZOS)
-    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+    return np.asarray(img)
 
 
 @dataclass

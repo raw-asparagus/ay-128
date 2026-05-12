@@ -1,7 +1,7 @@
 """Runtime image augmentation stages for CNN training.
 
 The class wrappers (``CenterCrop``, ``RandomRotation360``) operate on a
-single ``(H, W, 3)`` float32 image and follow the
+single ``(H, W, 3)`` uint8 image and follow the
 :class:`~ugdatalab.utils.compose.Compose` ``T -> T`` contract, so they
 can be combined with each other or with the per-image preprocessing
 stages in :mod:`ugdatalab.models.galaxy_zoo.images_pipeline`.
@@ -11,9 +11,6 @@ from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image
-
-
-_UINT8_MAX = 255
 
 
 # ---------------------------------------------------------------------------
@@ -50,22 +47,22 @@ class CenterCrop:
 
 
 def _random_rotate(image: np.ndarray) -> np.ndarray:
-    """Rotate an (H, W, 3) float32 [0, 1] image by a uniform random angle in [0, 360)."""
+    """Rotate an (H, W, 3) uint8 image by a uniform random angle in [0, 360)."""
     angle = np.random.uniform(0, 360)
-    img = Image.fromarray((image * _UINT8_MAX).astype(np.uint8))
-    img = img.rotate(angle, resample=Image.LANCZOS, expand=False)
-    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+    img = Image.fromarray(image)
+    img = img.rotate(angle, resample=Image.BILINEAR, expand=False)
+    return np.asarray(img)
 
 
 @dataclass
 class RandomRotation360:
     """Rotate an image by a uniformly random angle in ``[0, 360)`` degrees.
 
-    Operates on numpy arrays in HWC format, ``float32`` with values in
-    ``[0, 1]``. Each call samples a fresh angle and uses bilinear
-    interpolation, keeping the original output size. Black corners may
-    appear; pair with a larger source image and a downstream
-    ``CenterCrop`` to avoid them.
+    Operates on numpy arrays in HWC format, ``uint8`` with values in
+    ``[0, 255]``. Each call samples a fresh angle and uses bilinear
+    interpolation (matching :class:`GpuRandomRotation360`), keeping the
+    original output size. Black corners may appear; pair with a larger
+    source image and a downstream ``CenterCrop`` to avoid them.
     """
 
     def __call__(self, image: np.ndarray) -> np.ndarray:

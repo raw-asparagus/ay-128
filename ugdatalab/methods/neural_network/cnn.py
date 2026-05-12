@@ -1,12 +1,15 @@
 """CNN training infrastructure for multi-label image classification."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
 from tqdm.auto import tqdm
+
+
+Batch = tuple[torch.Tensor, torch.Tensor]
 
 
 # ---------------------------------------------------------------------------
@@ -109,19 +112,23 @@ def _auto_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def _run_epoch(model, loader, optimizer, device, training: bool) -> float:
+def _run_epoch(model, batches, optimizer, device, training: bool) -> float:
     """Run one epoch of training or evaluation and return the epoch RMSE."""
     model.train() if training else model.eval()
     total_se = torch.zeros((), device=device)
     total_n = 0
 
-    context = torch.no_grad() if not training else torch.enable_grad()
-    with context:
-        for images, labels in loader:
+    is_cuda = device == "cuda"
+    grad_context = torch.enable_grad() if training else torch.no_grad()
+
+    with grad_context:
+        for images, labels in batches:
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            predictions = model(images)
-            loss = rmse_loss(predictions, labels)
+
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=is_cuda):
+                predictions = model(images)
+                loss = rmse_loss(predictions, labels)
 
             if training:
                 optimizer.zero_grad()
@@ -129,7 +136,9 @@ def _run_epoch(model, loader, optimizer, device, training: bool) -> float:
                 optimizer.step()
 
             batch_n = images.size(0) * labels.size(1)
-            total_se = total_se + torch.sum((predictions - labels) ** 2).detach()
+            total_se = total_se + torch.sum(
+                (predictions.detach().float() - labels) ** 2,
+            )
             total_n += batch_n
 
     return float(np.sqrt(total_se.item() / total_n))
@@ -142,38 +151,41 @@ def _run_epoch(model, loader, optimizer, device, training: bool) -> float:
 
 def train_cnn(
     model: nn.Module,
-    train_dataset: Dataset,
-    val_dataset: Dataset,
-    batch_size: int,
+    train_batches: Iterable[Batch],
+    val_batches: Iterable[Batch],
     n_epochs: int,
     lr: float,
     seed: int,
     optimizer_factory=lambda params, lr: torch.optim.SGD(params, lr=lr),
     scheduler_factory=None,
-    num_workers: int = 16,
 ) -> CNNResult:
     """Train a CNN model on a classification dataset.
 
-    Builds DataLoaders, an Adam optimizer, and runs the training loop,
-    checkpointing the model state at the epoch with the lowest
-    validation RMSE.
+    Iterates the supplied batch sources once per epoch, checkpointing
+    the model state at the epoch with the lowest validation RMSE. The
+    caller owns batching: ``train_batches`` and ``val_batches`` are any
+    reusable iterables that yield ``(image_tensor, label_tensor)`` pairs
+    — e.g. a :class:`~ugdatalab.models.galaxy_zoo.dataset_gpu.GalaxyZooGPUDataset`,
+    or a ``torch.utils.data.DataLoader`` wrapping a map-style dataset.
 
     Parameters
     ----------
     model : nn.Module
         Model to train (e.g. from ``build_resnet18`` or ``build_custom_cnn``).
-    train_dataset : Dataset
-        Training data of ``(image, label)`` pairs.
-    val_dataset : Dataset
-        Validation data.
-    batch_size : int
-        Mini-batch size for both training and validation.
+    train_batches : Iterable[(Tensor, Tensor)]
+        Reusable iterable of training batches; iterated fresh each
+        epoch.
+    val_batches : Iterable[(Tensor, Tensor)]
+        Reusable iterable of validation batches; iterated fresh each
+        epoch.
     n_epochs : int
         Number of training epochs.
     lr : float
         Initial learning rate passed to the optimizer factory.
     seed : int
-        Random seed for reproducibility.
+        Random seed for reproducibility of model init / dropout. Batch
+        ordering is controlled by whatever generator the batch source
+        was constructed with.
     optimizer_factory : callable, optional
         Called as ``optimizer_factory(model.parameters(), lr)`` to
         construct the optimizer. Defaults to a factory returning
@@ -185,8 +197,6 @@ def train_cnn(
         Called as ``scheduler_factory(optimizer)`` to create a learning
         rate scheduler whose ``step`` is invoked with the validation
         loss after each epoch.
-    num_workers : int, optional
-        DataLoader worker count. Default 16.
 
     Returns
     -------
@@ -201,21 +211,15 @@ def train_cnn(
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = True
 
-    # Use a seeded generator for DataLoader shuffling
-    g = torch.Generator()
-    g.manual_seed(seed)
-
-    train_loader = DataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True,
-        num_workers=num_workers, generator=g, pin_memory=(device != "cpu"),
-    )
-    val_loader = DataLoader(
-        val_dataset, batch_size=batch_size, shuffle=False,
-        num_workers=num_workers, pin_memory=(device != "cpu"),
-    )
-
     model = model.to(device)
     optimizer = optimizer_factory(model.parameters(), lr)
+
+    # torch.compile captures forward+backward as a graph and emits fused
+    # kernels. The original `model` is the parameter owner and the source of
+    # truth for state_dict; `compiled_model` shares parameters and is what
+    # we call in the training loop. Saving from `model` keeps checkpoint
+    # keys free of the `_orig_mod.` prefix that the compiled wrapper adds.
+    compiled_model = torch.compile(model) if device == "cuda" else model
 
     scheduler = None
     if scheduler_factory is not None:
@@ -234,10 +238,10 @@ def train_cnn(
         learning_rates[epoch] = current_lr
 
         train_losses[epoch] = _run_epoch(
-            model, train_loader, optimizer, device, training=True,
+            compiled_model, train_batches, optimizer, device, training=True,
         )
         val_losses[epoch] = _run_epoch(
-            model, val_loader, None, device, training=False,
+            compiled_model, val_batches, None, device, training=False,
         )
 
         if scheduler is not None:
@@ -261,19 +265,17 @@ def train_cnn(
 
 def predict_cnn(
     model: nn.Module,
-    dataset: Dataset,
-    batch_size: int,
+    batches: Iterable[Batch],
 ) -> np.ndarray:
-    """Run inference on *dataset* and return concatenated predictions.
+    """Run inference on *batches* and return concatenated predictions.
 
     Parameters
     ----------
     model : nn.Module
         Trained model already loaded with the desired ``state_dict``.
-    dataset : Dataset
-        Dataset to predict on.
-    batch_size : int
-        Inference batch size.
+    batches : Iterable[(Tensor, Tensor)]
+        Reusable iterable of ``(image_batch, label_batch)`` pairs. The
+        label tensor is ignored; pass dummies if labels are unavailable.
 
     Returns
     -------
@@ -283,13 +285,14 @@ def predict_cnn(
     model = model.to(device)
     model.eval()
 
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    is_cuda = device == "cuda"
     predictions = []
-
-    with torch.no_grad():
-        for images, _ in loader:
-            images = images.to(device)
+    with torch.no_grad(), torch.amp.autocast(
+        "cuda", dtype=torch.bfloat16, enabled=is_cuda,
+    ):
+        for images, _ in batches:
+            images = images.to(device, non_blocking=True)
             pred = model(images)
-            predictions.append(pred.cpu().numpy())
+            predictions.append(pred.float().cpu().numpy())
 
     return np.concatenate(predictions, axis=0)

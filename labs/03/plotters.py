@@ -255,37 +255,52 @@ def plot_correlation_matrix(corr_matrix, label_descriptive_list):
 # 5. Image comparison before/after resizing (Task 10)
 # ---------------------------------------------------------------------------
 
-def plot_image_comparison(images_before, images_after, galaxy_ids):
-    """Side-by-side original vs resized images.
+def plot_image_comparison(
+    images_original,
+    images_cache,
+    images_cropped,
+    images_rotated,
+    galaxy_ids,
+):
+    """Show the four stages of the preprocessing + augmentation pipeline.
 
     Parameters
     ----------
-    images_before : list of ndarray, shape (H1, W1, 3)
-        Original images.
-    images_after : list of ndarray, shape (H2, W2, 3)
-        Cropped and resized images.
+    images_original : list of ndarray, shape (H, W, 3)
+        Raw images (e.g. 424×424).
+    images_cache : list of ndarray, shape (136, 136, 3)
+        Pre-cropped + resized images (the on-disk cache, rotation-safe buffer).
+    images_cropped : list of ndarray, shape (96, 96, 3)
+        Cache center-cropped to the model input size, no rotation
+        (the angle-0 input the CNN actually sees).
+    images_rotated : list of ndarray, shape (96, 96, 3)
+        Cache rotated then center-cropped (the augmented input the CNN
+        sees at non-zero rotation angles; verifies that the
+        rotation-safe buffer eliminates corner artifacts).
     galaxy_ids : array-like
         Galaxy IDs for titles.
     """
-    n = len(images_before)
+    n = len(images_original)
 
-    fig, _ = textwidth_figure(3 * n)
+    fig, _ = textwidth_figure(2.5 * n)
     _.remove()
-    axes = subpanels(fig, n, 2, hspace=0.3, wspace=0.1, sharex=False)
+    axes = subpanels(fig, n, 4, hspace=0.3, wspace=0.1, sharex=False)
     if n == 1:
         axes = axes[np.newaxis, :]
 
-    for i in range(n):
-        axes[i, 0].imshow(images_before[i])
-        axes[i, 0].set_title(f"Original — {galaxy_ids[i]}", fontsize=LEGEND_SIZE)
-        axes[i, 0].axis("off")
+    column_titles = [
+        lambda i: f"Original — {galaxy_ids[i]}",
+        lambda i: f"Cache ({images_cache[i].shape[0]}×{images_cache[i].shape[1]})",
+        lambda i: f"Model input ({images_cropped[i].shape[0]}×{images_cropped[i].shape[1]})",
+        lambda i: f"Rotated + crop ({images_rotated[i].shape[0]}×{images_rotated[i].shape[1]})",
+    ]
+    column_images = [images_original, images_cache, images_cropped, images_rotated]
 
-        axes[i, 1].imshow(images_after[i])
-        axes[i, 1].set_title(
-            f"Resized ({images_after[i].shape[0]}x{images_after[i].shape[1]})",
-            fontsize=LEGEND_SIZE,
-        )
-        axes[i, 1].axis("off")
+    for i in range(n):
+        for j, (col, title) in enumerate(zip(column_images, column_titles)):
+            axes[i, j].imshow(col[i])
+            axes[i, j].set_title(title(i), fontsize=LEGEND_SIZE)
+            axes[i, j].axis("off")
 
     savefig(fig, "fig_image_comparison.pdf")
     return axes
@@ -929,29 +944,30 @@ def plot_pixel_statistics(stats_smooth, stats_disk, stat_names):
 # 19. Bar charts — ablation, per-label RMSE, model progression
 # ---------------------------------------------------------------------------
 
-def plot_ablation_bar(names, val_rmse, title):
-    """Bar chart of validation RMSE across architecture variants.
+def plot_ablation_curves(names, val_losses_list, title):
+    """Validation-RMSE loss curves overlaid for architecture sweep variants.
 
     Parameters
     ----------
     names : sequence of str
-        Variant labels.
-    val_rmse : array-like
-        Best validation RMSE for each variant, in the same order as ``names``.
+        Variant labels (one per curve, shown in the legend).
+    val_losses_list : sequence of array-like
+        Per-variant validation RMSE arrays of shape ``(n_epochs,)``. Arrays
+        of different lengths are tolerated (each plotted against its own
+        epoch range).
     title : str
         Figure title; also used to derive the filename.
     """
-    fig, ax = textwidth_figure(3)
-    x = np.arange(len(names))
-    ax.bar(x, val_rmse, color="C0", alpha=ALPHA_STANDARD)
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, rotation=15, ha="right", fontsize=LEGEND_SIZE)
-    ax.set_ylabel("Best validation RMSE")
+    fig, ax = textwidth_figure(4)
+    for name, val_losses in zip(names, val_losses_list):
+        val_losses = np.asarray(val_losses)
+        epochs = np.arange(1, len(val_losses) + 1)
+        ax.plot(epochs, val_losses, label=name, alpha=ALPHA_STANDARD,
+                lw=LW_STANDARD)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Validation RMSE")
     ax.set_title(title, loc="left", fontsize=LABEL_SIZE)
-    for xi, v in zip(x, val_rmse):
-        ax.text(xi, v, f"{v:.4f}", ha="center", va="bottom",
-                fontsize=LEGEND_SIZE - 1)
-    ax.set_ylim(0, max(val_rmse) * 1.15)
+    ax.legend(fontsize=LEGEND_SIZE - 1, loc="best")
 
     safe_name = title.lower().replace(" ", "_").replace("(", "").replace(")", "")
     savefig(fig, f"fig_ablation_{safe_name}.pdf")

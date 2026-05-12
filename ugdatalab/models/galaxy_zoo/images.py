@@ -12,16 +12,15 @@ from PIL import Image
 from tqdm.auto import tqdm
 
 from ugdatalab.models.base import Data
-from ugdatalab.models.galaxy_zoo.constants import _UINT8_MAX
 from ugdatalab.models.galaxy_zoo.galaxy_zoo import GalaxyZooData
 from ugdatalab.models.galaxy_zoo.images_pipeline import CropFraction, Resize
 from ugdatalab.utils.compose import Compose
 
 
 def _load_image(path: Path) -> np.ndarray:
-    """Read a JPEG image and return it as a float32 (H, W, 3) array in [0, 1]."""
+    """Read a JPEG image and return it as a uint8 (H, W, 3) array in [0, 255]."""
     img = Image.open(path).convert("RGB")
-    return np.asarray(img, dtype=np.float32) / _UINT8_MAX
+    return np.asarray(img)
 
 
 def _preprocess_images(
@@ -30,10 +29,10 @@ def _preprocess_images(
     crop_fraction: float,
     target_size: int,
 ) -> np.ndarray:
-    """Batch-load, center-crop, and resize JPEGs for the given galaxy IDs into an (N, target_size, target_size, 3) array."""
+    """Batch-load, center-crop, and resize JPEGs for the given galaxy IDs into an (N, target_size, target_size, 3) uint8 array."""
     pipeline = Compose([CropFraction(crop_fraction), Resize(target_size)])
     n = len(galaxy_ids)
-    images = np.empty((n, target_size, target_size, 3), dtype=np.float32)
+    images = np.empty((n, target_size, target_size, 3), dtype=np.uint8)
     for i, gid in enumerate(tqdm(galaxy_ids, desc="Loading images")):
         images[i] = pipeline(_load_image(image_dir / f"{gid}.jpg"))
     return images
@@ -56,7 +55,7 @@ class GalaxyImages:
     Attributes
     ----------
     images : ndarray, shape (N, target_size, target_size, 3)
-        Preprocessed images in [0, 1], float32.
+        Preprocessed images in [0, 255], uint8.
     galaxy_ids : ndarray, shape (N,)
         Galaxy IDs derived from the JPEG filename stems, in the same
         order as ``images``.
@@ -124,7 +123,7 @@ class GalaxyZooImages(Data):
     Attributes
     ----------
     data : ndarray, shape (N, target_size, target_size, 3)
-        Preprocessed images in [0, 1], float32.
+        Preprocessed images in [0, 255], uint8.
     images : ndarray
         Alias of ``data``.
 
