@@ -8,6 +8,12 @@ import torch
 import torch.nn as nn
 from torchvision.models import resnet18
 
+from ugdatalab.models.galaxy_zoo.constants import (
+    N_LABELS,
+    LABEL_COLUMNS,
+    LABEL_TREE,
+)
+
 
 # ---------------------------------------------------------------------------
 # ResNet-18 factory
@@ -177,3 +183,96 @@ def build_custom_cnn(
         pool_type=pool_type,
         input_size=input_size,
     )
+
+
+# ---------------------------------------------------------------------------
+# Tree-reweighted output wrapper (Task 22, option (a))
+# ---------------------------------------------------------------------------
+
+
+def _build_parent_indices():
+    """Return per-label parent index lists derived from LABEL_TREE."""
+    name_to_idx = {name: i for i, name in enumerate(LABEL_COLUMNS)}
+    parents = [[] for _ in range(N_LABELS)]
+    for parent_name, children in LABEL_TREE.items():
+        p_idx = name_to_idx[parent_name]
+        for child in children:
+            parents[name_to_idx[child]].append(p_idx)
+    return parents
+
+
+def _topological_order(parents, n_labels):
+    """Return label indices in an order where every parent precedes its children."""
+    order = []
+    placed = set()
+    while len(order) < n_labels:
+        progress = False
+        for j in range(n_labels):
+            if j in placed:
+                continue
+            if all(p in placed for p in parents[j]):
+                order.append(j)
+                placed.add(j)
+                progress = True
+        if not progress:
+            raise ValueError("cycle detected in parent graph")
+    return order
+
+
+PARENT_INDICES = _build_parent_indices()
+TOPO_ORDER = _topological_order(PARENT_INDICES, N_LABELS)
+
+
+def gz2_tree_reweight(sig, topo=TOPO_ORDER, parents=PARENT_INDICES):
+    """Convert per-label conditional sigmoid outputs to GZ2 vote-fraction predictions.
+
+    For each label j with parent set P(j):
+        f_j = sig_j                              if P(j) is empty (root)
+        f_j = sig_j * sum_{p in P(j)} f_p        otherwise.
+
+    Parameters
+    ----------
+    sig : torch.Tensor
+        Post-sigmoid tensor of shape ``(B, N_LABELS)`` whose entries are
+        interpreted as conditional probabilities of each GZ2 answer
+        given that its parent question was reached.
+    topo : list of int
+        Topological order over labels (roots first, children after).
+    parents : list of list of int
+        Per-label parent index lists.
+
+    Returns
+    -------
+    torch.Tensor
+        Tree-consistent vote-fraction predictions of shape ``(B, N_LABELS)``.
+    """
+    out = [None] * sig.shape[1]
+    for j in topo:
+        if not parents[j]:
+            out[j] = sig[:, j]
+        else:
+            parent_sum = out[parents[j][0]]
+            for p in parents[j][1:]:
+                parent_sum = parent_sum + out[p]
+            out[j] = sig[:, j] * parent_sum
+    return torch.stack(out, dim=1)
+
+
+class TreeReweightedCNN(nn.Module):
+    """Wrap a CNN so its outputs are tree-consistent GZ2 vote fractions.
+
+    Parameters
+    ----------
+    base : nn.Module
+        Base CNN that emits a 37-vector in ``[0, 1]`` (e.g. a Custom CNN
+        with sigmoid head). Its outputs are re-interpreted as conditional
+        probabilities and passed through :func:`gz2_tree_reweight`.
+    """
+
+    def __init__(self, base: nn.Module):
+        super().__init__()
+        self.base = base
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Run the base CNN and re-weight its sigmoid outputs along the GZ2 tree."""
+        return gz2_tree_reweight(torch.sigmoid(self.base(x)))
