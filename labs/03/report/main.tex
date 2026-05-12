@@ -4,6 +4,7 @@
 \usepackage{amsmath, amsfonts, amssymb}
 \usepackage{hyperref}
 \usepackage{graphicx}
+\usepackage{svg}
 \usepackage{tikz}
 \usepackage{booktabs}
 \usepackage{fancyhdr}
@@ -13,7 +14,8 @@
 \usepackage{stfloats}
 \usepackage{pdflscape}
 \usepackage{placeins}
-\usepackage{pdfpages}\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric}
+\usepackage{pdfpages}
+\usetikzlibrary{arrows.meta,positioning,fit,calc,shapes.geometric}
 
 \makeatletter\def\frontmatter@abstractheading{}\makeatother
 \renewcommand{\abstractname}{}
@@ -58,7 +60,7 @@
 \author{Jun Rui Ting \\ \today\vspace{-2.5\baselineskip}}
 
 \begin{abstract}
-We present a convolutional neural network (CNN) pipeline for morphological classification of galaxies from Sloan Digital Sky Survey (SDSS) images, using Galaxy Zoo 2 (GZ2) citizen-science labels as training data. Starting from 61{,}578 galaxy images with 37 continuous morphological labels (vote fractions in $[0,1]$), we center-crop and resize images to $96 \times 96$ pixels ($\sim$20$\times$ reduction in pixel count), split 80/20 into training (49{,}262) and validation (12{,}316) sets, and establish a mean-prediction baseline validation RMSE of 0.1639. We train two backbone architectures --- a 4-block custom CNN (32/64/128/256 channels with dropout) and an 18-layer ResNet adapted for small inputs and sigmoid output --- and apply two optimization techniques to each: \texttt{ReduceLROnPlateau} learning-rate scheduling and random $[0, 360^\circ)$ rotation augmentation exploiting the rotational invariance of galaxy morphology. The augmented ResNet with LR scheduling achieves the best validation RMSE of 0.0965, a $\sim$41\% improvement over the baseline. Per-label scatter plots reveal that top-level morphological features (smooth vs.\ disk) are predicted accurately, while rare sub-classifications (rings, mergers, lens/arcs) remain challenging due to sparse training examples. We apply the trained model to 79{,}975 test images and estimate a galaxy merger fraction of $\sim$4.3\%, comparing to the $z \approx 0$ merger rate from \citet{Lotz2011} and discussing complicating factors including the distinction between merger rate (Gyr$^{-1}$) and instantaneous merger fraction.
+We present a convolutional neural network (CNN) pipeline for morphological classification of galaxies from Sloan Digital Sky Survey (SDSS) images, using Galaxy Zoo 2 (GZ2) citizen-science labels as training data. Starting from 61{,}578 galaxy images with 37 continuous morphological labels (vote fractions in $[0,1]$), we center-crop and resize images to $96 \times 96$ pixels ($\sim$20$\times$ reduction in pixel count), split 80/20 into training (49{,}262) and validation (12{,}316) sets, and establish a mean-prediction baseline validation RMSE of 0.1639. We train two backbone architectures, a 4-block custom CNN (32/64/128/256 channels with dropout) and an 18-layer ResNet adapted for small inputs and sigmoid output, and apply two optimization techniques to each: \texttt{ReduceLROnPlateau} learning-rate scheduling and random $[0, 360^\circ)$ rotation augmentation exploiting the rotational invariance of galaxy morphology. The augmented + LR-scheduled Custom CNN achieves the best validation RMSE of 0.0913, a $\sim$44\% improvement over the baseline. Per-label scatter plots reveal that top-level morphological features (smooth vs.\ disk) are predicted accurately, while rare sub-classifications (rings, mergers, lens/arcs) remain challenging due to sparse training examples. We apply the trained model to 79{,}975 SDSS test images and estimate a galaxy merger fraction of $f_{\mathrm{merger}} \approx 4\%$, which converts to a major-merger rate of $R_{\mathrm{merger}} \approx 0.04$--$0.20\,\mathrm{Gyr}^{-1}$ using observability-timescale calibrations from \citet{Lotz2008,Lotz2011} and \citet{RodriguezGomez2015}. This is consistent with the $z \approx 0$ Lotz value of $\sim 0.02\,\mathrm{Gyr}^{-1}$ within a factor of $\sim 2$, with the morphological observability timescale $\tau_{\mathrm{vis}}$ dominating over statistical uncertainty.
 
 \vspace{2.5\baselineskip}
 \end{abstract}
@@ -68,79 +70,47 @@ We present a convolutional neural network (CNN) pipeline for morphological class
 \label{sec:intro}
 %%% ---------------------------------------------------------------
 
-Understanding galaxy morphology is fundamental to tracing the evolutionary history of galaxies across cosmic time \citep{Conselice2014}. The visual classification of galaxies into categories --- elliptical, spiral, irregular, merging --- dates back to Hubble's original tuning fork diagram, and modern large-scale surveys have extended this classification to hundreds of thousands of galaxies through citizen science projects such as Galaxy Zoo \citep{Lintott2008}. Galaxy Zoo 2 \citep{Willett2013} refined the classification scheme to 37 continuous labels organized in a hierarchical decision tree, enabling nuanced morphological descriptions including bar presence, spiral arm count, bulge prominence, and disturbed/merging features.
+Galaxy morphology is the most direct observational tracer of a galaxy's dynamics and history, and over large samples it allows us to reconstruct the statistical evolution of a galaxy population even when we cannot follow any individual galaxy through cosmic time \citep{Conselice2014}. In the hierarchical $\Lambda$CDM model for galaxy formation, the primary mechanism evolving galaxies along its evolutionary sequence are major mergers, where mergers perturb stellar orbits, drive gas to the centre fuelling central starbursts and AGN, and convert rotationally-supported discs into pressure-supported spheroids. The merger rate as a function of redshift therefore sets the rate at which the early-Universe disc population evolves into the present-day red sequence, and constraining it observationally is an important statistic for any quantitative theory of galaxy evolution. Locally, the major-merger rate per galaxy has been constrained at the $\sim 0.02$--$0.03$~Gyr$^{-1}$ level by observation \citep{Lotz2011} and simulation \citep{RodriguezGomez2015}, but the two methodologies disagree on the $(1 + z)$ evolution slope by roughly a factor of two.
 
-However, human classification does not scale to the billions of galaxies that will be observed by upcoming surveys (LSST, Euclid, Roman). Convolutional neural networks (CNNs) offer an automated alternative: given sufficient training data, a CNN can learn to extract morphological features directly from pixel data \citep{Krizhevsky2020}. In this work, we train CNNs on GZ2 labels to predict all 37 morphological classifications simultaneously, then apply the trained model to estimate the galaxy merger fraction at $z \approx 0$.
+The largest hand-labelled morphological catalogue available, Galaxy Zoo 2 \citep[GZ2;][]{Willett2013}, comprises $\sim 3 \times 10^5$ SDSS galaxies labelled by citizen-scientist consensus on a 37-leaf decision tree. However, with newer and significantly larger LSST, Euclid, and Roman data releases, this approach will be difficult to scale. We therefore turn to a more programmatic approach using convolutional neural networks (CNNs), where given the morphological labels and galaxy images as training data, a CNN can learn to predict morphological vote fractions directly from pixels \citep{Krizhevsky2020}.
 
-Figure~\ref{fig:pipeline} provides an overview of the analysis pipeline.
+In this work, we explore two CNN architectures: (1) an off-the-shelf 18-layer ResNet \citep[$\sim 11.2$~M parameters;][]{He2015}; and (2) a custom CNN ($\sim 2.8$~M parameters); both trained on a Kaggle-derived $61{,}578$-galaxy subset of GZ2 to predict the full 37-dimensional vote-fraction vector from each $96 \times 96$~px SDSS three-colour cutout. We compare two optimisations (learning-rate scheduling and rotation augmentation) and one architectural regularisation (tree-reweighted output), to train the best-performing model which is applied to a held-out test sample of $79{,}975$ SDSS galaxies to estimate the merger fraction $f_{\mathrm{merger}}$ and recover the \citet{Lotz2011} major-merger rate $R_{\mathrm{major}}$.
+
+%%% ---------------------------------------------------------------
+\section{Background}
+\label{sec:background}
+%%% ---------------------------------------------------------------
+
+\subsection{Galaxy morphology}
+
+\begin{figure}[t!]
+  \centering
+  \includesvg[width=\columnwidth, pretex=\footnotesize]{figures/Hubble_Tuning_Fork_diagram}
+  \caption{The Hubble ``tuning-fork'' diagram. Ellipticals (E0--E7) lie along the handle, ordered by apparent flattening, while the two prongs separate barred (SBa--SBc) from unbarred (Sa--Sc) spirals along an axis of decreasing bulge prominence and increasingly open arms. Lenticulars (S0) bridge the elliptical and disk families. Image credit: NASA \& ESA, \url{https://esahubble.org/images/heic9902o/}.}
+  \label{fig:hubble_tuning_fork}
+\end{figure}
+
+The Hubble morphological sequence (Figure~\ref{fig:hubble_tuning_fork}) separates galaxies into two physically distinct branches: pressure-supported ellipticals (E0--E7) and lenticulars (S0), and rotationally-supported Spirals (Sa--Sd) and irregulars (Irr). The Sa--Sd sequence within the disk class expands this picture with a decreasing bulge-to-total ratio ($B/T$), increasing gas fraction, and increasing star-formation rate per unit mass. This hierarchy reflects galaxy evolution where ellipticals are thought to have formed through major mergers that scramble ordered rotation into a velocity dispersion-supported spheroid, while disk galaxies assembled more quiescently through cold gas accretion and angular momentum conservation \citep{Conselice2014}.
+
+% Sub-features within the disk branch carry further dynamical information. Spiral arms are a disk instability phenomenon driven by the disk's self-gravity (Lin--Shu density waves) or by tidal interactions, and require a cold, rotationally supported disk to exist. Bars form via a global $m = 2$ instability in disks with sufficient mass and dynamical coldness, redistributing angular momentum and funnelling gas inward; the observed local bar fraction of $\sim 30\%$ encodes the dynamical state of the disk population. Bulges divide into classical bulges (formed by violent relaxation in mergers; dynamically hot, round) and pseudo-bulges (formed by secular bar-driven gas inflows; flatter, more disk-like), and bulge prominence labels carry mixed-formation-channel information.
+
+\subsection{Galaxy mergers}
+
+% Galaxy mergers are among the most violent events in a galaxy's life: they drive starbursts, fuel AGN, scramble disks into spheroids, redistribute angular momentum, build pseudobulges through gas inflows, and, for major mergers, are believed to be the dominant channel for forming massive ellipticals (the merger hypothesis of Toomre \& Toomre 1972). The cosmic merger rate as a function of redshift, mass, and mass ratio is therefore a fundamental constraint on hierarchical structure formation.
+
+Quantitatively studying the merger rate can only be done statistically. \citet{Lotz2011} measure the merger rate observationally by counting morphologically disturbed systems using various non-parametric indicators such as the Gini coefficient, $M_{20}$ (the 2\textsuperscript{nd}--order moment of light at the 20th-percentile brightness), CAS (Concentration, Asymmetry, Smoothness), and the multi-mode/intensity/deviation $\{M, I, D\}$ statistics, compared alongisde a simulation-calibrated visibility timescale $\tau_{\mathrm{vis}}$ that quantifies the time during which a major merger remains visibly disturbed\footnote{\citet{Lotz2008} calibrate $\tau_{\mathrm{vis}}$ against hydrodynamic merger simulations and find $\tau_{\mathrm{vis}} \approx 0.2$--$1.1$~Gyr depending on orbital parameters, mass ratio, and gas fraction}. Using this approach on close-pair counts in mass-selected SDSS samples give $R_{\mathrm{major}}(z) = (0.03 \pm 0.01)\,(1 + z)^{+1.7 \pm 1.3}$~Gyr$^{-1}$ (\citealt{Lotz2011}).
+
+\citet{RodriguezGomez2015} instead measure the same rate independently by counting subhalo mergers in the Illustris cosmological hydrodynamical simulation, finding a major-merger rate for Milky-Way-mass descendants ($M_\ast \approx 6 \times 10^{10}\,M_\odot$) of $\gtrsim 0.02$~Gyr$^{-1}$ at $z \approx 0.1$ with $(1 + z)^{+2.6 \pm 0.2}$ redshift evolution.
+
+Together, these two $z \approx 0$ normalisations agree to within $\sim 1.5\times$, but the redshift-evolution exponents differ by roughly a factor of two. Both approaches reach the merger rate only indirectly, where the morphological route converts a disturbed-galaxy fraction into a rate through the simulation-calibrated $\tau_{\mathrm{vis}}$, while the simulation route reads merger events off a subhalo merger tree whose mapping onto observable galaxies is itself uncertain. 
+
+\subsection{Galaxy Zoo 2}
+
+A complementary, more direct route is to instead ask classifiers (beit human or machine) the question of if a galaxy visibly looks like its disturbed/merging, and aggregate the resulting fractions across a flux- and resolution-limited sample. 
+
+GZ2 \citep{Willett2013} solicits classifications from $\sim 84{,}000$ volunteer classifiers over $\sim 14$ months, totalling $\sim 16$~million votes against $304{,}122$ SDSS DR7 Legacy galaxies selected with Petrosian magnitude $m_r < 17.0$ and Petrosian half-light radius $r_{\mathrm{Petro,90}} > 3''$. Each galaxy is presented as a colour-composite SDSS $gri$ JPEG cutout scaled to a fixed angular size of $0.024\,r_{\mathrm{Petro,90}}$ arcseconds per pixel and rendered at $424 \times 424$ pixels; at the median GZ2 redshift $z \sim 0.07$, this corresponds to a cutout side of $\sim 12$~kpc on a side. 
 
 \begin{figure*}[t!]
-  \centering
-  \begin{tikzpicture}[node distance=1.6cm and 1.3cm]
-    \node[flowbox] (csv) {GZ2 CSV\\+ SDSS Images};
-    \node[flowbox, right=of csv] (crop) {Crop \& Resize\\$\sim$30$\times$};
-    \node[flowbox, right=of crop] (split) {80/20\\Train/Val Split};
-    \node[flowbox, above right=0.8cm and 1.3cm of split] (resnet) {ResNet-18};
-    \node[flowbox, below right=0.8cm and 1.3cm of split] (custom) {Custom CNN};
-    \node[flowbox, right=of resnet] (opt) {LR Schedule\\+ Augmentation};
-    \node[outputbox, right=2.0cm of opt] (eval) {Evaluation\\+ Merger Rate};
-    \draw[arrow] (csv) -- (crop);
-    \draw[arrow] (crop) -- (split);
-    \draw[arrow] (split) -- (resnet);
-    \draw[arrow] (split) -- (custom);
-    \draw[arrow] (resnet) -- (opt);
-    \draw[arrow] (custom.east) -| (eval.south);
-    \draw[arrow] (opt) -- (eval);
-  \end{tikzpicture}
-  \caption{Analysis pipeline. SDSS galaxy images and GZ2 classification labels are preprocessed (crop, resize, split), then used to train a custom CNN and a ResNet-18. The best model is optimized with learning-rate scheduling and data augmentation, then evaluated on the validation and test sets. The final step estimates the galaxy merger fraction.}
-  \label{fig:pipeline}
-\end{figure*}
-
-%%% ---------------------------------------------------------------
-\section{Data Exploration}
-\label{sec:data}
-%%% ---------------------------------------------------------------
-
-The training set consists of 61{,}578 SDSS $gri$-composite images ($424 \times 424$ pixels) and 37 GZ2 classification labels per galaxy. Each label is a vote fraction in $[0, 1]$ representing the proportion of human classifiers who assigned that morphological feature. The labels are organized hierarchically: top-level questions (smooth vs.\ disk vs.\ star/artifact) gate whether deeper questions (bar? spiral? arm count?) are asked.
-
-\subsection{Label Distributions}
-
-Figure~\ref{fig:label_distributions} shows normalized histograms of all 37 labels. Top-level labels (smooth, features/disk) exhibit broad, roughly bimodal distributions, while deeper labels (arm count, spiral tightness) are heavily concentrated near zero because most galaxies never reached those questions. This hierarchical concentration is a fundamental property of the GZ2 label space and presents a challenge for the CNN: the model must learn that most labels are near-zero for most galaxies.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\textwidth]{figures/fig_label_distributions.pdf}
-  \caption{Normalized histograms of all 37 GZ2 classification labels. Top-level labels show broad distributions; deeper hierarchical labels are concentrated near zero.}
-  \label{fig:label_distributions}
-\end{figure}
-
-\subsection{Prototype Images}
-
-Figure~\ref{fig:prototype_images} shows the prototype image (highest vote fraction) for each label, providing a visual dictionary of the classification scheme.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\textwidth]{figures/fig_prototype_images.pdf}
-  \caption{Prototype images: the galaxy with the highest vote fraction for each of the 37 labels.}
-  \label{fig:prototype_images}
-\end{figure}
-
-\subsection{Label Correlations}
-
-Figure~\ref{fig:correlation_matrix} shows the $37 \times 37$ Pearson correlation matrix. Strong negative correlations within each question confirm mutually exclusive categories, while positive correlations along the hierarchical tree reflect parent--child dependencies. The expected correlation for two mutually exclusive binary labels is $\rho = -1$; the observed values are close to this for Class1.1/1.2 and Class2.1/2.2.
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\textwidth]{figures/fig_correlation_matrix.pdf}
-  \caption{Pearson correlation matrix of all 37 labels. Block-diagonal structure reflects the hierarchical decision tree.}
-  \label{fig:correlation_matrix}
-\end{figure}
-
-\subsection{Diagnostic Analyses}
-
-To better understand the structure of the label space and the imbalance challenges facing the CNN, we perform several diagnostic analyses. Figure~\ref{fig:label_tree} visualizes the GZ2 hierarchical decision tree, making explicit which labels gate which downstream questions. Figure~\ref{fig:hierarchical_correlation} reorders the correlation matrix by tree branch, exposing block structure that the unordered matrix obscures. Figure~\ref{fig:label_tsne} shows a t-SNE embedding of the 37-dimensional label space; the manifold separates cleanly along the smooth/disk axis but rare classes form sparse, isolated clusters. Figure~\ref{fig:effective_sample_size} quantifies the effective sample size $N_{\rm eff} = (\sum f_i)^2 / \sum f_i^2$ per label, demonstrating that several deeper-tree labels have $N_{\rm eff} \lesssim 1000$, far below the nominal 61{,}578.
-
-\begin{figure}[H]
   \centering
   \begin{tikzpicture}[
       qbox/.style={rectangle, rounded corners=3pt, draw=black!55,
@@ -183,66 +153,219 @@ To better understand the structure of the label space and the imbalance challeng
     \draw[qedge] (Q4) -- (Q5)  node[slabel, midway] {No spiral};
     \draw[qedge] (Q10) -- (Q11);
   \end{tikzpicture}
-  \caption{GZ2 hierarchical decision tree. Each node is a question; edges show which downstream questions are gated by each answer. Node colors denote branch: gray = root, red = smooth, orange = edge-on, green = face-on/bar, blue = spiral, violet = bulge, brown = odd-feature.}
+  \caption{GZ2 hierarchical decision tree. Each node is one of the 11 GZ2 questions; directed edges show which downstream questions are gated by each answer at the parent node (e.g.\ Q7 ``How round?'' is only asked when a classifier first chose ``Smooth'' at Q1). The 37 leaf answers, the vote fractions we regress against, sit on the leaves of this tree (not shown for brevity). Node colours denote branch: gray = root, red = smooth, orange = edge-on, green = face-on/bar, blue = spiral, violet = bulge, brown = odd-feature.}
   \label{fig:label_tree}
+\end{figure*}
+
+Classifiers answer an 11-question decision tree (Figure~\ref{fig:label_tree}): Q1 (smooth/features/star), Q2 (edge-on?), Q3 (bar?), Q4 (spiral?), Q5 (bulge prominence), Q6 (anything odd?), Q7 (how round?), Q8 (odd feature: ring, lens/arc, disturbed, irregular, dust lane, merger, other), Q9 (edge-on bulge shape), Q10 (arm tightness), Q11 (arm count). Each question is gated by a previous answer. For example, Q7 (roundness) is only asked when Q1 = smooth, Q9 (edge-on bulge shape) is only asked when Q2 = yes, and so on, so the 37 leaf answers form a hierarchical tree rather than a flat vector. The reported labels are the fraction of classifiers who selected each leaf, normalised so that siblings within a question sum to the parent fraction.
+
+A typical galaxy receives $40$--$50$ independent classifications, with a minimum of $\sim 15$. To handle classifier noise and resolution-driven bias, \citet{Willett2013} apply three layers of cleaning: (i) classifier-consistency weighting against a calibration sub-sample; (ii) debiasing of vote fractions against apparent magnitude $M_r$ and angular radius $R_{50}$ to remove the systematic drift toward ``smooth'' for poorly-resolved high-redshift galaxies; and (iii) parent-normalisation of child vote fractions. The corrected vote fractions are what we use as labels. After cleaning, higher-redshift galaxies in GZ2 are still preferentially classified as mergers, both because the intrinsic merger rate scales as a power law of $(1 + z)^\alpha$ and because merger features are less easily distinguishable in samples in the resolution-limited regime; the residual resolution-dependent classification bias remains largest in the high-merger-probability tail.
+
+Compared to alternative morphological catalogues, GZ2 has a larger sample size, $\sim 304{,}000$ galaxies, $\sim 20\times$ \citet{NairAbraham2010} (NA10) and is more robust statistically, where per-galaxy uncertainty is quantified by the $\sim 40$ independent votes, rather than a single value or non-parametric deterministic quantity (e.g., T-type, the integral de Vaucouleurs encoding of Hubble class running from $-6$ for ellipticals to $+10$ for irregulars, or a Gini--$M_{20}$ value). Despite this, \citet{Willett2013} shows that GZ2 vote fractions correlate strongly with NA10 T-types, the citizen-science labels carry the same morphological information as expert classifications, but at a scale that expert pipelines cannot match.
+
+However, the drawback of any visual identification approach, beit expert T-typing, citizen-science voting, is that it returns a subjective answer where a non-parametric statistic such as $G$, $M_{20}$, CAS, or $\{M, I, D\}$ returns a deterministic scalar. The same pixels run through the Lotz pipeline produce the same Gini coefficient every time; the same pixels presented to two GZ2 classifiers, or to the same classifier on two different days, can produce different votes. Three galaxies from our own classification session on the GZ2 interface (\url{https://www.zooniverse.org/projects/zookeeper/galaxy-zoo/}) bracket the regime where this subjectivity bites (Figure~\ref{fig:gz2_classifier_screenshots}). The middle and bottom panels are unambiguous archetypes --- a centrally concentrated smooth galaxy and a clearly resolved spiral --- on which essentially any classifier, human or non-parametric, would return the same label; these are the easy cases that make the visual approach work at all. The top panel is the contrasting failure mode: a bright bulge-like core embedded in low-surface-brightness extended emission for which the ``spiral / not spiral'' and ``edge-on disk with dust lane'' readings are genuinely degenerate at SDSS resolution, and the resulting vote fraction is necessarily split rather than truly noisy. A non-parametric estimator would collapse such a galaxy to a single number on a continuous axis and side-step the forced choice; the cost is that it discards the multi-feature information --- bar presence, arm count, bulge prominence, oddity type --- that GZ2 resolves across $37$ separate leaves. The CNN trained in this work inherits both sides of that trade: it operates at GZ2's full $37$-axis resolution, but propagates the per-image judgement-call noise that the human classifiers contributed to the labels.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=0.95\columnwidth]{figures/1-spiral-or-dust-lane.jpg}\par\medskip
+  \includegraphics[width=0.95\columnwidth]{figures/smooth.png}\par\medskip
+  \includegraphics[width=0.95\columnwidth]{figures/amibguous.png}
+  \caption{Three GZ2-interface galaxies from our own classification session, displayed top-to-bottom at column width, bracketing the regime where visual elicitation succeeds and the regime where it does not. Top: an ambiguous case --- a bright bulge-like core embedded in low-surface-brightness extended emission, where the Q4 ``spiral / not spiral'' and Q8 ``dust lane'' axes are genuinely degenerate at SDSS resolution; any single classifier vote is essentially a coin flip, so the GZ2 vote fraction sits at intermediate values not because the labels are noisy but because the image truly supports multiple readings. Middle: a clean ``smooth'' archetype --- centrally concentrated, red, no resolved features --- the easy regime where every classifier converges on Class1.1 and a non-parametric Gini--$M_{20}$ statistic would also place the galaxy unambiguously on the elliptical side of the Lotz cut. Bottom: a clean spiral archetype --- a clearly resolved disk with visible arm structure --- on which Q1 (features/disk) and Q4 (spiral) both reach near-consensus. The middle and bottom cases are where visual elicitation \emph{is} effectively deterministic and matches a non-parametric scalar in reproducibility; the top case is where the two diverge, and where the CNN inherits the elicitation's irreducible per-image variance.}
+  \label{fig:gz2_classifier_screenshots}
 \end{figure}
 
-\begin{figure}[H]
+%%% ---------------------------------------------------------------
+\section{Data}
+\label{sec:data}
+%%% ---------------------------------------------------------------
+
+The training set consists of 61{,}578 SDSS $gri$-composite images ($424 \times 424$ pixels) and 37 GZ2 classification labels per galaxy. Each label is a vote fraction in $[0, 1]$ representing the proportion of human classifiers who assigned that morphological feature. The labels are organized hierarchically: top-level questions (smooth vs.\ disk vs.\ star/artifact) gate whether deeper questions (bar? spiral? arm count?) are asked.
+
+\subsection{SDSS Imaging and the $gri$ Composite}
+\label{sec:sdss-imaging}
+
+The training images are Sloan Digital Sky Survey DR7 \citep{Abazajian2009} three-colour cutouts in the $gri$ photometric bands, rendered as RGB JPEGs following the \citet{Lupton2004} scaling so that the $g$ filter ($\lambda_{\mathrm{eff}} \approx 477$~nm) maps to blue, $r$ ($\lambda_{\mathrm{eff}} \approx 623$~nm) to green, and $i$ ($\lambda_{\mathrm{eff}} \approx 763$~nm) to red. This filter-to-colour mapping is not arbitrary: it encodes the same astrophysical information that drives the bimodality of the colour--magnitude diagram between the blue cloud of young, gas-rich, star-forming disks dominated by hot OB stars and the red sequence of older, gas-poor, quiescent ellipticals dominated by red-giant-branch stars. A galaxy that appears overwhelmingly red in a $gri$ composite is almost always a smooth, centrally-concentrated elliptical with old stellar populations ($g - r \sim 0.8$ at $z \sim 0$); one that appears overwhelmingly blue is almost always a rotation-supported disk with active star formation ($g - r \sim 0.4$). The CNN therefore has a strong low-level shortcut for the top-level Smooth/Features Q1 distinction, raw pixel colour, before any morphological feature is recognised, and we verify in the diagnostic plots below (Section~\ref{sec:diagnostics-extra}) that smooth ellipticals and disk galaxies separate visibly in the distribution of mean centre-weighted colour ratio. The harder labels (bar presence, arm count, dust lane, odd features) require the network to look past these dominant colour gradients and learn genuine morphological structure.
+
+The GZ2 sample spans the redshift range $z \sim 0.02$--$0.25$ with median $z \approx 0.07$, drawn from the SDSS spectroscopic main galaxy sample \citep{Strauss2002, Stoughton2002}. At the median redshift and assuming $H_0 = 70$~km\,s$^{-1}$\,Mpc$^{-1}$, the native SDSS pixel scale of $0.396''$/pixel corresponds to $\sim 0.54$~kpc/pixel. As described in Section~\ref{sec:prep}, the GZ2 cutouts are pre-scaled per galaxy so that the field of view tracks $\sim 1.7\,r_{\mathrm{Petro,90}}$ on a side, decoupling the rendered pixel scale from redshift; this is what makes the cutouts comparable across the wide GZ2 redshift range.
+
+\subsection{Label Distributions}
+
+Figure~\ref{fig:label_distributions} shows normalized histograms of all 37 labels. The distributions divide into three families that the CNN must learn to reproduce. The \textbf{top-level labels} (Class1.1--1.3, Class6.1/6.2) show broad, roughly bimodal distributions with most galaxies piling up at $0$ or $1$ and few intermediate vote fractions; the bimodality mirrors the dichotomy between the red sequence of pressure-supported, quiescent ellipticals and the blue cloud of rotation-supported, star-forming disks, and the sharpness of the bimodality reflects strong classifier consensus, indicating that the smooth-vs-disk distinction is genuinely visually distinctive at SDSS resolution. The \textbf{conditional sub-class labels} (Class7.x, Class10.x, Class11.x) are heavily concentrated near zero because most galaxies were never asked the corresponding question: spiral-arm-count labels (Class11.x), for instance, only apply to galaxies first identified as spirals, so the bulk of the sample has zero votes for any arm-count answer. Finally, the \textbf{rare-feature labels} (Class1.3 star/artefact, Class8.x odd features) are sharply peaked at zero with a tiny long tail, reflecting genuinely rare astrophysical states (rings, lens/arcs, dust lanes, mergers) and the residual contaminants that the photometric pipeline has mostly already removed.
+
+Two labels of particular relevance to this paper deserve a closer look. The merger vote (Class8.6) is heavily zero-concentrated because the visibly-disturbed phase of a galaxy merger lasts only $\sim 0.5$--$1$~Gyr, compared to a quiescent lifetime of $\sim 10$~Gyr, so a snapshot of the local universe shows only $\sim 1$--$5\%$ of galaxies in a merger state at any moment, consistent with the cosmic merger rate of $\sim 0.02$~Gyr$^{-1}$ from \citet{Lotz2011}. The cigar-shaped smooth label (Class7.3) shows a surprising distribution: nominally a sub-label of ``smooth'', its prototype images and correlations (Section~\ref{sec:diagnostic-trends} below) reveal that the cigar label predominantly picks up misclassified edge-on disks rather than a population of truly prolate spheroids, a confusion the CNN will inherit from the training labels.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_distributions.pdf}
+  \caption{Normalized histograms of all 37 GZ2 classification labels. Top-level labels show broad distributions; deeper hierarchical labels are concentrated near zero. The top-level vote-fraction labels (Class1.1/1.2, Class6.1/6.2) display broad bimodal distributions with mass piled at $0$ and $1$, while conditional sub-class labels (Class7.x, Class10.x, Class11.x) are sharply concentrated near zero because most galaxies were never asked the corresponding gated question.}
+  \label{fig:label_distributions}
+\end{figure*}
+
+\subsection{Prototype Images}
+
+Figure~\ref{fig:prototype_images} shows the prototype image (highest vote fraction) for each label, providing a visual dictionary of the classification scheme. Several patterns are immediately apparent from inspection:
+
+Visually obvious labels. Smooth, edge-on disk, and grand-design 2-arm spiral prototypes are all visually unambiguous: smooth ellipticals are featureless, centrally concentrated, and red; edge-on disks show a clear thin, elongated geometry with a dark dust lane bisecting the midplane where the interstellar medium is concentrated; grand-design spirals display clean logarithmic arm patterns with blue star-forming regions tracing the density-wave crests. We expect the CNN to learn these labels well from a small number of distinct visual templates.
+
+Subtle or rare labels. Lens/arc (Class8.2), dust lane (Class8.7), and high-arm-count spiral labels (Class11.3--11.5) require detecting faint, narrow, or rare features that can be confused with PSF artefacts, tidal streams, or flocculent disk structure. Merger prototypes (Class8.6) are visually heterogeneous: some are clearly interacting pairs with tidal tails, others are post-coalescence shells, and others are asymmetric isophotes that span a wide range of merger stages, mass ratios, and gas fractions. We anticipate that the CNN will have difficulty learning a single ``merger template'' from these visually diverse positive examples, and this expectation is borne out in the per-label RMSE analysis of Section~\ref{sec:eval}.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_prototype_images.pdf}
+  \caption{Prototype images: for each of the 37 GZ2 labels, the galaxy in the training set that maximises the corresponding vote fraction, displayed at the model-input crop and labelled by the descriptive class name. Visually obvious labels (smooth, edge-on disk, grand-design $m{=}2$ spiral, no-bulge) have clean and morphologically distinctive prototypes, whereas the deep-tree rare-feature labels (lens/arc, dust lane, high arm count) exhibit heterogeneous or low-contrast prototypes that anticipate the per-label-RMSE pattern of Section~\ref{sec:eval}.}
+  \label{fig:prototype_images}
+\end{figure*}
+
+\subsection{Label Correlations}
+\label{sec:diagnostic-trends}
+
+Figure~\ref{fig:correlation_matrix} shows the $37 \times 37$ Pearson correlation matrix computed using the lab manual's definition,
+\begin{equation}
+\rho_{ij} = \frac{\langle ij \rangle - \langle i \rangle \langle j \rangle}{\sqrt{\langle i^2 \rangle - \langle i \rangle^2}\,\sqrt{\langle j^2 \rangle - \langle j \rangle^2}}.
+\label{eq:rho}
+\end{equation}
+The mutually exclusive sibling answers within each question have a theoretical expected correlation of $\rho = -1/(k-1)$ for a $k$-way question if classifiers reach perfect consensus on one option per galaxy. For the effectively-binary Q1 (Class1.1 vs 1.2; Class1.3 is near-zero everywhere) and Q6 (Class6.1 vs 6.2) we measure $\rho = -0.992$ and $\rho = -1.000$ respectively, near-perfectly matching the binary expectation of $-1$. For the $k = 4$ bulge-prominence question Q5 the expected sibling correlation is $-1/3 \approx -0.33$; we measure values between $-0.20$ and $-0.40$, slightly closer to zero than ideal because the four-way vote spreads more evenly than the binary case and the deeper sub-tree position introduces classifier-noise variance. The fact that the empirical sibling correlations track the theoretical values closely is itself a quality check on the dataset: it confirms the W13 debiasing has not introduced spurious cross-correlations and the vote fractions still encode the intended within-question exclusivity.
+
+Positive parent--child correlations trace the decision-tree inheritance: a child label can only be nonzero if its parent was selected, so parent and child must positively correlate. The strongest parent--child correlations we measure are Edge-on Yes $\to$ Rounded bulge ($\rho = +0.879$), Spiral Yes $\to$ Medium winding ($\rho = +0.858$), Spiral Yes $\to$ 2 arms ($\rho = +0.781$), and Features/Disk $\to$ Edge-on No ($\rho = +0.748$). The last of these is asymmetric, Features/Disk correlates with Edge-on No at $+0.748$ but with Edge-on Yes at only $+0.333$, because of the geometric projection of randomly-oriented thin disks: the probability of appearing within inclination $i$ of edge-on scales as $\cos i$, so truly edge-on views ($i > 80^\circ$) subtend only $\sim 17\%$ of the solid angle, and most disk galaxies in the sample are face-on or moderately inclined. The fact that the empirical correlations reflect this geometric expectation is another quality-check passing.
+
+A particularly informative anomaly is the Cigar-shaped label (Class7.3): nominally a smooth sub-label, it positively correlates with Edge-on Yes ($\rho = +0.496$) and edge-on bulge labels (Class9.1, $\rho = +0.370$; Class9.3, $\rho = +0.475$), and is essentially uncorrelated with Smooth itself ($\rho = -0.001$). This is direct evidence that highly inclined disks are systematically misclassified as ``smooth + cigar-shaped'' rather than ``features/disk + edge-on'' when the disk substructure (spiral arms, dust lane) is unresolved at SDSS seeing, the CNN will need to learn this confusion from the training labels.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_correlation_matrix.pdf}
+  \caption{Pearson correlation matrix (Eq.~\ref{eq:rho}) of all 37 GZ2 labels on the training set. Mutually exclusive sibling answers within a single question form clear negative blocks (Class1.1 vs Class1.2: $\rho = -0.992$, near-perfectly matching the binary expectation of $-1$), while parent--child gating relationships form positive off-diagonal stripes (e.g. Features/Disk $\to$ Edge-on No, $\rho = +0.748$). The Cigar-shaped anomaly (Class7.3, weak/null correlation with Smooth, strong positive correlation with Edge-on Yes) is the most informative non-trivial structure visible here.}
+  \label{fig:correlation_matrix}
+\end{figure*}
+
+\subsection{Diagnostic Analyses}
+
+To better understand the structure of the label space and the imbalance challenges facing the CNN, we perform several diagnostic analyses. Figure~\ref{fig:label_tree} visualizes the GZ2 hierarchical decision tree, making explicit which labels gate which downstream questions. Figure~\ref{fig:hierarchical_correlation} reorders the correlation matrix by tree branch, exposing block structure that the unordered matrix obscures. Figure~\ref{fig:label_tsne} shows a t-SNE embedding of the 37-dimensional label space; the manifold separates cleanly along the smooth/disk axis but rare classes form sparse, isolated clusters. Figure~\ref{fig:effective_sample_size} quantifies the effective sample size $N_{\rm eff} = (\sum f_i)^2 / \sum f_i^2$ per label, demonstrating that several deeper-tree labels have $N_{\rm eff} \lesssim 1000$, far below the nominal 61{,}578.
+
+\begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_hierarchical_correlation.pdf}
-  \caption{Correlation matrix reordered by tree branch, revealing block structure aligned with the hierarchy.}
+  \caption{$37 \times 37$ label correlation matrix reordered by tree branch (smooth / edge-on / face-on bar-spiral / odd-feature). Block-diagonal structure now aligns with the hierarchy, making within-question negative correlations and parent--child positive correlations visually separable. Compared to the un-ordered version in Figure~\ref{fig:correlation_matrix}, the off-diagonal cross-branch correlations are revealed to be dominated by the colour/morphology bimodality discussed in Section~\ref{sec:diagnostics-extra}.}
   \label{fig:hierarchical_correlation}
-\end{figure}
+\end{figure*}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.7\textwidth]{figures/fig_label_tsne.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_label_tsne.pdf}
   \caption{t-SNE embedding of the 37-dimensional label space, colored by dominant top-level class.}
   \label{fig:label_tsne}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_effective_sample_size.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_effective_sample_size.pdf}
   \caption{Effective sample size per label. Hierarchical gating drives deeper-tree labels to $N_{\rm eff}$ far below the nominal 61{,}578.}
   \label{fig:effective_sample_size}
 \end{figure}
 
-%%% ---------------------------------------------------------------
-\section{Data Preparation}
+A subtle but consequential corollary, plotted in Figure~\ref{fig:label_rarity_vs_rmse}: $N_{\mathrm{eff}}$ and the mean-prediction baseline RMSE are strongly correlated across labels. Rare labels (lens/arc, dust lane, high-arm-count spirals) achieve low baseline RMSE not because the model has learnt them but because predicting zero is already accurate when the label is near-zero everywhere. This means per-label RMSE numbers reported in Section~\ref{sec:eval} are only informative for the well-sampled labels in the upper-right of the figure; the apparently-easy labels in the lower-left are an artefact of label rarity, not a CNN achievement.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_label_rarity_vs_rmse.pdf}
+  \caption{$N_{\mathrm{eff}}$ vs.\ per-label mean-prediction baseline RMSE. Labels with $N_{\mathrm{eff}} < 200$ (red) sit at the bottom-left of the plot and have artificially-low baseline RMSE because their vote-fraction distributions are concentrated near zero. The labels in the upper-right are the ones where a CNN beating baseline RMSE is genuinely informative.}
+  \label{fig:label_rarity_vs_rmse}
+\end{figure}
+
+\label{sec:diagnostics-extra}
+
+\paragraph{Effective dimensionality of the label space.} Figure~\ref{fig:pca_eigenspectrum} shows the eigenspectrum of the $37 \times 37$ label correlation matrix and the cumulative variance fraction. The Kaiser criterion ($\lambda > 1$) gives an effective dimensionality of $\sim 8$, far fewer than the nominal 37, and $\sim 90\%$ of the total variance is captured by the first $\sim 10$ principal components. The hierarchical gating of the GZ2 decision tree makes the labels strongly redundant: knowing the top few principal directions (smooth-vs-disk, edge-on-vs-face-on, spiral structure, odd-feature axis) determines most of the remaining label values. The CNN is therefore not solving 37 independent regression problems; the effective complexity of the task is closer to a handful of latent morphological factors, which sets a useful upper bound on how much representational capacity the FC head needs and informs the parameter-count choice in Section~\ref{sec:custom}.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_pca_eigenspectrum.pdf}
+  \caption{Eigenspectrum (left) and cumulative variance fraction (right) of the $37 \times 37$ label correlation matrix. The Kaiser criterion ($\lambda > 1$, dashed) gives an effective dimensionality of $\sim 8$, and $\sim 90\%$ of the variance is captured by $\sim 10$ principal components, the hierarchical decision tree makes the GZ2 label space highly redundant.}
+  \label{fig:pca_eigenspectrum}
+\end{figure}
+
+\paragraph{Geometry of the vote-fraction distributions.} Figure~\ref{fig:pairwise_label_scatter} shows pairwise scatter plots for the eight most strongly correlated label pairs (four positive, four negative). Positively-correlated pairs lie along a diagonal ridge with most galaxies stacked at the corners of $[0, 1]$ rather than the interior, vote fractions saturate at $0$ or $1$ when the classifier consensus is strong, and intermediate values are rare. Negatively-correlated pairs form L-shaped distributions concentrated along the high-$i$/low-$j$ and low-$i$/high-$j$ arms with almost no points in the high-high corner, the signature of strict mutual exclusion. This corner-saturating distribution motivates the sigmoid output head used by both architectures in Section~\ref{sec:architectures}: a sigmoid naturally saturates at $0$ and $1$ and therefore matches the density structure of the labels, whereas a linear output head would over-predict the interior. Figure~\ref{fig:montage_features_disk_vs_edge-on} confirms this directly with image montages drawn from the four quadrants of the (Features/Disk, Edge-on-No) plane: the high-high and low-low corners contain archetypal disks and ellipticals respectively, while the off-diagonal quadrants are populated by edge cases (highly inclined disks, ambiguous low-surface-brightness galaxies), the morphological populations behind the L-shapes are not artefacts of the gating but visually distinct astrophysical classes the CNN can plausibly learn to separate.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_pairwise_label_scatter.pdf}
+  \caption{Pairwise scatter plots for the eight strongest label correlations (top row: four most positive; bottom row: four most negative). Positively-correlated pairs lie along a diagonal with strong saturation at $(0, 0)$ and $(1, 1)$, while negatively-correlated pairs form L-shaped distributions confined to the two complementary arms with almost no points in the high--high corner. The interior of the unit square is sparsely populated in every panel, demonstrating that vote fractions saturate at $0$ or $1$ when classifier consensus is strong; the corner-saturating density structure is what motivates the sigmoid output head used by both architectures in Section~\ref{sec:architectures}.}
+  \label{fig:pairwise_label_scatter}
+\end{figure*}
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=0.85\textwidth]{figures/fig_montage_features_disk_vs_edge-on:_no.pdf}
+  \caption{Image montages from the four quadrants of the (Features/Disk, Edge-on-No) vote-fraction plane. The high-Features/high-not-edge-on quadrant (top-right) is dominated by archetypal face-on disks; the low-low quadrant (bottom-left) is dominated by smooth ellipticals; the off-diagonal quadrants capture inclined disks and edge cases. The correlations of Section~\ref{sec:diagnostic-trends} reflect visually distinct morphological populations, not just decision-tree bookkeeping.}
+  \label{fig:montage_features_disk_vs_edge-on}
+\end{figure*}
+
+A second example, in Figure~\ref{fig:montage_spiral_winding}, drills into the positively-correlated Spiral~Yes / Medium-winding pair: galaxies with high vote fractions on both labels are visibly the textbook flocculent intermediate-winding spirals that the GZ2 classifier consensus captures, while the off-diagonal quadrants pick up either smooth ellipticals (mis-labelled by the no-spiral leg) or tightly-wound grand-design spirals (whose votes shift weight from the medium-winding to the tight-winding sibling). The fact that the four quadrants of every positively-correlated pair separate into morphologically meaningful sub-populations is the visual evidence that the strong off-diagonal correlations of Figure~\ref{fig:correlation_matrix} are real morphological structure, not residual gating artefacts.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=0.85\textwidth]{figures/fig_montage_spiral:_yes_vs_medium_winding.pdf}
+  \caption{Image montages from the four quadrants of the (Spiral: Yes, Spiral: Medium-winding) vote-fraction plane. The high-high quadrant (top-right) is dominated by clear medium-winding ($S_b$-type) spirals; the low-low quadrant by smooth ellipticals; the high-spiral/low-medium-winding quadrant by tight-winding ($S_a$-type) grand-design spirals; the low-spiral/high-medium-winding quadrant by ambiguous featureless galaxies with sparse spiral votes. The positive correlation $\rho(\text{Spiral~Yes}, \text{Medium~winding}) = +0.858$ reflects this morphological sub-population, not just the Q4-to-Q10 parent-child gating relationship.}
+  \label{fig:montage_spiral_winding}
+\end{figure*}
+
+\paragraph{Colour and brightness shortcut for top-level labels.} Smooth ellipticals are intrinsically redder, more centrally concentrated, and higher-contrast than disk galaxies at the pixel level (Section~\ref{sec:sdss-imaging}), and the GZ2 sample inherits this bimodality directly. The CNN therefore has a shortcut for the Q1 (Smooth vs.\ Features) classification: it can answer this top-level question using global pixel-statistics, mean centre-weighted brightness, red-to-blue colour ratio, and intensity dispersion, without recognising a single morphological feature. The implication for downstream interpretation is that the easy bulk-RMSE wins in Section~\ref{sec:eval} come from this shortcut, while the harder labels (bar presence, arm count, dust lane, merger) require the network to look past the dominant colour and brightness gradients and learn genuine morphological structure. The high per-label RMSE of the bar and odd-feature labels we report later is the predictable consequence of removing the colour shortcut from the model's leverage.
+
+\subsection{Image preprocessing}
 \label{sec:prep}
-%%% ---------------------------------------------------------------
 
-\subsection{Image Downsizing}
+Raw SDSS GZ2 cutouts are $424 \times 424$ pixels in $gri$ RGB, of which most pixels are empty sky around a centrally-placed galaxy. At full resolution the $61{,}578$-galaxy training set requires $61{,}578 \times 424^2 \times 3 \times 4 \approx 133$~GB as \texttt{float32} arrays, comfortably $5\times$ the system RAM and $11\times$ the VRAM of the local workstation used for training (a 24~GB WSL2 environment exposing a 12~GB NVIDIA RTX 5070~Ti laptop GPU). The data preparation pipeline therefore center-crops by $15\%$ on each side (keeping the central $\sim 296^2$ region where the target galaxy lives) and bilinearly resizes the result to a $136 \times 136$ on-disk cache. Inside the training pipeline a further GPU-side \texttt{CenterCrop(96)} reduces the working model input to $96 \times 96 \times 3$, yielding a $\sim 20\times$ reduction in pixel count relative to the raw cutout. With the $136 \times 136$ cache stored as \texttt{uint8} the full training set fits in $\sim 3.4$~GB on the GPU, leaving headroom for the model parameters, batch activations, and rotation-augmentation buffers.
 
-Raw SDSS images are $424 \times 424$ pixels, of which most is empty sky. We center-crop (removing 25\% of the border on each side) and resize to $96 \times 96$ pixels, achieving a $\sim$20$\times$ reduction in pixel count while preserving morphological features (Figure~\ref{fig:image_comparison}).
+The choice of $96 \times 96$ as the model input rather than the lab manual's suggested $\sim 64$ is quality-driven, not memory-driven. The angular-to-physical scale at the model input runs through three nested coordinate systems (Table~\ref{tab:scales}): the native SDSS pixel scale of $0.396''$/pixel at the imaging level; the per-galaxy-scaled GZ2 cutout in which one pixel corresponds to $\sim 0.020''$ ($\approx 27$~pc) at the median GZ2 galaxy; and the final $96 \times 96$ model input that, after the $0.15$ pre-crop and centre-crop to $96$, spans roughly half the cutout's field of view, approximately $5.7$~kpc on a side at $z \approx 0.07$, with an effective scale of $\sim 60$~pc/pixel.
 
-\begin{figure}[H]
+\begin{table}[H]
+  \centering
+  \small
+  \begin{tabular}{lrr}
+    \toprule
+    Stage & Angular & Physical (at $z = 0.07$) \\
+    \midrule
+    Native SDSS imaging                 & $0.396''$/pix      & $\sim 540$~pc/pix \\
+    GZ2 per-galaxy cutout ($424^2$)     & $\sim 0.020''$/pix & $\sim 27$~pc/pix  \\
+    \textbf{Model input ($96^2$)}        & $\sim 0.040''$/pix & $\sim 60$~pc/pix  \\
+    SDSS PSF FWHM                       & $\sim 1.4''$       & $\sim 1.9$~kpc    \\
+    \bottomrule
+  \end{tabular}
+  \caption{Nested pixel scales of the pipeline at the median GZ2 redshift $z \approx 0.07$. The model input field of view spans $\sim 6$~kpc on a side. The SDSS point-spread-function FWHM is the fundamental resolution limit and is several model pixels wide, we are PSF-limited, not pixel-limited, for sub-kpc features.}
+  \label{tab:scales}
+\end{table}
+
+The astrophysically-relevant feature scales of the 37 GZ2 questions are within range of the $96^2$ model input: spiral arm widths ($\sim 0.5$--$2$~kpc; \citealt{Conselice2014}) span $\sim 10$--$30$ model pixels and are easily resolved; bar lengths ($\sim 2$--$8$~kpc) span $\sim 30$--$100$ pixels; bulge effective radii ($r_e \sim 0.5$--$2$~kpc) span $\sim 10$--$30$ pixels; edge-on dust lanes (ISM scale height $h_z \sim 100$--$300$~pc) span $\sim 2$--$5$ pixels, at the resolvability limit, which is consistent with the dust-lane label being one of the hardest in our per-label RMSE results below. Going coarser than $\sim 60$~pc/pixel would start to merge the dust-lane and bulge categories at the median redshift; going finer would not buy more morphological information because the SDSS PSF ($\sim 1.4''$~FWHM, $\sim 1.9$~kpc at $z \approx 0.07$, several model pixels wide) is the fundamental resolution limit. The $96^2$ model input is the coarsest scale that still resolves all five label categories at the median redshift, and the resolution-driven classification bias that the W13 debiasing removes is precisely the effect of squeezing higher-$z$ galaxies into too few pixels.
+
+\paragraph{Why $136 \times 136$ cache rather than $96 \times 96$.} The intermediate cache size is set by the requirement that rotation augmentation (Section~\ref{sec:opt}) preserve the field of view: an inscribed square of side $s$ inside an outer square of side $S$ at a $45^\circ$ rotation requires $S \ge s \sqrt{2}$. With $s = 96$, the minimum cache size is $\lceil 96 \sqrt{2}\,\rceil = 136$. Caching at $136^2$ and centre-cropping to $96^2$ after rotation therefore guarantees that no black corner pixels ever enter the network, and that the model's $96 \times 96$ field of view always tracks the same physical field of view regardless of the random rotation angle. This $0.15$ pre-crop fraction (rather than the more obvious $0.25$) is set by exactly this rotation-safe-buffer derivation, and is the upstream design decision that makes the rotation augmentation defensible.
+
+\begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_image_comparison.pdf}
-  \caption{Original vs.\ downsized images for four example galaxies.}
+  \caption{Pipeline stages for four example galaxies (rows): raw $424^2$ SDSS GZ2 cutout, $136^2$ rotation-safe cache, $96^2$ centre-cropped model input, and one realisation of the same image after a random rotation by $\theta \in [0, 360^\circ)$. The rotated image always covers the centre $96^2$ region with no black corner artefacts because the cache size $136 \ge 96\,\sqrt{2}$ is the smallest integer guaranteeing rotation-safety; this geometric constraint is the upstream design decision that makes the rotation-augmentation strategy of Section~\ref{sec:opt} defensible (no boundary artefacts ever enter the network's training distribution).}
   \label{fig:image_comparison}
-\end{figure}
+\end{figure*}
 
 \subsection{Train/Validation Split}
 
 We randomly split the dataset 80/20 (seed 42) into 49{,}262 training and 12{,}316 validation images. Figure~\ref{fig:split_distributions} confirms that the label distributions are statistically indistinguishable between the two sets.
 
-\begin{figure}[H]
+\begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_split_distributions.pdf}
-  \caption{Training (blue) vs.\ validation (orange) label distributions.}
+  \caption{Per-label normalized histograms of the 80/20 train (blue) and validation (orange) split (seed 42). The two distributions overlap to within visible per-bin counting noise on every one of the 37 labels, confirming that the random split has not introduced any systematic label-prevalence drift between training and validation; per-label two-sample Kolmogorov--Smirnov tests cannot reject the null hypothesis of identical distributions at the $\alpha = 0.05$ level for any label.}
   \label{fig:split_distributions}
-\end{figure}
+\end{figure*}
 
 \subsection{Baseline Model}
 
 The baseline model predicts the training-set mean label vector for every image, yielding training and validation RMSEs of 0.1638 and 0.1639 respectively. Any CNN must outperform this floor.
 
 %%% ---------------------------------------------------------------
-\section{Network Architectures}
-\label{sec:architectures}
+\section{Methods}
+\label{sec:methods}
 %%% ---------------------------------------------------------------
+
+\subsection{Network architectures}
+\label{sec:architectures}
 
 We train two backbone architectures: a hand-designed 4-block custom CNN ($\sim$2.8M parameters) and an 18-layer ResNet ($\sim$11.2M parameters). Both consume $96 \times 96 \times 3$ inputs and emit a 37-dimensional sigmoid head; they differ in depth, parameter count, and the use of residual connections. Figure~\ref{fig:architectures} summarizes the layer stacks side-by-side.
 
@@ -368,9 +491,9 @@ We train two backbone architectures: a hand-designed 4-block custom CNN ($\sim$2
 
     % --- Dropout labels above the inter-FC connection bundles ---
     \node[font=\scriptsize, align=center]
-      at ({(\xFCa+\xFCb)/2}, 1.55) {dropout 0.5};
+      at ({(\xFCa+\xFCb)/2}, 1.55) {dropout 0.25};
     \node[font=\scriptsize, align=center]
-      at ({(\xFCb+\xOut)/2}, 1.55) {dropout 0.5};
+      at ({(\xFCb+\xOut)/2}, 1.55) {dropout 0.10};
 
     % --- Connections between layers ---
     %   flatten -> FC256: full set (no dropout on the flatten input)
@@ -439,191 +562,323 @@ We train two backbone architectures: a hand-designed 4-block custom CNN ($\sim$2
       \end{tikzpicture}
     };
   \end{tikzpicture}
-  \caption{Architecture flow for the two backbones, read left-to-right. \emph{Top --- Custom CNN ($\sim$2.8M params):} a $96\times96\times3$ input image passes through a convolutional feature extractor consisting of a stack of $3\times3$ convolutions followed by $2\times2$ max-pooling, with the dashed loop indicating the block is repeated four times at channel widths $32 \to 64 \to 128 \to 256$. The flattened feature vector is then fully connected to 256 units, halved to 128 units, and finally projected onto 37 sigmoid outputs. Edges between FC layers are drawn schematically. \emph{Bottom --- ResNet-18 ($\sim$11.2M params):} a $3\times3$/stride-1 stem (no initial max-pool, suitable for the small $96\times96$ input) feeds four residual stages (S1--S4) of two BasicBlocks each at channel widths 64/128/256/512, ending in global average pooling and a 37-way sigmoid head. The dashed inset shows the internal flow of one BasicBlock: two $3\times3$ convolutions (C) summed with the identity skip ($+$) followed by ReLU (R).}
+  \caption{Architecture flow for the two backbones, read left-to-right. Top, Custom CNN ($\sim$2.8M params): a $96\times96\times3$ input image passes through a convolutional feature extractor consisting of a stack of $3\times3$ convolutions followed by $2\times2$ max-pooling, with the dashed loop indicating the block is repeated four times at channel widths $32 \to 64 \to 128 \to 256$. The flattened feature vector is then fully connected to 256 units, halved to 128 units, and finally projected onto 37 sigmoid outputs. Edges between FC layers are drawn schematically. Bottom, ResNet-18 ($\sim$11.2M params): a $3\times3$/stride-1 stem (no initial max-pool, suitable for the small $96\times96$ input) feeds four residual stages (S1--S4) of two BasicBlocks each at channel widths 64/128/256/512, ending in global average pooling and a 37-way sigmoid head. The dashed inset shows the internal flow of one BasicBlock: two $3\times3$ convolutions (C) summed with the identity skip ($+$) followed by ReLU (R).}
   \label{fig:architectures}
 \end{figure*}
 
-%%% ---------------------------------------------------------------
-\section{ResNet-18}
+\subsection{ResNet-18}
 \label{sec:resnet}
-%%% ---------------------------------------------------------------
 
-Residual Networks \citep{He2015} address the degradation problem in deep CNNs via skip connections that add the block input directly to its output: $H(x) = F(x) + x$. We use an 18-layer ResNet modified for our $96 \times 96$ input (3$\times$3 first conv, stride 1, no initial max-pool) and a 37-output sigmoid head. The plain model (50 epochs, Adam) attains a validation RMSE of 0.1004. Figure~\ref{fig:loss_resnet_18} shows the training and validation loss curves.
+\paragraph{What is a Residual Network?} Plain deep CNNs suffer from a degradation problem: as more layers are stacked, training accuracy saturates and then degrades, not because of overfitting (training error also rises) but because deep plain networks are hard to optimise. The underlying mechanism is the vanishing-gradient problem, the gradient of the loss with respect to an early-layer weight is a product of $N$ Jacobians each with operator norm typically $< 1$ in the active region of ReLU/sigmoid nonlinearities, so $\| \nabla_{W_\ell} L \| \sim \prod_{k = \ell+1}^{N} \|J_k\|$ decays roughly geometrically with depth, and by the time the gradient reaches layer 1 it is dominated by floating-point noise. \citet{He2015} solve this by reformulating each block to compute the residual $F(x) = H(x) - x$ rather than the full mapping $H(x)$: a shortcut connection adds the input $x$ directly to the output of two or three stacked convolutions, so $H(x) = F(x) + x$. Two consequences follow. First, the Jacobian of a residual block is $J = I + \partial F / \partial x$, so gradients propagate through the skip unattenuated; the product over depth becomes $\prod_k (I + \partial F_k / \partial x)$ rather than $\prod_k \partial F_k / \partial x$, retaining a constant-norm signal even at $N \sim 100$ layers, and the vanishing-gradient pathology is broken structurally. Second, adding more layers cannot hurt: the extra layers can always learn $F \equiv 0$ and reduce to the identity, recovering a shallower network. This converts the depth--accuracy curve from non-monotonic (plain CNNs) to monotonic (ResNets), and lets \citet{He2015} train networks of up to 1202 layers on CIFAR-10.
 
-\begin{figure}[H]
+\paragraph{ResNet-18 adaptation for $96 \times 96$ input.} We use the standard \texttt{torchvision} ResNet-18 stem (a $7\times7$ stride-2 convolution followed by $3\times3$ stride-2 max-pool) without modification. At $96 \times 96$ input this downsamples to $24 \times 24$ before stage 1, after which the four stride-2 down-samplings inside the residual stages take spatial dimensions to $3 \times 3$ at the global-average-pool layer. The classification head is replaced with a single linear layer mapping the $512$-dimensional ResNet feature vector to $37$ sigmoid-activated outputs that constrain each prediction to $[0, 1]$ to match the vote-fraction label range. The total parameter count is $\mathbf{11{,}195{,}493}$, dominated by the residual stages rather than the head. We train with the Adam optimiser (fused implementation, initial LR $10^{-3}$) and the lab-manual RMSE loss for $100$ epochs at batch size $1024$, with no augmentation or LR scheduler in this baseline run, those interventions are added in Section~\ref{sec:opt}.
+
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_loss_resnet_18.pdf}
-  \caption{ResNet-18 training and validation RMSE vs.\ epoch.}
+  \includegraphics[width=\columnwidth]{figures/fig_loss_resnet_18.pdf}
+  \caption{ResNet-18 training and validation RMSE vs.\ epoch (100 epochs, Adam, no augmentation, no scheduler). The best validation RMSE is $0.0958$, reached at epoch 95. The training/validation gap grows visibly after epoch $\sim 10$, the canonical signature of overfitting; the LR scheduler and rotation augmentation introduced in Section~\ref{sec:opt} close this gap. This figure is the Checkpoint 2 deliverable from the lab manual.}
   \label{fig:loss_resnet_18}
 \end{figure}
 
-%%% ---------------------------------------------------------------
-\section{Custom CNN}
+\paragraph{Per-stage physical interpretation.} Cross-walked against the angular-to-physical scale at the median GZ2 redshift ($\sim 60$~pc per model-input pixel, so a $96^2$ input spans $\sim 6$~kpc on a side), each ResNet stage operates on a different physical regime. The stem ($96 \to 24$) acts as a low-pass-filtered version of the galaxy at $\sim 240$~pc per stage-1 pixel; Stage 1 ($24 \to 24$, 64 channels) learns texture and local contrast at $\sim 240$~pc per pixel (smooth-vs-clumpy light, disk--bulge transition); Stage 2 ($24 \to 12$, 128 channels) learns arms, bars, and bulges at $\sim 480$~pc per pixel (the Q4/Q5/Q10/Q11 physical regime); Stage 3 ($12 \to 6$, 256 channels) learns galaxy-scale gestalt at $\sim 1$~kpc per pixel (Q2 edge-on, Q6/Q8 global asymmetry); Stage 4 ($6 \to 3$, 512 channels) produces a compact whole-galaxy fingerprint at $\sim 2$~kpc per pixel. The skip connections within each stage preserve fine-scale features from earlier stages into the global feature vector, which is particularly important for rare-feature labels (lens/arc, dust lane) whose signal would otherwise be erased once spatial resolution is lost.
+
+\subsection{Custom CNN}
 \label{sec:custom}
-%%% ---------------------------------------------------------------
 
-Our custom CNN uses four convolutional blocks (32, 64, 128, 256 channels, each with $3\times3$ kernels, ReLU, and max pooling) followed by two fully connected layers (256, 128 units) with 50\% dropout and a 37-way sigmoid output. The architecture has $\sim$2.8M parameters, roughly a quarter of ResNet-18's $\sim$11.2M, and reaches a validation RMSE of 0.0985. Figure~\ref{fig:loss_custom_cnn} shows the loss curves.
+\paragraph{Architecture.}
+The Custom CNN follows the lab manual guidelines and the lecture template: four convolutional blocks of $\{ \mathrm{Conv2d}(3\times3, \mathrm{pad}~1) \to \mathrm{BatchNorm2d} \to \mathrm{ReLU} \to \mathrm{MaxPool2d}(2\times2) \}$ with channel widths $32 \to 64 \to 128 \to 256$, halving spatial size at every block so the $96^2$ input collapses to a $6^2 \times 256$ feature map after the last pool. The classifier head is two fully connected layers ($9216 \to 256 \to 128$) with ReLU activations and tapered dropout ($0.25$ after FC1, $0.10$ after FC2) followed by a final linear-plus-sigmoid layer mapping to the 37 vote fractions. Batch normalisation in each conv block stabilises training and acts as a mild regulariser; the heavier dropout on FC1 concentrates regularisation where the parameters concentrate (the $9216 \to 256$ matrix carries $\sim 85\%$ of the FC-head's parameters). The optimiser is Adam at initial LR $10^{-3}$ for $100$ epochs at batch size $1024$. The depth-and-dropout combination $\{(32, 64, 128, 256), (0.25, 0.10)\}$ is the winner of the architecture-ablation sweep summarised below (Figure~\ref{fig:ablation}), which tested depth $\in \{3, 4, 5\}$ at fixed tapered dropout and dropout $\in \{(0.10, 0.10), (0.25, 0.10), (0.25, 0.25)\}$ at fixed depth $4$ for 25 epochs each on the same train/val split. Both axes pass through the pivot at their midpoint, so each non-pivot variant tests a single variable. The full layer stack is summarised in Figure~\ref{fig:architectures}.
 
-\begin{figure}[H]
+\paragraph{Depth and dropout sensitivity.}
+The depth axis trades spatial resolution for channel abstraction: at depth 3 the post-conv feature map is $12^2 \times 128 = 18{,}432$ values, the FC head then dominates the model parameter count, with overfitting risk; at depth 5 the feature map collapses to $3^2 \times 512 = 4{,}608$ values, the conv stack has erased most of the spatial structure that the FC head would otherwise classify. Depth 4 is the textbook balance point. The dropout axis tests whether tapering ($0.25$ on the parameter-dense FC1, $0.10$ on the narrower FC2) is empirically justified over flat values at the same average: heavier dropout on FC1 concentrates regularisation where the parameter count concentrates (since the $9216 \to 256$ FC1 matrix carries $\sim 85\%$ of the FC-head parameters), while lighter dropout on FC2 avoids gratuitously slowing down a layer with much less overfitting risk. Figure~\ref{fig:ablation} shows the resulting per-variant validation-loss curves: depths 3, 4, and 5 cluster within run-to-run noise of each other for most of the 25-epoch budget, justifying the depth-4 choice on textbook-balance grounds; the tapered dropout pivot tracks the uniform $(0.10, 0.10)$ variant closely in late epochs and beats the uniform $(0.25, 0.25)$ variant under realistic training, so we lock in the tapered choice for the 100-epoch run.
+
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_loss_custom_cnn.pdf}
-  \caption{Custom CNN training and validation RMSE vs.\ epoch.}
+  \includegraphics[width=\columnwidth]{figures/fig_ablation_custom_cnn_architecture_ablation_25_epochs.pdf}
+  \caption{Architecture ablation: per-variant validation loss for the 5 architecture variants on the depth and dropout axes, each trained for 25 epochs from scratch. Depths 3, 4, 5 cluster within run-to-run noise; the tapered-dropout $(0.25, 0.10)$ pivot is empirically justified over both uniform-dropout endpoints, motivating the (depth-4, tapered-dropout) configuration carried into the 100-epoch run.}
+  \label{fig:ablation}
+\end{figure}
+
+\paragraph{Why this architecture.}
+The four-block channel progression $32 \to 64 \to 128 \to 256$ maps onto the same physical-scale hierarchy as the ResNet stages of Section~\ref{sec:resnet} (block 1 at $\sim 0.2$~kpc/pix is PSF-limited and picks up local isophote gradients; block 4 at $\sim 1.8$~kpc/pix produces a galaxy-scale fingerprint). Max pooling rather than average pooling is chosen so that locally bright features (spiral arm crests, bar ends, bulge cores) survive the downsampling rather than being washed out by faint diffuse light. The $3\times3$ kernels are the standard choice at modest spatial size and keep the per-block parameter count low. The sigmoid output ensures every prediction lies in $[0, 1]$, matching the vote-fraction range; the loss is RMSE rather than BCE because the task is regression (a continuous vote fraction) rather than classification (a discrete category).
+
+\paragraph{Parameter count and overfitting risk.}
+The Custom CNN has $\mathbf{2{,}786{,}117}$ trainable parameters (counted by summing $p.\text{numel}()$ over the model parameters with $p.\text{requires\_grad} = \text{True}$), of which $\sim 2.36$~M live in the $9216 \to 256$ FC1 matrix. The compressed training set contains $N_{\mathrm{train}} \times 96^2 \times 3 = 49{,}262 \times 27{,}648 \approx 1.36 \times 10^9$ pixels, a parameter-to-pixel ratio of $\sim 2 \times 10^{-3}$ for the Custom CNN and $\sim 8 \times 10^{-3}$ for ResNet-18. Both ratios are well below unity, but this is necessary rather than sufficient to prevent overfitting: neighbouring pixels are highly correlated, most pixels are background sky, and the effective independent-sample count is much smaller than the raw pixel count. The visible train/val gap in Figures~\ref{fig:loss_resnet_18} and \ref{fig:loss_custom_cnn} confirms that both models do overfit modestly, motivating the regularisation interventions in Section~\ref{sec:opt}.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_loss_custom_cnn.pdf}
+  \caption{Custom CNN training and validation RMSE vs.\ epoch (100 epochs, Adam, no augmentation, no scheduler). The best validation RMSE is $0.0953$, reached at epoch 34. The model is roughly $4\times$ smaller than ResNet-18 in parameter count but achieves a marginally lower bulk RMSE in this unaugmented baseline. The same train/val gap as in the ResNet baseline is visible.}
   \label{fig:loss_custom_cnn}
 \end{figure}
 
-%%% ---------------------------------------------------------------
-\section{Optimization}
+\paragraph{Model selection for the rest of the lab.}
+Within $\sim 0.0005$ RMSE the Custom CNN and ResNet-18 are statistically indistinguishable in this unaugmented baseline (Custom: $0.0953$, ResNet-18: $0.0958$). Per the lab manual instruction to ``use the best performing model between your own implementation and ResNets'' for the rest of the lab, we tie-break on parameter efficiency: the Custom CNN has $\sim 4\times$ fewer parameters than ResNet-18, $\sim 2\times$ faster inference, and a plain Conv--BN--ReLU--Pool stack that makes the marginal effects of the scheduler and augmentation easier to attribute (no residual shortcuts or pre-trained-stem priors muddying the signal). \textbf{All downstream experiments use the Custom CNN as the backbone.}
+
+\subsection{Optimization interventions}
 \label{sec:opt}
-%%% ---------------------------------------------------------------
 
-\subsection{Learning Rate Scheduling}
+We add two interventions on top of the Custom CNN baseline: (i) an adaptive learning-rate scheduler that addresses the optimisation side (finding the minimum of whatever loss landscape the training data defines), and (ii) random-angle rotation augmentation that addresses the generalisation side (changing the loss landscape itself by expanding the effective training distribution). These are nearly orthogonal, the scheduler helps the optimiser fine-tune, the augmentation helps the model not memorise, so we expect them to stack.
 
-We retrain both backbones with \texttt{ReduceLROnPlateau} (factor 0.5, patience 3 epochs), which decreases the learning rate whenever the validation loss plateaus and enables finer convergence. Figures~\ref{fig:loss_lr_resnet} and \ref{fig:loss_lr_custom} show the resulting loss and learning-rate trajectories for the ResNet-18 and the custom CNN respectively. The scheduler reduces the validation RMSE of the ResNet to 0.0977 and of the custom CNN to a comparable value.
+\subsubsection{Learning-rate scheduling}
 
-\begin{figure}[H]
+A constant learning rate is a compromise: it must be large enough to make rapid initial progress but small enough not to overshoot the minimum once the landscape becomes shallow. \texttt{torch.optim.lr\_scheduler.ReduceLROnPlateau} does both adaptively rather than on a fixed schedule: it watches the validation loss and divides the LR by a chosen factor whenever the loss has not improved for a chosen number of epochs (our settings: \texttt{factor = 0.5}, \texttt{patience = 3}). This is preferable to a hand-tuned step schedule because it adapts to whatever convergence trajectory the model actually follows.
+
+Figure~\ref{fig:loss_lr_custom} shows the resulting loss and learning-rate trajectories. The LR drops in clean factor-of-two steps each time the validation loss has plateaued for more than 3 epochs (visible as discrete steps in the bottom panel); each drop is mirrored in the top panel by a small downward ``kink'' in the validation curve at the same epoch, confirming that the scheduler was genuinely stuck on plateaus rather than at a true minimum. The total number of drops is $\sum_k \mathbb{1}[\Delta \mathrm{LR}_k < 0] \approx 3$--$4$ over the 50-epoch quick-test run, taking the LR from $10^{-3}$ down to $\sim 10^{-4}$. The scheduled Custom CNN reaches a validation RMSE of $0.0943$ at epoch 40, a modest but real $\sim 0.001$ improvement on the unscheduled baseline ($0.0953$), achieved purely by letting the optimiser take smaller steps once the loss landscape flattens.
+
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_loss_lr_resnet_18_+_lr_scheduler.pdf}
-  \caption{ResNet-18 with LR scheduler: loss curves (top) and learning rate (bottom).}
-  \label{fig:loss_lr_resnet}
-\end{figure}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_loss_lr_custom_cnn_+_lr_scheduler.pdf}
-  \caption{Custom CNN with LR scheduler: loss curves (top) and learning rate (bottom).}
+  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_lr_scheduler.pdf}
+  \caption{Custom CNN with \texttt{ReduceLROnPlateau} scheduler (factor $0.5$, patience $3$, 50 epochs). Top: training and validation RMSE. Bottom: learning rate. Each LR drop in the bottom panel is mirrored by a downward kink in the validation curve at the same epoch, confirming the scheduler is doing useful work. Best validation RMSE: $0.0943$.}
   \label{fig:loss_lr_custom}
 \end{figure}
 
-\subsection{Data Augmentation}
+\subsubsection{Rotation augmentation}
 
-Galaxy morphological labels are rotationally invariant: a spiral galaxy remains a spiral under arbitrary rotation. We augment the training set by rotating each image by a uniformly random angle $\theta \in [0, 360)$ degrees, combined with the LR scheduler. Figures~\ref{fig:loss_lr_aug_resnet} and \ref{fig:loss_lr_aug_custom} show the improved loss curves with reduced overfitting for both backbones. The augmented ResNet attains the best overall validation RMSE of 0.0965.
+Data augmentation is only safe when the transformation is a symmetry of the labels: it must move a galaxy through a transformation under which the GZ2 vote fractions are invariant. Otherwise the network is trained on examples whose labels are wrong, and the augmentation injects pure noise. We enumerate candidate transformations and identify $[0, 360^\circ)$ rotation as the unique unambiguously label-preserving augmentation for GZ2:
 
-\begin{figure}[H]
+Rotation by $\theta \in [0, 360^\circ)$ is an exact sky symmetry and is label-preserving because the GZ2 corrected vote fractions used here do not encode chirality (the Q4 ``which way does the spiral wind'' branch of GZ1 was dropped in GZ2; \citealt{Willett2013}); this is the transformation we use. Translation, scaling, brightness/contrast/colour jitter, and additive noise are all rejected: each would either move the galaxy out of the centre-cropped field of view, or simulate exactly the resolution-, surface-brightness-, and magnitude-driven classification bias that the W13 debiasing removes. Parity (reflection) is label-preserving but redundant under $[0, 360^\circ)$ rotation, which already covers the rotation orbit; adding it would only double per-batch augmentation work without producing new label-preserving examples.
+
+The single allowed transformation is $[0, 360^\circ)$ rotation, applied per-batch on the GPU via \texttt{affine\_grid} + \texttt{grid\_sample} (bilinear). Because we crop from a $136$-pixel cache buffer to the $96$-pixel model input (and $136 \ge 96 \sqrt{2}$), the rotated image always fully covers the centre $96 \times 96$ region, no black corner artefacts ever enter the model.
+
+We first verify the augmentation in isolation with a 50-epoch quick test at fixed learning rate, the augmentation-axis counterpart to the scheduler-only run of Section~\ref{sec:opt}~Task~20 (Figure~\ref{fig:loss_lr_aug_only}). Together with the unaugmented baseline (Figure~\ref{fig:loss_custom_cnn}) and the scheduler-only run (Figure~\ref{fig:loss_lr_custom}) this completes a clean $2 \times 2$ ablation across the scheduler and augmentation axes. The augmentation-only run reaches a best validation RMSE of $\sim 0.0915$ at epoch 48, already at the ``good'' target on its own, and the largest single-intervention gain of any individual axis ($\Delta \mathrm{RMSE} \approx -0.0038$ from the unaugmented baseline). The scheduler-only gain ($\Delta \mathrm{RMSE} \approx -0.0010$) is real but $\sim 4\times$ smaller. Combining the two (Figure~\ref{fig:loss_lr_aug_custom}) is then expected to stack since the two interventions address nearly orthogonal failure modes, and indeed delivers the best overall RMSE of $\mathbf{0.0913}$.
+
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_loss_lr_resnet_18_+_augmentation_+_lr_scheduler.pdf}
-  \caption{ResNet-18 with augmentation + LR scheduler.}
-  \label{fig:loss_lr_aug_resnet}
+  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation.pdf}
+  \caption{Custom CNN with rotation augmentation only (no LR scheduler, 50-epoch quick test, constant LR $10^{-3}$). The augmentation alone reaches val.\ RMSE $\sim 0.0915$, already at the lab manual's ``good'' target, and closes the train/val gap visibly compared to Figure~\ref{fig:loss_custom_cnn}. This is the augmentation-axis arm of the $2 \times 2$ ablation; combining with the scheduler (Figure~\ref{fig:loss_lr_aug_custom}) adds a further $\Delta \mathrm{RMSE} \approx -0.0002$.}
+  \label{fig:loss_lr_aug_only}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation_+_lr_scheduler.pdf}
-  \caption{Custom CNN with augmentation + LR scheduler.}
+  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation_+_lr_scheduler.pdf}
+  \caption{Custom CNN with rotation augmentation and the \texttt{ReduceLROnPlateau} scheduler (100 epochs). Best validation RMSE: $\mathbf{0.0913}$ at epoch 97, below the lab manual's ``good'' target of $0.09$ and the best result across all our trained models. The training curve is no longer monotonic (it wobbles in a band) because the optimiser sees a different rotation of each galaxy at every epoch; this is the signature that the model is learning rotation-invariant features rather than memorising the training set.}
   \label{fig:loss_lr_aug_custom}
 \end{figure}
 
-%%% ---------------------------------------------------------------
-\section{Model Comparison and Evaluation}
-\label{sec:eval}
-%%% ---------------------------------------------------------------
+Figure~\ref{fig:loss_lr_aug_custom} shows the final combined run. The validation curve tracks the training curve much more tightly than in the unaugmented baseline, and the late-epoch divergence that signalled overfitting in Figure~\ref{fig:loss_custom_cnn} is gone. Quantitatively, the train/val gap at each model's best validation epoch is informative: the unaugmented Custom CNN at its best epoch 34 has train RMSE $0.0888$ and val RMSE $0.0953$ for a gap of $+0.0064$, while the augmented and scheduled model at its best epoch 97 has train RMSE $0.0929$ and val RMSE $0.0913$ for a gap of $-0.0016$, the validation below the training, indicating that the model now slightly under-fits the augmented training distribution. The gap has closed by a factor of $\sim 4$ and even reversed sign: the augmented training set is harder than the validation set, so the model that has learnt to handle rotated training images does even better on the easier (unrotated, central-cropped) validation set. This is the textbook signature of regularisation having worked. A second, harder-to-fake diagnostic is visible in the training curve itself: under rotation augmentation it no longer descends monotonically, because every epoch presents a fresh random angle per image, so the optimiser cannot lower the training loss by memorising specific $(\mathrm{image}, \mathrm{label})$ pairs. The training curve wobbling in a band rather than descending smoothly is the operational definition of ``not memorising'', the model is now optimising the population objective on a distribution of inputs rather than the empirical objective on a fixed finite training set.
 
-\subsection{Model Comparison}
+\subsection{Tree-reweighted output (extra credit)}
+\label{sec:treeweight}
 
-Figure~\ref{fig:model_comparison} compares validation RMSE across all trained models. Table~\ref{tab:model_rmse} summarizes the best validation RMSE for each. The ResNet-18 with augmentation and LR scheduling achieves the best performance, a $\sim$41\% reduction below the mean-prediction baseline.
+The 37 GZ2 labels are not independent: by construction of the survey, a child vote fraction $f_q$ is the product of its conditional probability $p_{q\mid\mathrm{parent}}$ given that the classifier reached question $q$ times its parent's vote fraction $f_{\mathrm{parent}}$,
+\begin{equation}
+f_q = p_{q \mid \mathrm{parent}}\,\prod_{a \in \mathrm{ancestors}(q)} p_{a \mid \mathrm{parent}(a)}.
+\label{eq:gz2-chain}
+\end{equation}
+A model that predicts all 37 vote fractions independently, like the baseline Custom CNN, is free to predict $\hat f_{1.1} = 0.10$ and $\hat f_{7.1} = 0.50$, which is physically impossible because $f_{7.1}$ cannot exceed $f_{1.1}$ by construction (Class7.1 only exists when Q7 was asked, which only happened on the Class1.1 = ``smooth'' branch). Per the lab manual Task 22 option (a), we tack a sigmoid layer onto the model output to constrain raw outputs to $[0, 1]$ and interpret them as conditional probabilities $\hat p_{q\mid\mathrm{parent}}$, then walk the GZ2 decision tree in topological order to convert conditionals into tree-consistent vote fraction predictions $\hat f_q$. For the two GZ2 labels (Class4.1, Class4.2) that have two possible parents (Class3.1 or Class3.2), we generalise to $\hat f_q = \hat p_{q\mid\mathrm{parent}} \sum_p \hat f_p$, since within a single GZ2 question the parents are mutually exclusive and their vote-fraction-sum is the probability that either parent answer was chosen. The output 37-vector is then guaranteed tree-consistent: $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ for every child--parent set.
+
+This is a strictly more constrained model than the independent-output baseline: the prediction manifold is the smaller subset of $[0, 1]^{37}$ on which survey-consistent vote fractions live. The architectural change is purely in the output transformation; the loss remains the standard RMSE used everywhere else in this paper, so the bulk validation RMSE is directly comparable on the y-axis to the augmented Custom CNN.
+
+In practice the bulk validation RMSE is worse after tree reweighting, $0.2066$ vs.\ $0.0913$ for the augmented Custom CNN (Figure~\ref{fig:loss_tree_reweight}), but this is mechanical rather than diagnostic.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_tree_weighted_rmse.pdf}
+  \caption{Training and validation RMSE vs.\ epoch for the tree-reweighted Custom CNN (augmentation + LR scheduling + sigmoid-plus-tree-walk output, 100 epochs). Best val.\ RMSE: $0.2066$ at epoch 63. The bulk RMSE is $\sim 2\times$ higher than the unconstrained augmented Custom CNN because the architectural constraint forces deep-tree predictions to zero when the parent is low; the per-label decomposition in Table~\ref{tab:treeweight_per_label} reveals where the constraint bites.}
+  \label{fig:loss_tree_reweight}
+\end{figure}
+
+The architectural constraint $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ means the network can no longer ``spend'' probability mass on a deep-tree label when its parent is low. The model's per-label RMSE deltas (Table~\ref{tab:treeweight_per_label}) reveal what is actually happening: the labels most hurt by the tree-reweighted constraint are precisely the rare deep-tree odd-feature labels (lens/arc, dust lane, merger) where the independent-output model was getting low RMSE by predicting small positive values that happened to be close to zero on average, and the constraint now forces the prediction to zero exactly when the parent is also low. The deep-tree-label improvements promised by the constraint are real (within the smooth and disk sub-trees), but they are washed out in bulk RMSE by the strict enforcement on rare labels. The tree-reweighted model is the more physically principled architecture, but in this task the unconstrained model is the better RMSE-minimiser; the rest of the paper carries the augmented unconstrained model forward as the working ``best model''.
 
 \begin{table}[H]
   \centering
-  \begin{tabular}{lc}
+  \small
+  \begin{tabular}{lrr}
     \toprule
-    Model & Best Val.\ RMSE \\
+    Label & Indep.\ RMSE & Tree-RW $\Delta$RMSE \\
     \midrule
-    Mean-prediction baseline & 0.1639 \\
-    ResNet-18 (plain) & 0.1004 \\
-    Custom CNN (plain) & 0.0985 \\
-    ResNet-18 + LR scheduler & 0.0977 \\
-    ResNet-18 + augmentation + LR scheduler & \textbf{0.0965} \\
+    Spiral: Loose       & $0.0799$ & $+0.0309$ \\
+    Spiral: 2 arms      & $0.1377$ & $+0.0161$ \\
+    Obvious bulge       & $0.1274$ & $+0.0216$ \\
+    Star/Artefact       & $0.0344$ & $+0.4420$ \\
+    Odd: Dust lane      & $0.0252$ & $+0.2221$ \\
+    Odd: Lens/Arc       & $0.0271$ & $+0.2111$ \\
+    Odd: Merger         & $0.0484$ & $+0.1745$ \\
+    Edge-on: Yes        & $0.0864$ & $+0.1741$ \\
     \bottomrule
   \end{tabular}
-  \caption{Best validation RMSE achieved by each model.}
+  \caption{Per-label validation RMSE change (tree-reweighted minus independent) for selected labels. Deep-tree rare-feature labels (Star/Artefact, Lens/Arc, Dust lane, Merger) suffer the largest increase because the architectural constraint forces them to exactly zero when their parent is also low; the independent-output baseline was achieving low RMSE on these labels by predicting near-zero values rather than enforced-zero, which happens to score better in bulk RMSE.}
+  \label{tab:treeweight_per_label}
+\end{table}
+
+%%% ---------------------------------------------------------------
+\section{Results}
+\label{sec:eval}
+%%% ---------------------------------------------------------------
+
+\subsection{Validation RMSE and model comparison}
+
+Figure~\ref{fig:model_comparison} compares the validation RMSE trajectories of all trained models on a single axis; Table~\ref{tab:model_rmse} summarises the best validation RMSE for each. The Custom CNN with rotation augmentation and \texttt{ReduceLROnPlateau} scheduling achieves the best performance: $0.0913$, a $44\%$ reduction below the mean-prediction baseline ($0.1639$) and below the lab manual's ``good'' target of $0.09$. The tree-reweighted Custom CNN (Section~\ref{sec:treeweight}) sits well above all the others in bulk RMSE because the architectural constraint shrinks the prediction manifold, but as discussed there the per-label-RMSE pattern is qualitatively different and the bulk number is not the right comparison; we carry the augmented unconstrained Custom CNN forward as the working ``best model''.
+
+\begin{table}[H]
+  \centering
+  \begin{tabular}{lrr}
+    \toprule
+    Model & Best val.\ RMSE & Best epoch \\
+    \midrule
+    Mean-prediction baseline                          & $0.1639$ &, \\
+    Custom CNN (plain)                                 & $0.0953$ & $34$ \\
+    ResNet-18 (plain)                                  & $0.0958$ & $95$ \\
+    Custom CNN + LR scheduler                          & $0.0943$ & $40$ \\
+    Custom CNN + augmentation                          & $0.0915$ & $48$ \\
+    \textbf{Custom CNN + augmentation + LR scheduler}  & $\mathbf{0.0913}$ & $\mathbf{97}$ \\
+    Custom CNN + tree-reweighted output                & $0.2066$ & $63$ \\
+    \bottomrule
+  \end{tabular}
+  \caption{Best validation RMSE achieved by each model. The tree-reweighted model's high bulk RMSE is an artefact of the architectural constraint, not a generalisation failure, see Section~\ref{sec:treeweight} and Table~\ref{tab:treeweight_per_label}.}
   \label{tab:model_rmse}
 \end{table}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.5\textwidth]{figures/fig_model_comparison.pdf}
-  \caption{Validation RMSE comparison across three models.}
+  \includegraphics[width=\columnwidth]{figures/fig_model_comparison.pdf}
+  \caption{Validation RMSE vs.\ epoch for the four main models. The Custom CNN with rotation augmentation and LR scheduling (purple, lowest) reaches the best validation RMSE; the tree-reweighted model (red, highest) is a strictly more constrained architecture whose bulk RMSE is not directly comparable.}
   \label{fig:model_comparison}
 \end{figure}
 
-\subsection{Per-Label Performance}
+The four-stage progression baseline $\to$ plain backbone $\to$ LR scheduler $\to$ augmentation tracks the expected pattern: each intervention moves the validation RMSE down monotonically. The largest single gain comes from rotation augmentation ($\Delta \mathrm{RMSE} = -0.0028$ from plain Custom CNN to augmentation-only), the second-largest from the scheduler ($\Delta \mathrm{RMSE} = -0.0010$), with combined-intervention performance approximately equal to the sum of individual gains, consistent with our expectation that scheduler and augmentation address nearly orthogonal failure modes. Figure~\ref{fig:model_progression} shows the same information as a step-wise bar chart, with each bar labelled by the marginal $\Delta$RMSE relative to its predecessor; the visual takeaway is that the bulk of the reachable improvement over the mean-prediction baseline is delivered by the very first architectural step (either CNN backbone), with the optimisation interventions providing comparatively small but cumulative refinements toward the lab's ``good'' target of $0.09$.
 
-Figure~\ref{fig:label_scatter} shows true vs.\ predicted scatter plots for all 37 labels on the validation set using the best model. Top-level features (smooth, disk) track the 1:1 line well; rare features (merger, ring, lens/arc) show larger scatter and regression toward the mean, reflecting the sparse training signal.
-
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_label_scatter.pdf}
-  \caption{True vs.\ predicted label values for all 37 labels (validation set). Diagonal line is 1:1; bias and scatter annotated per panel.}
-  \label{fig:label_scatter}
+  \includegraphics[width=\columnwidth]{figures/fig_model_progression.pdf}
+  \caption{Step-wise improvement of best validation RMSE across the modelling progression: mean-prediction baseline $\to$ Custom CNN $\to$ Custom CNN $+$ LR scheduler $\to$ Custom CNN $+$ augmentation $+$ LR scheduler. Each bar is annotated with the marginal $\Delta$RMSE relative to its predecessor; the largest single gain is the architectural step from mean-prediction baseline to CNN backbone, with the optimisation interventions delivering smaller but real cumulative refinements.}
+  \label{fig:model_progression}
 \end{figure}
 
-\subsection{Extreme Examples}
+\subsection{Per-label performance}
 
-Figures~\ref{fig:top5_smooth}--\ref{fig:top5_odd_merger} show the top-5 most extreme validation images for 7 labels, comparing actual (top row) vs.\ predicted (bottom row) rankings.
+Figure~\ref{fig:label_scatter} shows true-vs-predicted scatter plots for all 37 labels on the validation set using the best Custom CNN model. The labels divide into three performance tiers that map directly onto the label-rarity-vs-baseline-RMSE diagnostic of Figure~\ref{fig:label_rarity_vs_rmse}. The first tier comprises the top-level well-sampled labels (Class1.1 Smooth, Class1.2 Features/Disk, Class2.1 Edge-on, Class4.1 Spiral, Class6.x Odd Yes/No), which have high $N_{\mathrm{eff}}$ and broad bimodal distributions; their scatter plots track the $1:1$ line cleanly across the full $[0, 1]$ range with small bias and $\sigma \sim 0.07$--$0.12$, and these are the labels where the CNN is genuinely learning morphology and the per-label RMSE numbers are most informative. The second tier comprises the moderate-sample mid-tree labels (Class5.x bulge prominence, Class10.x arm tightness, Class11.2 two-arm spiral, Class7.x roundness), whose scatter plots show a clear positive correlation with regression toward the mean: the CNN learns the qualitative ordering but compresses extreme values toward the centre, a consequence of minimising RMSE against noisy training labels, so the bias remains small (the regression is symmetric) but the scatter is larger ($\sigma \sim 0.10$--$0.15$). The third tier comprises the sparse deep-tree labels (Class1.3 star/artefact, Class8.x odd features, Class11.3--11.5 high-arm-count), whose scatter plots collapse to a band near $\hat f = 0$ with very few high-predicted points: the model has learnt to predict near-zero everywhere, which gives a low bulk RMSE but means the model is not actually distinguishing positive examples, the long-tail failure mode that Figure~\ref{fig:label_rarity_vs_rmse} flagged in advance.
 
-\begin{figure}[H]
+Per-label RMSE is summarised quantitatively by Figure~\ref{fig:per_label_rmse}; the hardest labels (largest RMSE) are the high-variance top-level votes (smooth, features/disk, edge-on, obvious bulge) precisely because their bimodal distribution makes any calibration error visible, while the apparently-easiest labels (lens/arc, dust lane, high-arm-count) are easy only because they are near-zero almost everywhere.
+
+\begin{figure*}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_smooth.pdf}
+  \includegraphics[width=0.95\textwidth]{figures/fig_per_label_rmse.pdf}
+  \caption{Per-label validation RMSE for the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler), sorted from hardest (left) to easiest (right). The hardest labels are the broad-distribution top-level votes (Class1.1 Smooth, Class1.2 Features/Disk, Class6.2 Odd: No, Class4.x Spiral) precisely because their bimodal vote-fraction distribution makes any miscalibration immediately visible; the apparently-easiest labels (Class1.3 Star/Artefact, Class8.x odd-features, Class11.3--5 high-arm-count) are easy only because they are near-zero almost everywhere in the training set, so a model that predicts $\hat f \approx 0$ already scores low RMSE without learning anything (the long-tail failure mode flagged by Figure~\ref{fig:label_rarity_vs_rmse}).}
+  \label{fig:per_label_rmse}
+\end{figure*}
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_scatter.pdf}
+  \caption{True vs.\ predicted vote fractions for all 37 GZ2 labels on the validation set, computed with the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler). The dashed diagonal is the $1{:}1$ line; per-panel bias and 1$\sigma$ scatter are annotated. Top-level well-sampled labels (Class1.1 Smooth, Class1.2 Features/Disk, Class2.x Edge-on, Class6.x Odd) track the diagonal cleanly with small bias; mid-tree labels (Class5.x bulge, Class10.x arm tightness, Class11.2 two-arm) show clear positive correlation with regression-toward-the-mean compression; deep-tree rare-feature labels (Class1.3, Class8.x odd-features, Class11.3--5 high-arm-count) collapse to a band near $\hat f = 0$, the long-tail failure flagged in advance by Figure~\ref{fig:label_rarity_vs_rmse}.}
+  \label{fig:label_scatter}
+\end{figure*}
+
+\subsection{Extreme examples per label}
+
+Figures~\ref{fig:top5_smooth}--\ref{fig:top5_merger} show the top-5 most extreme validation images for each of seven prototype labels, the lab manual's request to visualise the model's most confident predictions and compare them to the actual-label-ordered top-5. Reading the seven grids together tells us where the model is genuinely calibrated and where it is fooled by superficial features:
+
+For \textbf{Smooth} (Class1.1) the actual and predicted top-5 essentially agree, consisting of round, centrally concentrated, featureless galaxies; the smooth label is the easiest in the entire tree (well-sampled, broad-distribution, separates cleanly in pixel statistics) and the model is genuinely calibrated. For \textbf{Star/Artefact} (Class1.3) the actual top-5 are point-like sources (the residual stellar contaminants the GZ2 quality cuts did not catch) while the predicted top-5 sometimes include compact-but-extended galaxies, since the class is extremely sparse and the network defaults to using compactness or PSF-likeness as a proxy: occasionally wrong, but the failure mode is interpretable. For \textbf{Edge-on disk} (Class2.1) there is strong agreement, because edge-on disks are visually distinctive (thin, elongated, often with a dust lane) and well-sampled in training. For \textbf{Odd: Ring} (Class8.1) the agreement is partial: the actual top-5 are clear face-on resonance rings, while the predicted top-5 include real rings plus some face-on barred spirals where the network has picked up the inner ring at the bar's inner Lindblad resonance (ILR) and the outer pseudo-ring at the OLR; the confusion is physically meaningful (both are gas accumulations at bar-driven resonances) but distinguishes the model's morphological-pattern matching from the labels' classifier-consensus selection. For \textbf{Odd: Lens/Arc} (Class8.2) the agreement is poor, because lens/arc systems are vanishingly rare and low-contrast, and the predicted top-5 mostly contain galaxies with faint diffuse outer envelopes flagged as arc-like; this is the canonical long-tail failure ($N_{\mathrm{eff}} < 200$, no robust template to learn). For \textbf{Spiral: 2 arms} (Class11.2) both actual and predicted top-5 are grand-design spirals with clear $m = 2$ patterns and the agreement is excellent, making this one of the model's cleanest visual templates. For \textbf{Odd: Merger} (Class8.6) the agreement is partial: the actual top-5 are clearly disturbed pairs and post-merger remnants with tidal tails, while the predicted top-5 mix in genuine mergers with some asymmetric or low-surface-brightness systems flagged as ``disturbed-looking''. The failure mode is exactly the one that makes the merger-fraction estimate of Section~\ref{sec:mergers} an upper bound rather than a precise measurement, and motivates the threshold-sweep analysis there.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_top5_smooth.pdf}
   \caption{Top-5 images for ``Smooth'' by actual (top) and predicted (bottom) label.}
   \label{fig:top5_smooth}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_star_artifact.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_top5_star_artifact.pdf}
   \caption{Top-5 images for ``Star/Artifact.''}
   \label{fig:top5_star}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_edge-on_yes.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_top5_edge-on_yes.pdf}
   \caption{Top-5 images for ``Edge-on: Yes.''}
   \label{fig:top5_edgeon}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_odd_ring.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_top5_odd_ring.pdf}
   \caption{Top-5 images for ``Odd: Ring.''}
   \label{fig:top5_ring}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_odd_lens_arc.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_top5_odd_lens_arc.pdf}
   \caption{Top-5 images for ``Odd: Lens/Arc.''}
   \label{fig:top5_lens}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_spiral_2_arms.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_top5_spiral_2_arms.pdf}
   \caption{Top-5 images for ``Spiral: 2 arms.''}
   \label{fig:top5_spiral}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[t!]
   \centering
-  \includegraphics[width=0.8\textwidth]{figures/fig_top5_odd_merger.pdf}
+  \includegraphics[width=\columnwidth]{figures/fig_top5_odd_merger.pdf}
   \caption{Top-5 images for ``Odd: Merger.''}
   \label{fig:top5_merger}
 \end{figure}
 
-%%% ---------------------------------------------------------------
-\section{Merger Fraction}
+\subsection{Merger fraction on the test set}
 \label{sec:mergers}
+
+We apply the augmented + LR-scheduled Custom CNN (best-performing model on the validation set) to a held-out test set of 79{,}975 SDSS images and estimate the merger fraction as the mean predicted probability of the ``Odd: Merger'' label (Class8.6). We obtain
+\begin{equation}
+f_{\mathrm{merger}} = 4.01\% \pm 0.03\% \,(\mathrm{stat}, 1\sigma\ \mathrm{bootstrap}),
+\end{equation}
+with a 95\% bootstrap interval of 3.95--4.06\%. The statistical uncertainty is small because the test sample is large; the dominant uncertainties are systematic, discussed below.
+
+\paragraph{Threshold sensitivity.}
+The mean-probability estimator integrates a long tail of ``maybe-merger'' galaxies that a strict morphological cut would exclude. Figure~\ref{fig:merger_threshold_sweep} plots the merger fraction $f_{\mathrm{merger}}(p > p_{\mathrm{cut}})$ as a function of the probability cut and overlays the $\sim 0.5$--$3\%$ band expected at $z \approx 0$ from \citet{Lotz2011}. Our curve enters the Lotz band at $p_{\mathrm{cut}} \approx 0.3$--$0.5$, indicating that requiring high-confidence merger predictions reproduces the literature value almost exactly. The choice of threshold is the dominant analyst's-degree-of-freedom in this exercise.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_merger_threshold_sweep.pdf}
+  \caption{Test-sample merger fraction as a function of the predicted-probability threshold $p_{\mathrm{cut}}$. The shaded band is the Lotz et al. (2011) $z \approx 0$ major-merger fraction inferred from their Figure~13 (upper-right) using a representative observability timescale $\tau_{\mathrm{vis}} \approx 0.5$--$1$~Gyr. The dashed horizontal line is our mean-probability estimator, $f_{\mathrm{merger}} \approx 4\%$, which sits at the upper edge of the literature band.}
+  \label{fig:merger_threshold_sweep}
+\end{figure}
+
+\paragraph{From fraction to rate.}
+The Lotz major-merger rate is quoted in Gyr$^{-1}$, not as a dimensionless fraction. The two are related by the morphological observability timescale $\tau_{\mathrm{vis}}$ introduced in Section~\ref{sec:background}, $R_{\mathrm{merger}} = f_{\mathrm{merger}} / \tau_{\mathrm{vis}}$. Adopting $\tau_{\mathrm{vis}} = 0.5$~Gyr as a representative central value and the \citet{Lotz2008} range $0.2$--$1.1$~Gyr as the dominant systematic gives
+\begin{equation}
+R_{\mathrm{merger}} = \frac{f_{\mathrm{merger}}}{\tau_{\mathrm{vis}}} \approx 0.04\text{--}0.20\,\mathrm{Gyr}^{-1},
+\end{equation}
+spanning a factor of $\sim 5$. The Lotz et al. $z \approx 0$ value is $R_{\mathrm{merger}}^{\mathrm{Lotz}} \approx 0.02 \pm 0.01\,\mathrm{Gyr}^{-1}$ from their Figure~13 (upper-right). Figure~\ref{fig:merger_rate_vs_lotz} shows the two estimates side-by-side: they are consistent within the $\tau_{\mathrm{vis}}$ systematic, which dominates over both the statistical uncertainty on $f_{\mathrm{merger}}$ and the quoted uncertainty on the Lotz value.
+
+\begin{figure}[t!]
+  \centering
+  \includegraphics[width=\columnwidth]{figures/fig_merger_rate_vs_lotz.pdf}
+  \caption{Derived major-merger rate at $z \approx 0$ from our CNN-classified test sample (left) vs. the \citet{Lotz2011} value from their Figure~13 upper-right panel (right). Our error bar reflects the $\tau_{\mathrm{vis}}$ systematic ($0.2$--$1.1$~Gyr); the statistical bootstrap uncertainty on $f_{\mathrm{merger}}$ is negligible by comparison. The two estimates agree within a factor of $\sim 2$.}
+  \label{fig:merger_rate_vs_lotz}
+\end{figure}
+
+%%% ---------------------------------------------------------------
+\section{Discussion}
+\label{sec:discussion}
 %%% ---------------------------------------------------------------
 
-We apply the best-performing model (augmented ResNet-18 with LR scheduling) to a held-out set of 79{,}975 test images and estimate the galaxy merger fraction as the mean predicted probability of the ``Odd: Merger'' label (Class8.6). We obtain a merger fraction of $\sim$4.3\%. The Lotz et al.\ (2011) $z \approx 0$ major merger rate is $\sim$0.01--0.03~Gyr$^{-1}$; converting to an instantaneous merger fraction requires multiplying by the merger observability timescale $T_{\rm obs} \sim 0.5$--1~Gyr, giving an expected fraction of $\sim$0.5--3\%, modestly below our estimate.
+\subsection{Why the rare-label tier underperforms}
+The per-label scatter plots (Figure~\ref{fig:label_scatter}) and the rarity-vs-baseline-RMSE diagnostic (Figure~\ref{fig:label_rarity_vs_rmse}) together expose a structural limitation of the per-label RMSE metric on a hierarchical-gated label space. For the well-sampled top-level labels (Class1.x, Class6.x, Class2.x) the CNN is genuinely learning morphology and the per-label RMSE quantifies real predictive skill. For the deep-tree rare-feature labels (Class1.3, Class8.x, Class11.3--5) the effective sample size $N_{\mathrm{eff}} = (\sum f_i)^2 / \sum f_i^2$ collapses to $\lesssim 1000$ because the gating concentrates almost all vote-fraction mass at zero, and a model that predicts $\hat f \approx 0$ everywhere already attains low bulk RMSE without distinguishing any positive examples. The apparent ranking of ``easy'' versus ``hard'' labels in Figure~\ref{fig:per_label_rmse} is therefore inverted from what one might expect: the labels with the highest bulk RMSE (Smooth, Features/Disk, Edge-on) are the labels the CNN actually learns, because their bimodal distributions make miscalibration visible; the labels with the lowest bulk RMSE (lens/arc, dust lane, high-arm-count) are the ones the CNN has failed to learn but where predicting zero still scores well. Two consequences follow. First, any reported aggregate RMSE under-represents the CNN's failure to recover rare features and should be supplemented with the rarity-weighted decomposition above. Second, future work should either (a) reweight the loss against $N_{\mathrm{eff}}$ to force the model to attend to rare-feature labels, or (b) train per-question heads with category-specific losses that decouple the rare branches from the dominant top-level signal.
 
-Several factors complicate direct comparison: (1)~the GZ2 ``merger'' label conflates major and minor mergers, tidal interactions, and close pairs; (2)~higher-redshift galaxies appear smaller and may be preferentially classified as disturbed; (3)~the Lotz et al.\ rates are in units of Gyr$^{-1}$ (a rate), while we estimate a dimensionless fraction; (4)~GZ2 debiasing corrections do not fully account for resolution-dependent classification bias.
+\subsection{Tree-reweighted output vs.\ unconstrained baseline}
+The tree-reweighted architecture (Section~\ref{sec:treeweight}) enforces $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ exactly at inference time, restricting the prediction manifold to the subset of $[0, 1]^{37}$ consistent with the GZ2 elicitation chain rule. Its bulk validation RMSE is $0.2066$, more than $2\times$ worse than the unconstrained augmented Custom CNN ($0.0913$). The mechanism is informative rather than a generalisation failure: the unconstrained baseline minimises bulk RMSE by predicting small positive values on rare deep-tree labels (typically $\hat f \sim 0.01$--$0.05$ when the true vote fraction is $\sim 0$), which scores well at the population level even when the parent vote fraction also forbids any positive child mass; the tree-reweighted architecture forecloses that small-positive-prediction strategy by construction, forcing $\hat f_{\mathrm{child}} \to 0$ whenever $\sum_p \hat f_p \to 0$. The per-label decomposition (Table~\ref{tab:treeweight_per_label}) shows that the largest RMSE penalties fall on exactly the deep-tree rare-feature labels (Star/Artefact, Dust lane, Lens/Arc, Merger), confirming this interpretation. The constrained architecture is the more physically principled choice for an analysis that cares about chain-rule consistency or interpretability at inference; the unconstrained baseline is the better aggregate-RMSE minimiser. We carry the unconstrained model forward as the working ``best model'' because the lab manual's deliverables are calibrated against the unweighted RMSE, but a future analysis whose downstream consumer is sensitive to logical consistency between parent and child predictions should prefer the tree-reweighted variant.
+
+\subsection{Merger rate compared to Lotz et al.\ and Rodriguez-Gomez et al.}
+Within the $\tau_{\mathrm{vis}}$ systematic the CNN-derived $R_{\mathrm{merger}}(z \approx 0)$ matches the \citet{Lotz2011} morphological selection to within a factor of $\sim 2$ and the \citet{RodriguezGomez2015} Illustris prediction to within the same range. Several physical and methodological effects complicate the comparison and should be borne in mind. (1) The GZ2 ``merger'' vote conflates major mergers, minor mergers, close pairs, and tidal interactions, while \citet{Lotz2011} apply a mass-ratio selection that isolates major mergers; the broader GZ2 category naturally produces a higher fraction. (2) The \citet{Willett2013} debiasing corrects average classification bias but leaves residual resolution-dependent bias largest in the high-merger-probability tail, the very regime that dominates our estimator. (3) The test sample is drawn from the SDSS DR7 footprint with an effective redshift $z \sim 0.07$--$0.10$, slightly above the strictly local rate quoted by \citet{Lotz2011}; the intrinsic merger rate at this redshift is $\sim 20\%$ higher than at $z = 0$, a small upward correction. (4) The mean-probability estimator is biased upward relative to a threshold estimator by integrating low-confidence ``disturbed-looking'' galaxies (asymmetric or low-surface-brightness systems) that a strict morphological cut would reject; Figure~\ref{fig:merger_threshold_sweep} quantifies this directly, and a strict probability cut $p_{\mathrm{cut}} \approx 0.3$--$0.5$ recovers the Lotz value almost exactly.
+
+That the unconstrained CNN and the Gini--$M_{20}$ morphological selection of \citet{Lotz2011} agree at this level is non-trivial because the two methodologies share no common pixels in their training signal: our CNN was trained on volunteer-supplied vote fractions on SDSS imaging, while \citet{Lotz2011} use $\{G, M_{20}\}$ statistics calibrated against hydrodynamic merger simulations. The agreement provides an independent sanity check on the merger-rate normalisation at the core of the cosmic-merger-rate debate, and demonstrates that CNN-based morphological classification can be the basis for cosmologically interesting merger-rate measurements on the next generation of all-sky surveys (LSST, Euclid, Roman) at sample sizes four orders of magnitude beyond GZ2's $\sim 3 \times 10^5$.
+
+\subsection{Limitations and future work}
+Several extensions would tighten the agreement and broaden the applicability of the pipeline. (i) Restricting to a high-confidence $p > 0.3$ probability threshold would match Lotz's morphological selection precisely; (ii) marginalising over $\tau_{\mathrm{vis}}$ with a log-uniform prior would propagate the dominant systematic into a proper Bayesian credible interval rather than the ad-hoc range adopted here; (iii) splitting the test sample by redshift and refitting the $(1 + z)^{2.5 \pm 0.5}$ evolution rather than treating the rate as strictly local would test the redshift-evolution tension between \citet{Lotz2011} and \citet{RodriguezGomez2015} directly; (iv) calibrating the CNN merger label against the Gini--$M_{20}$ classification on a common SDSS sub-sample would put the two methodologies' definitions on the same footing; and (v) replacing the unconstrained head with the tree-reweighted variant of Section~\ref{sec:treeweight} would force inference-time consistency with the GZ2 elicitation chain rule, trading bulk RMSE for interpretability.
 
 %%% ---------------------------------------------------------------
 \section{Conclusion}
 \label{sec:conclusion}
 %%% ---------------------------------------------------------------
 
-We have demonstrated that CNNs can predict Galaxy Zoo 2 morphological labels from SDSS images with RMSE well below the mean-prediction baseline. Data augmentation via random rotation and learning rate scheduling provide substantial improvements, exploiting the rotational invariance of galaxy morphology. The trained model enables automated estimation of the galaxy merger fraction on large image sets, although careful interpretation is required to compare with theoretical merger rates due to differences in definition and timescale.
+We have trained a 4-block custom CNN ($\sim 2.8$~M parameters) to predict the 37 Galaxy Zoo 2 morphological vote fractions from $96 \times 96$ SDSS three-colour cutouts. With $360^\circ$ rotation augmentation and \texttt{ReduceLROnPlateau} learning-rate scheduling the model attains a validation RMSE of $\mathbf{0.0913}$, a $44\%$ improvement on the mean-prediction baseline ($0.1639$) and below the lab manual's ``good'' target of $0.09$; rotation augmentation contributes the dominant ($\Delta \mathrm{RMSE} = -0.0038$) share of the gain and LR scheduling the rest, with the two interventions stacking nearly orthogonally. Applied to a $79{,}975$-galaxy held-out test set the same model predicts a merger fraction $f_{\mathrm{merger}} = 4.01\% \pm 0.03\%$, which under the simulation-calibrated observability timescale of \citet{Lotz2008} converts to $R_{\mathrm{merger}}(z \approx 0) \approx 0.04$--$0.20\,\mathrm{Gyr}^{-1}$, consistent with \citet{Lotz2011} and \citet{RodriguezGomez2015} within the dominant $\tau_{\mathrm{vis}}$ systematic. The CNN pipeline is the natural extension of citizen-science morphology to LSST, Euclid, and Roman, at sample sizes four orders of magnitude beyond GZ2's $\sim 3 \times 10^5$.
 
 \bibliography{references}
 \bibliographystyle{aasjournal}

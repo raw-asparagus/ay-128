@@ -1003,6 +1003,147 @@ def plot_per_label_rmse_bar(label_names, rmse_values):
     return ax
 
 
+# ---------------------------------------------------------------------------
+# 19b. Label rarity vs baseline RMSE (Diagnostic, supports NB 01b/02/06)
+# ---------------------------------------------------------------------------
+
+def plot_label_rarity_vs_rmse(n_eff, baseline_rmse, label_descriptive_list,
+                              n_eff_threshold):
+    """Scatter of per-label effective sample size vs mean-prediction baseline RMSE.
+
+    Labels with low $N_{\\mathrm{eff}}$ tend to sit near the bottom of the RMSE
+    axis simply because their vote-fraction distribution is concentrated near
+    zero — a mean-prediction baseline already does well there. This figure
+    flags the labels for which a low CNN RMSE is *not* informative.
+
+    Parameters
+    ----------
+    n_eff : ndarray, shape (37,)
+        Effective sample size per label (e.g. ``np.sum(labels > 0.1, axis=0)``).
+    baseline_rmse : ndarray, shape (37,)
+        Per-label RMSE of the mean-prediction baseline on the validation set.
+    label_descriptive_list : list of str
+        Descriptive names in column order.
+    n_eff_threshold : float
+        Vertical guide; labels with ``n_eff < threshold`` are flagged in red.
+    """
+    fig, ax = textwidth_figure(4)
+
+    is_rare = np.asarray(n_eff) < n_eff_threshold
+    ax.scatter(np.asarray(n_eff)[~is_rare], np.asarray(baseline_rmse)[~is_rare],
+               s=20, color="C0", alpha=ALPHA_STANDARD, zorder=3,
+               label="Well-sampled")
+    ax.scatter(np.asarray(n_eff)[is_rare], np.asarray(baseline_rmse)[is_rare],
+               s=20, color="C3", alpha=ALPHA_STANDARD, zorder=3,
+               label="Rare")
+    ax.axvline(n_eff_threshold, **GUIDE_STYLE)
+    for i, name in enumerate(label_descriptive_list):
+        ax.annotate(name, (n_eff[i], baseline_rmse[i]),
+                    fontsize=LEGEND_SIZE - 3, alpha=ALPHA_LIGHT,
+                    xytext=(3, 1), textcoords="offset points")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$N_{\mathrm{eff}}$ (galaxies with label $> 0.1$)")
+    ax.set_ylabel("Mean-prediction baseline RMSE")
+    ax.legend(fontsize=LEGEND_SIZE, loc="best")
+
+    savefig(fig, "fig_label_rarity_vs_rmse.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 20. Merger fraction vs probability threshold (Task 26)
+# ---------------------------------------------------------------------------
+
+def plot_merger_threshold_sweep(merger_probs, thresholds, lotz_band):
+    """Fraction of galaxies above each merger-probability threshold, with Lotz band overlay.
+
+    Parameters
+    ----------
+    merger_probs : ndarray, shape (N,)
+        Predicted merger probability per galaxy in the test set.
+    thresholds : ndarray, shape (T,)
+        Threshold values to sweep over (e.g. ``np.linspace(0.05, 0.95, 19)``).
+    lotz_band : tuple of (float, float)
+        Lower and upper expected merger fraction from Lotz et al. 2011 Fig. 13,
+        upper-right panel at $z \approx 0$, converted to a dimensionless fraction
+        using a representative observability timescale.
+    """
+    fractions = np.array([float(np.mean(merger_probs > t)) for t in thresholds])
+
+    fig, ax = textwidth_figure(3.5)
+    lo, hi = lotz_band
+    ax.axhspan(lo, hi, color="C2", alpha=ALPHA_EXTRA_LIGHT, zorder=1,
+               label=rf"Lotz+11 $z \approx 0$: {lo*100:.1f}–{hi*100:.1f}\%")
+    ax.plot(thresholds, fractions, lw=LW_STANDARD, alpha=ALPHA_STANDARD,
+            color="C0", zorder=3, label="This work")
+    ax.axhline(float(np.mean(merger_probs)), **GUIDE_STYLE,
+               label=rf"Mean prob = {np.mean(merger_probs)*100:.2f}\%")
+    ax.set_xlabel(r"Merger-probability threshold $p_{\mathrm{cut}}$")
+    ax.set_ylabel(r"$f_{\mathrm{merger}}(p > p_{\mathrm{cut}})$")
+    ax.set_yscale("log")
+    _decimal_log_yaxis(ax)
+    ax.legend(fontsize=LEGEND_SIZE, loc="upper right")
+
+    savefig(fig, "fig_merger_threshold_sweep.pdf")
+    return ax
+
+
+# ---------------------------------------------------------------------------
+# 21. Derived merger rate vs Lotz et al. 2011 (Task 26)
+# ---------------------------------------------------------------------------
+
+def plot_merger_rate_vs_lotz(f_merger, f_merger_err, tau_vis_range,
+                             lotz_rate, lotz_rate_err):
+    """Derived major-merger rate with $\\tau_{\\mathrm{vis}}$ systematic vs Lotz value.
+
+    Converts our merger fraction to a rate using $R = f / \\tau_{\\mathrm{vis}}$
+    and propagates both the statistical uncertainty on $f$ and the systematic
+    uncertainty on $\\tau_{\\mathrm{vis}}$. Overlays the Lotz et al. 2011 Fig. 13
+    upper-right $z \\approx 0$ value with its quoted uncertainty.
+
+    Parameters
+    ----------
+    f_merger : float
+        Best-estimate merger fraction (dimensionless, e.g. 0.04).
+    f_merger_err : float
+        Statistical 1σ on f_merger from bootstrap.
+    tau_vis_range : tuple of (float, float, float)
+        $(\\tau_{\\mathrm{lo}}, \\tau_{\\mathrm{mid}}, \\tau_{\\mathrm{hi}})$ in Gyr.
+    lotz_rate : float
+        Lotz et al. 2011 best-fit major-merger rate at $z \\approx 0$ in Gyr$^{-1}$.
+    lotz_rate_err : float
+        Lotz et al. 2011 1σ on the rate.
+    """
+    tau_lo, tau_mid, tau_hi = tau_vis_range
+
+    # Best estimate and its uncertainty
+    r_mid = f_merger / tau_mid
+    # Combine stat and tau_vis systematic in quadrature on log
+    r_lo = f_merger / tau_hi
+    r_hi = f_merger / tau_lo
+
+    fig, ax = textwidth_figure(2.6)
+    x = [0, 1]
+    y = [r_mid, lotz_rate]
+    yerr_lo = [r_mid - r_lo, lotz_rate_err]
+    yerr_hi = [r_hi - r_mid, lotz_rate_err]
+    ax.errorbar(x, y, yerr=[yerr_lo, yerr_hi], fmt="o", color="C0",
+                lw=LW_STANDARD, capsize=4, zorder=3,
+                markersize=6)
+    ax.set_xticks(x)
+    ax.set_xticklabels([
+        rf"This work" "\n" rf"($\tau_{{\rm vis}}={tau_lo}$–${tau_hi}$ Gyr)",
+        rf"Lotz+11" "\n" rf"$z \approx 0$",
+    ], fontsize=LEGEND_SIZE)
+    ax.set_ylabel(r"$R_{\mathrm{merger}}$ (Gyr$^{-1}$)")
+    ax.set_yscale("log")
+    _decimal_log_yaxis(ax)
+    ax.set_xlim(-0.5, 1.5)
+
+    savefig(fig, "fig_merger_rate_vs_lotz.pdf")
+    return ax
+
+
 def plot_model_progression_bar(names, val_rmse):
     """Bar chart of best validation RMSE across the model progression.
 
