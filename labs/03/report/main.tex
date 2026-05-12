@@ -202,47 +202,42 @@ The middle and bottom panels are more unambiguous, depicting a centrally concent
 \label{sec:data}
 %%% ---------------------------------------------------------------
 
-The training set consists of 61{,}578 SDSS $gri$ composite images ($424 \times 424$ pixels) and 37 GZ2 classification labels per galaxy. Each label is a vote fraction in $[0, 1]$, the proportion of human classifiers who assigned the corresponding morphological feature. The labels are organized hierarchically: top-level questions (smooth vs.\ disk vs.\ star/artifact) gate whether deeper questions (bar, spiral, arm count) are asked.
+The training set consists of 61{,}578 SDSS $gri$ composite images ($424 \times 424$ pixels) and 37 GZ2 classification vote fraction labels in $[0, 1]$ per galaxy. Figure~\ref{fig:random_galaxies} shows a random montage of 28 galaxies drawn from the training set.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_example_galaxy.pdf}
+  \caption{28 random training-set galaxies displayed at full $424 \times 424$ resolution. Galaxy IDs are annotated in each panel. The sample spans the full GZ2 morphological range from smooth red ellipticals to blue grand-design spirals, with $\sim 20\%$ of objects showing edge-on disks, bars, or interaction features. The colour bimodality between red-sequence ellipticals and blue-cloud disks is visually obvious at the pixel level, supporting the morphological colour information discussed in Section~\ref{sec:sdss-imaging}.}
+  \label{fig:random_galaxies}
+\end{figure*}
 
 \subsection{SDSS $gri$ Composite Images}
 \label{sec:sdss-imaging}
 
-We use SDSS DR7 \citep{Abazajian2009} three-colour cutouts in the $gri$ bands, rendered as RGB JPEGs via the \citet{Lupton2004} scaling: $g$ ($\lambda_{\mathrm{eff}} \approx 477$~nm) to blue, $r$ ($\lambda_{\mathrm{eff}} \approx 623$~nm) to green, and $i$ ($\lambda_{\mathrm{eff}} \approx 763$~nm) to red. This mapping reproduces the colour--magnitude bimodality between blue-cloud star-forming disks ($g - r \sim 0.4$) and red-sequence quiescent ellipticals ($g - r \sim 0.8$ at $z \sim 0$). The CNN can therefore exploit pixel colour as a shortcut for the top-level Smooth/Features distinction; the harder labels (bar, arm count, dust lane, odd features) require genuine morphological structure beyond the dominant colour gradient.
+We use SDSS DR7 \citep{Abazajian2009} three-colour cutouts in the $gri$ bands, rendered as RGB JPEGs via the \citet{Lupton2004} scaling: $g$ ($\lambda_{\mathrm{eff}} \approx 477$~nm) to blue, $r$ ($\lambda_{\mathrm{eff}} \approx 623$~nm) to green, and $i$ ($\lambda_{\mathrm{eff}} \approx 763$~nm) to red. This mapping reproduces the colour--magnitude bimodality between blue-cloud star-forming disks ($g - r \sim 0.4$) and red-sequence quiescent ellipticals ($g - r \sim 0.8$ at $z \sim 0$). As such, both human visual and machine CNN approaches can leverage pixel colour as a proxy for top-level Smooth/Features distinction; the harder labels (bar, arm count, dust lane, odd features) require morphological structure labelling beyond the dominant colour gradient.
 
-The GZ2 sample spans $z \sim 0.02$--$0.25$ with median $z \approx 0.07$, drawn from the SDSS spectroscopic main galaxy sample \citep{Strauss2002, Stoughton2002}. The native SDSS pixel scale is $0.396''$/pixel, corresponding to $\sim 0.54$~kpc/pixel at the median redshift assuming $H_0 = 70$~km\,s$^{-1}$\,Mpc$^{-1}$. The GZ2 cutouts are pre-scaled per galaxy so that the field of view tracks $\sim 1.7\,r_{\mathrm{Petro,90}}$ on a side, decoupling the rendered pixel scale from redshift (Section~\ref{sec:prep}).
+The GZ2 sample spans $z \sim 0.02$--$0.25$ with median $z \approx 0.07$, drawn from the SDSS spectroscopic main galaxy sample \citep{Strauss2002, Stoughton2002}. The native SDSS pixel scale is $0.396''$/pixel, corresponding to $\sim 0.54$~kpc/pixel at the median redshift assuming $H_0 = 70$~km\,s$^{-1}$\,Mpc$^{-1}$. The GZ2 cutouts are pre-scaled per galaxy so that the field of view tracks $\sim 1.7\,r_{\mathrm{Petro,90}}$ on each side such that each image reproduce the physical scale and extent of each galaxy.
 
-\subsection{Label Distributions}
+\subsubsection{Prototype Images}
 
-Figure~\ref{fig:label_distributions} shows normalized histograms of all 37 labels. The distributions fall into three families:
-\begin{itemize}
-  \item \textbf{Top-level labels} (Class1.1--1.3, Class6.1/6.2): broad, roughly bimodal with most mass at $0$ or $1$, reflecting strong classifier consensus on the smooth-vs-disk distinction. The bimodality mirrors the red-sequence/blue-cloud dichotomy: pressure-supported quiescent ellipticals on one side, rotation-supported star-forming disks on the other.
-  \item \textbf{Conditional sub-class labels} (Class7.x, Class10.x, Class11.x): concentrated near zero because most galaxies were never asked the corresponding gated question.
-  \item \textbf{Rare-feature labels} (Class1.3 star/artefact, Class8.x odd features): sharply peaked at zero with a short tail, reflecting genuinely rare astrophysical states (rings, lens/arcs, dust lanes, mergers).
-\end{itemize}
+Figure~\ref{fig:prototype_images} shows the prototype image (highest vote fraction) for each label. Visually obvious labels (smooth, edge-on disk, grand-design 2-arm spiral) have clean, morphologically distinctive prototypes. Subtle or rare labels (lens/arc Class8.2, dust lane Class8.7, high-arm-count spirals Class11.3--11.5) require detecting faint, narrow, or rare features that are easily confused with PSF artefacts or anomalous disk structure.
 
-Two labels merit closer inspection. The merger vote (Class8.6) is heavily zero-concentrated because the visibly-disturbed merger phase lasts only $\sim 0.5$--$1$~Gyr against a quiescent lifetime of $\sim 10$~Gyr, giving $\sim 1$--$5\%$ of galaxies in a merger state at any moment, consistent with \citet{Lotz2011}. The cigar-shaped smooth label (Class7.3) is anomalous: its prototype images and correlations (Section~\ref{sec:diagnostic-trends}) show that it predominantly picks up misclassified edge-on disks rather than true prolate spheroids, a confusion the CNN inherits from the training labels.
-
-\begin{figure*}[t!]
-  \centering
-  \includegraphics[width=\textwidth]{figures/fig_label_distributions.pdf}
-  \caption{Normalized histograms of all 37 GZ2 classification labels. Top-level labels show broad distributions; deeper hierarchical labels are concentrated near zero. The top-level vote-fraction labels (Class1.1/1.2, Class6.1/6.2) display broad bimodal distributions with mass piled at $0$ and $1$, while conditional sub-class labels (Class7.x, Class10.x, Class11.x) are sharply concentrated near zero because most galaxies were never asked the corresponding gated question.}
-  \label{fig:label_distributions}
-\end{figure*}
-
-\subsection{Prototype Images}
-
-Figure~\ref{fig:prototype_images} shows the prototype image (highest vote fraction) for each label. Visually obvious labels (smooth, edge-on disk, grand-design 2-arm spiral) have clean, morphologically distinctive prototypes: featureless red ellipticals, thin elongated dust-lane-bisected disks, and clean logarithmic arms with blue star-forming knots tracing the density-wave crests. We expect the CNN to learn these labels well from a small number of templates.
-
-Subtle or rare labels (lens/arc Class8.2, dust lane Class8.7, high-arm-count spirals Class11.3--11.5) require detecting faint, narrow, or rare features that are easily confused with PSF artefacts or flocculent disk structure. Merger prototypes (Class8.6) are visually heterogeneous, mixing interacting pairs, post-coalescence shells, and asymmetric isophotes across a wide range of merger stages and mass ratios. The CNN therefore cannot learn a single ``merger template'', a prediction borne out by the per-label RMSE analysis of Section~\ref{sec:eval}.
+% Merger prototypes (Class8.6) are also visually complex across a wide range of merger stages and mass ratios, encompassing interacting pairs and post-coalescence shell. The CNN therefore cannot learn a single ``merger template'', a prediction borne out by the per-label RMSE analysis of Section~\ref{sec:eval}.
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_prototype_images.pdf}
-  \caption{Prototype images: for each of the 37 GZ2 labels, the galaxy in the training set that maximises the corresponding vote fraction, displayed at the model-input crop and labelled by the descriptive class name. Visually obvious labels (smooth, edge-on disk, grand-design $m{=}2$ spiral, no-bulge) have clean and morphologically distinctive prototypes, whereas the deep-tree rare-feature labels (lens/arc, dust lane, high arm count) exhibit heterogeneous or low-contrast prototypes that anticipate the per-label-RMSE pattern of Section~\ref{sec:eval}.}
+  \caption{Prototype images: for each of the 37 GZ2 labels, the galaxy in the training set that maximises the corresponding vote fraction, displayed at the model-input crop and labelled by the descriptive class name. Visually obvious labels (smooth, edge-on disk, grand-design $m{=}2$ spiral, no-bulge) have clean and morphologically distinctive prototypes, whereas the deep-tree rarer labels (lens/arc, dust lane, high arm count) exhibit non-unique/varying or low-contrast prototypes foreshadow a higher per-label-RMSE pattern of Section~\ref{sec:eval}.}
   \label{fig:prototype_images}
 \end{figure*}
 
-\subsection{Label Correlations}
+\subsection{Label Distributions}
+
+Figure~\ref{fig:label_distributions} shows normalized histograms of all 37 labels. The top-level labels (Class1.1/1.2 and Class6.1/6.2) are broad and roughly bimodal between its members, with distribution heaviest at $0$ or $1$, reflecting strong classifier consensus on the smooth-vs-disk distinction. The conditional sub-class labels (Class7.x, Class10.x, and Class11.x) are instead concentrated near zero because most galaxies were never asked the corresponding gated question. The rare-feature labels (Class1.3 star/artefact and the Class8.x odd-feature leaves) are also sharply peaked at zero but with a short positive tail, reflecting the smaller distribution of astrophysical anomalies: rings, lens/arcs, dust lanes, and mergers each occur in only a few percent of the sample.
+
+% Two labels merit closer inspection. The merger vote (Class8.6) is heavily zero-concentrated because the visibly-disturbed merger phase lasts only $\sim 0.5$--$1$~Gyr against a quiescent lifetime of $\sim 10$~Gyr, giving $\sim 1$--$5\%$ of galaxies in a merger state at any moment, consistent with \citet{Lotz2011}. The cigar-shaped smooth label (Class7.3) is anomalous: its prototype images and correlations (Section~\ref{sec:diagnostic-trends}) show that it predominantly picks up misclassified edge-on disks rather than true prolate spheroids, a confusion the CNN inherits from the training labels.
+
+\subsubsection{Label Correlations}
 \label{sec:diagnostic-trends}
 
 We compute the $37 \times 37$ Pearson correlation matrix (Figure~\ref{fig:correlation_matrix}) using
@@ -250,11 +245,21 @@ We compute the $37 \times 37$ Pearson correlation matrix (Figure~\ref{fig:correl
 \rho_{ij} = \frac{\langle ij \rangle - \langle i \rangle \langle j \rangle}{\sqrt{\langle i^2 \rangle - \langle i \rangle^2}\,\sqrt{\langle j^2 \rangle - \langle j \rangle^2}}.
 \label{eq:rho}
 \end{equation}
-For a $k$-way question with perfect classifier consensus, sibling answers have expected correlation $\rho = -1/(k-1)$. For the effectively-binary Q1 (Class1.1 vs Class1.2; Class1.3 is near-zero everywhere, so Q1 collapses to a two-way vote in practice) and Q6 (Class6.1 vs Class6.2) we measure $\rho = -0.992$ and $\rho = -1.000$, matching the binary expectation of $-1$. For the $k = 4$ bulge-prominence question Q5 we measure $-0.20$ to $-0.40$, near the expected $-1/3$, with departures consistent with deeper-tree classifier noise. This confirms that the W13 debiasing preserves within-question exclusivity.
 
-The strongest parent--child correlations are Edge-on Yes $\to$ Rounded bulge ($\rho = +0.879$), Spiral Yes $\to$ Medium winding ($\rho = +0.858$), Spiral Yes $\to$ 2 arms ($\rho = +0.781$), and Features/Disk $\to$ Edge-on No ($\rho = +0.748$). The last is asymmetric: Features/Disk correlates with Edge-on No at $+0.748$ but with Edge-on Yes at only $+0.333$. The asymmetry follows from the $\cos i$ inclination distribution of randomly-oriented thin disks: truly edge-on views ($i > 80^\circ$) subtend only $\sim 17\%$ of the solid angle, so most disk galaxies are face-on or moderately inclined.
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_distributions.pdf}
+  \caption{Normalized histograms of all 37 GZ2 classification labels. Top-level labels show broad distributions; deeper hierarchical labels are concentrated near zero because most galaxies were never asked the corresponding gated question. Histograms are colored in enumeration by class.}
+  \label{fig:label_distributions}
+\end{figure*}
 
-The Cigar-shaped label (Class7.3) is anomalous. Nominally a smooth sub-label, it correlates positively with Edge-on Yes ($\rho = +0.496$) and with the edge-on bulge labels Class9.1 ($\rho = +0.370$) and Class9.3 ($\rho = +0.475$), but is essentially uncorrelated with Smooth itself ($\rho = -0.001$). Highly inclined disks are therefore systematically misclassified as ``smooth + cigar-shaped'' when the disk substructure is unresolved at SDSS seeing, a confusion the CNN inherits from the labels.
+For any $k$-way question with perfect classifier consensus, we would expect sibling answers to have correlations $\rho = -1/(k-1)$. For the effectively-binary Q1 (Class1.1 vs Class1.2; Class1.3 is near-zero everywhere, so Q1 collapses to a two-way vote in practice) and Q6 (Class6.1 vs Class6.2) we measure $\rho = -0.992$ and $\rho = -1.000$ respectively, matching the binary expectation of a strong anticorrelation $-1$. For the $k = 4$ bulge-prominence question Q5 we measure $-0.20$ (for roughly similar labels e.g., no-bulge and just barely noticable) to $-0.40$ (no-bulge and dominant), near the expected $-1/3$. Parents and childs are generally strongly correlated. 
+
+The seven odd-feature labels (Class8.1–Class8.7: ring, lens/arc, disturbed, irregular, other, merger, dust lane) correlate only weakly with each other, with measured pairwise $|\rho| \lesssim 0.1$ in  most cases. Apart from some suppression stemming from $\rho_{\mathrm{sibling}} = -1/(k-1) = -1/6 \approx -0.17$ for perfect classifier consensus (i.e., they are mutually exclusive), the joint distribution of any two odd labels is overwhelmingly dominated by negative pairs due to their rarities (and thus significant peaks at 0). As such, the measured anti-correlations are systematically weaker than the theoretical $-1/6$. 
+
+For the asymetries, features/disk markedly correlates more strongly with edge-on no ($\rho = +0.748$) than with edge-on yes ($\rho = +0.333$), directly tracing the $\cos i$ inclination distribution of randomly-oriented thin disks where edge-on views ($i > 80^\circ$) subtend only $\sim 17\%$ of the solid angle, so most disk galaxies are face-on or moderately inclined.
+
+The Cigar-shaped label (Class7.3) is anomalous. While nominally a smooth sub-label, it correlates positively with Edge-on Yes ($\rho = +0.496$) and with the edge-on bulge labels Class9.1 ($\rho = +0.370$) and Class9.3 ($\rho = +0.475$), it is uncorrelated with Smooth itself ($\rho = -0.001$). Highly inclined disks are therefore systematically misclassified as ``smooth + cigar-shaped'' when the disk substructure is unresolved at SDSS seeing, a confusion the CNN inherits from the labels.
 
 \begin{figure*}[t!]
   \centering
@@ -412,7 +417,7 @@ The baseline model predicts the training-set mean label vector for every image, 
 \subsection{Network Architectures}
 \label{sec:architectures}
 
-We train two backbone architectures: a hand-designed 4-block Custom CNN ($\sim 2.8$M parameters) and an 18-layer ResNet ($\sim 11.2$M parameters). Both consume $96 \times 96 \times 3$ inputs and emit a 37-dimensional sigmoid head, constraining each output to $[0, 1]$ to match the vote-fraction range. They differ in depth, parameter count, and the use of residual connections. Figure~\ref{fig:architectures} summarizes the two layer stacks side-by-side.
+We train two backbone architectures: a hand-designed 4-block Custom CNN ($\sim 2.8$M parameters) and an 18-layer ResNet ($\sim 11.2$M parameters). Both consume $96 \times 96 \times 3$ inputs and emit a 37-dimensional sigmoid head, constraining each output to $[0, 1]$ to match the vote-fraction range. They differ in depth, parameter count, and the use of residual connections. Figure~\ref{fig:architectures} shows the Custom CNN together with its upstream image-preparation pipeline; Figure~\ref{fig:resnet_architecture} shows the ResNet-18 layer stack.
 
 \paragraph{Layer primitives.} A 2D convolution with kernel $k$ of size $K \times K$ maps an input feature map $x$ of shape $(C_{\mathrm{in}}, H, W)$ to an output of shape $(C_{\mathrm{out}}, H, W)$ via
 \begin{equation}
@@ -441,91 +446,148 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
   \begin{tikzpicture}[
       layer/.style={circle, draw=black, thick, minimum size=0.7cm,
                     inner sep=0pt, font=\scriptsize},
-      input/.style={layer, fill=gray!25},
-      conv/.style={layer, fill=blue!20},
-      pool/.style={layer, fill=cyan!25},
-      res/.style={layer, fill=violet!25},
       fc/.style={layer, fill=orange!25},
       outnode/.style={layer, fill=green!25},
       lbl/.style={font=\scriptsize, align=center},
       conn/.style={-{Stealth[length=4pt]}, thick},
-      title/.style={font=\small\bfseries, anchor=east},
-      x=1.25cm, y=1cm,
+      x=1.3cm, y=1cm,
     ]
 
     % ====== Layout constants ======
-    \def\xRaw{-2.0}
-    \def\xImg{0}
-    \def\xConv{2.3}
-    \def\xPool{4.3}
-    \def\xFCa{7.9}
-    \def\xFCb{9.6}
-    \def\xOut{11.5}
-    \def\yLbl{-2.05}
-    \def\yRes{-5.0}
+    % Top (preparation) row -- occupies the left portion of the figure
+    \def\yPrep{0}
+    \def\xRaw{0.0}
+    \def\xCache{3.4}
+    \def\xInput{6.6}
+    \def\yPrepLbl{-2.05}
+    % Bottom (network) row -- spans the full width
+    \def\yNet{-5.2}
+    \def\xBatch{0.0}
+    \def\xConv{2.7}
+    \def\xPool{4.6}
+    \def\xFCa{7.7}
+    \def\xFCb{9.5}
+    \def\xOut{11.4}
+    \def\yNetLbl{-7.30}
 
-    % ====== Custom CNN (top row) ======
-    % --- Raw full-resolution SDSS image ---
-    \node[draw=black, thick, inner sep=1pt] (a_raw)
-         at (\xRaw, 0) {\includegraphics[width=1.5cm]{figures/fig_example_galaxy_full.pdf}};
-    \node[lbl] at (\xRaw, \yLbl) {raw SDSS image\\$424{\times}424{\times}3$};
+    % ============================================================
+    % TOP ROW: image preparation pipeline
+    % ============================================================
+    % --- Raw 424^2 SDSS image ---
+    \node[draw=black, thick, inner sep=1pt] (p_raw)
+         at (\xRaw, \yPrep) {\includegraphics[width=2.0cm]{figures/fig_arch_raw.pdf}};
+    \node[lbl] at (\xRaw, \yPrepLbl)
+         {raw SDSS image\\$424{\times}424{\times}4$};
 
-    % --- Resized network input image ---
-    \node[draw=black, thick, inner sep=1pt] (a_img)
-         at (\xImg, 0) {\includegraphics[width=1.2cm]{figures/fig_example_galaxy.pdf}};
-    \node[lbl] at (\xImg, \yLbl) {input image\\$96{\times}96{\times}3$};
+    % --- 136^2 rotation-safe cache, with an inscribed ROTATED dashed crop
+    %     square marking the rotated 96^2 crop region (rotation lives in
+    %     the cache stage; the final network input is upright). The crop
+    %     angle matches DEMO_ROTATION_ANGLE = 45 deg used in NB 02.
+    %     Geometry: 96^2 inscribed in 136^2 has half-side
+    %     (96/2)/136 * 1.55cm = 0.547 cm. At 45 deg the corners sit at
+    %     0.547 sqrt(2) = 0.774 cm from centre, just inside the cache's
+    %     1.55/2 = 0.775 cm half-width (matches 96 sqrt(2) <= 136).
+    %     Local x=1cm, y=1cm scope overrides the figure's x=1.3 so the
+    %     rectangle is truly square on the page.
+    \node[draw=black, thick, inner sep=1pt] (p_cache)
+         at (\xCache, \yPrep) {\includegraphics[width=1.55cm]{figures/fig_arch_cache.pdf}};
+    \begin{scope}[shift={(\xCache, \yPrep)}, x=1cm, y=1cm]
+      \draw[red!85!black, very thick, dashed, rotate=45]
+            (-0.547, -0.547) rectangle (0.547, 0.547);
+    \end{scope}
+    \node[lbl] at (\xCache, \yPrepLbl)
+         {downsampled cache\\$136{\times}136{\times}3$};
 
-    % --- Arrow: raw -> resized input ---
-    \draw[conn] (a_raw.east) -- (a_img.west);
+    % --- 96^2 network input (upright; rotation already applied upstream) ---
+    \node[draw=black, thick, inner sep=1pt] (p_input)
+         at (\xInput, \yPrep) {\includegraphics[width=1.1cm]{figures/fig_arch_rotated.pdf}};
+    \node[lbl] at (\xInput, \yPrepLbl)
+         {network input\\$96{\times}96{\times}3$};
+
+    % --- Arrows + labels between prep stages ---
+    \draw[conn] (p_raw.east) -- (p_cache.west)
+                node[midway, above=2pt, font=\scriptsize, align=center]
+                  {bilinear\\downsample};
+    \draw[conn] (p_cache.east) -- (p_input.west)
+                node[midway, above=2pt, font=\scriptsize, align=center]
+                  {rotate $\theta$\\$+$ centre-crop};
+
+    % --- Dashed encapsulating box: image preparation ---
+    \node[draw=black, thick, dashed, rounded corners=3pt,
+          fit={(\xRaw-1.45,1.55) (\xInput+1.10,-2.95)},
+          inner sep=0pt,
+          label={[font=\scriptsize\bfseries, anchor=west]north west:%
+            {Image preparation}}]
+         (prep_box) {};
+
+    % --- Bridging arrow: network input down to network batch ---
+    \draw[conn, thick]
+      (p_input.south) ..
+      controls +(0,-1.5) and +(0,2.0) ..
+      ($(\xBatch+0.18, \yNet) + (0, 1.25)$)
+      node[pos=0.55, right=4pt, font=\scriptsize, align=left]
+        {batch of $B{=}1024$\\sampled per step};
+
+    % ============================================================
+    % BOTTOM ROW: batched input -> conv blocks -> FC head
+    % ============================================================
+    % --- Input batch (stacked thumbnails of the rotated 96^2 inputs) ---
+    \begin{scope}[shift={(\xBatch, \yNet)}]
+      \foreach \sh in {0.36, 0.24, 0.12, 0} {
+        \node[draw=black, thick, inner sep=1pt, fill=white]
+              at (\sh, -\sh)
+              {\includegraphics[width=0.85cm]{figures/fig_arch_rotated.pdf}};
+      }
+    \end{scope}
+    \node[lbl] at (\xBatch+0.18, \yNetLbl)
+         {input batch\\$B{\times}96{\times}96{\times}3$};
 
     % --- Conv stack (3D look) ---
-    \begin{scope}[shift={(\xConv, 0)}]
+    \begin{scope}[shift={(\xConv, \yNet)}]
       \foreach \sh in {0,0.09,0.18,0.27} {
         \draw[fill=blue!25, thick]
               (-0.5+\sh, -0.5-\sh) rectangle (0.5+\sh, 0.5-\sh);
       }
     \end{scope}
-    \coordinate (a_conv_w) at (\xConv-0.5, 0);
-    \coordinate (a_conv_e) at (\xConv+0.77, 0);
-    \node[lbl] at (\xConv+0.13, -1.05)
-         {Conv $3{\times}3$};
+    \coordinate (n_conv_w) at (\xConv-0.5, \yNet);
+    \coordinate (n_conv_e) at (\xConv+0.77, \yNet);
+    \node[lbl] at (\xConv+0.13, \yNet-1.15) {Conv $3{\times}3$};
 
     % --- MaxPool (smaller stack) ---
-    \begin{scope}[shift={(\xPool, 0)}]
+    \begin{scope}[shift={(\xPool, \yNet)}]
       \foreach \sh in {0,0.07,0.14,0.21} {
         \draw[fill=cyan!30, thick]
               (-0.3+\sh, -0.3-\sh) rectangle (0.3+\sh, 0.3-\sh);
       }
     \end{scope}
-    \coordinate (a_pool_w) at (\xPool-0.3, 0);
-    \coordinate (a_pool_e) at (\xPool+0.51, 0);
-    \node[lbl] at (\xPool+0.10, -1.05)
-         {MaxPool $2{\times}2$};
+    \coordinate (n_pool_w) at (\xPool-0.3, \yNet);
+    \coordinate (n_pool_e) at (\xPool+0.51, \yNet);
+    \node[lbl] at (\xPool+0.10, \yNet-1.15) {MaxPool $2{\times}2$};
 
     % --- Forward arrow inside the block: conv -> pool ---
-    \draw[conn] (a_conv_e) -- (a_pool_w);
+    \draw[conn] (n_conv_e) -- (n_pool_w);
 
-    % --- Dashed encapsulating box around Conv + MaxPool, labeled ×4 ---
+    % --- Dashed encapsulating box around Conv + MaxPool, labeled x4 ---
     \node[draw=black, thick, dashed, rounded corners=3pt,
-          fit={(\xConv-0.7,0.65) (\xPool+0.75,-1.5)},
+          fit={(\xConv-0.8, \yNet+0.75) (\xPool+0.85, \yNet-1.65)},
           inner sep=0pt,
           label={[font=\scriptsize, align=center, yshift=2pt]above:%
             {Feature extractor block \quad $\times 4$\\
              channels: $32 \to 64 \to 128 \to 256$\\
              resolution: $96 \to 48 \to 24 \to 12 \to 6$}}]
-         (a_block) {};
+         (n_block) {};
 
-    % --- Image -> block, block -> flatten (forced to y=0 so all aligned) ---
-    \coordinate (a_block_w) at (a_block.west |- 0,0);
-    \coordinate (a_block_e) at (a_block.east |- 0,0);
-    \draw[conn] (a_img.east) -- (a_block_w);
-    \coordinate (a_flat) at (\xFCa-0.65, 0);
-    \draw[conn] (a_block_e) -- (a_flat)
-                node[pos=0.55, above=1pt, font=\scriptsize, align=center]
-                  {flatten\\$6{\times}6{\times}256 = 9216$};
+    % --- Batch -> block, block -> flatten ---
+    \coordinate (n_block_w) at (n_block.west |- 0, \yNet);
+    \coordinate (n_block_e) at (n_block.east |- 0, \yNet);
+    \draw[conn] (\xBatch+0.95, \yNet) -- (n_block_w);
+    \coordinate (n_flat) at (\xFCa-0.7, \yNet);
+    \draw[conn] (n_block_e) -- (n_flat)
+                node[pos=0.55, above=2pt, font=\scriptsize, align=center]
+                  {flatten\\$6{\times}6{\times}256$\\$= 9216$};
 
-    % --- FC layer 1 (3 + vdots + 3 = 6 circles representing 256 units) ---
-    \begin{scope}[shift={(\xFCa, 0)}]
+    % --- FC layer 1 (256 units, schematic) ---
+    \begin{scope}[shift={(\xFCa, \yNet)}]
       \foreach \i/\y in {0/1.20, 1/0.90, 2/0.60} {
         \node[fc, minimum size=0.34cm, font=\tiny] (f1-\i) at (0, \y) {};
       }
@@ -534,10 +596,10 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
         \node[fc, minimum size=0.34cm, font=\tiny] (f1-\i) at (0, \y) {};
       }
     \end{scope}
-    \node[lbl] at (\xFCa, \yLbl) {FC 256};
+    \node[lbl] at (\xFCa, \yNetLbl) {FC 256};
 
-    % --- FC layer 2 (2 + vdots + 2 = 4 circles representing 128 units) ---
-    \begin{scope}[shift={(\xFCb, 0)}]
+    % --- FC layer 2 (128 units, schematic) ---
+    \begin{scope}[shift={(\xFCb, \yNet)}]
       \foreach \i/\y in {0/0.90, 1/0.55} {
         \node[fc, minimum size=0.34cm, font=\tiny] (f2-\i) at (0, \y) {};
       }
@@ -546,27 +608,25 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
         \node[fc, minimum size=0.34cm, font=\tiny] (f2-\i) at (0, \y) {};
       }
     \end{scope}
-    \node[lbl] at (\xFCb, \yLbl) {FC 128};
+    \node[lbl] at (\xFCb, \yNetLbl) {FC 128};
 
-    % --- Output layer (1 + vdots + 1 = 2 circles representing 37 sigmoid units) ---
-    \begin{scope}[shift={(\xOut, 0)}]
+    % --- Output layer (37 sigmoid units, schematic) ---
+    \begin{scope}[shift={(\xOut, \yNet)}]
       \node[outnode, minimum size=0.34cm, font=\tiny] (o-0) at (0, 0.60) {};
       \node[font=\Large, inner sep=2pt] at (0, 0) {$\vdots$};
       \node[outnode, minimum size=0.34cm, font=\tiny] (o-1) at (0, -0.60) {};
     \end{scope}
-    \node[lbl] at (\xOut, \yLbl) {37 sigmoid\\outputs};
+    \node[lbl] at (\xOut, \yNetLbl) {37 sigmoid\\outputs};
 
     % --- Dropout labels above the inter-FC connection bundles ---
     \node[font=\scriptsize, align=center]
-      at ({(\xFCa+\xFCb)/2}, 1.55) {dropout 0.25};
+      at ({(\xFCa+\xFCb)/2}, \yNet+1.70) {dropout 0.25};
     \node[font=\scriptsize, align=center]
-      at ({(\xFCb+\xOut)/2}, 1.55) {dropout 0.10};
+      at ({(\xFCb+\xOut)/2}, \yNet+1.70) {dropout 0.10};
 
-    % --- Connections between layers ---
-    %   flatten -> FC256: full set (no dropout on the flatten input)
+    % --- FC connection bundles ---
     \foreach \i in {0,...,5}
-      \draw[gray!55, very thin] (a_flat) -- (f1-\i);
-    %   FC256 -> FC128: half edges drawn to depict 50% dropout
+      \draw[gray!55, very thin] (n_flat) -- (f1-\i);
     \foreach \i in {0,...,5}
       \foreach \j in {0,...,3} {
         \pgfmathtruncatemacro{\drop}{mod(\i+\j,2)}
@@ -574,7 +634,6 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
           \draw[gray!45, very thin] (f1-\i) -- (f2-\j);
         \fi
       }
-    %   FC128 -> output: half edges drawn to depict 50% dropout
     \foreach \j in {0,...,3}
       \foreach \k in {0,1} {
         \pgfmathtruncatemacro{\drop}{mod(\j+\k,2)}
@@ -582,35 +641,53 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
           \draw[gray!45, very thin] (f2-\j) -- (o-\k);
         \fi
       }
+  \end{tikzpicture}
+  \caption{Custom CNN architecture, read top-to-bottom then left-to-right. \emph{Top row, image preparation:} the raw $424^2$ SDSS $gri$ cutout is bilinearly downsampled to a $136^2$ on-disk cache; the dashed red square inside the cache marks the rotated $96^2$ crop region for one realisation of the augmentation angle $\theta \in [0, 360^\circ)$. The crop is then resampled to the upright $96^2$ network input on the right --- the rotation lives in the cache stage so the final input array stored on the GPU is always an axis-aligned square. The cache side $136 \ge 96\sqrt{2}$ guarantees the rotated crop region fits inside the cache at every angle, so no black corners ever enter the network (Section~\ref{sec:prep}). \emph{Bottom row, Custom CNN ($\sim$2.8M params):} batches of $B = 1024$ upright $96^2{\times}3$ inputs pass through a feature extractor consisting of a $3{\times}3$ convolution followed by $2{\times}2$ max-pooling, with the dashed loop indicating the block is repeated four times at channel widths $32 \to 64 \to 128 \to 256$. The flattened feature vector is fully connected to 256 units, halved to 128 units, and finally projected onto 37 sigmoid outputs; dropout fractions 0.25 and 0.10 are applied to the two FC bundles, drawn schematically.}
+  \label{fig:architectures}
+\end{figure*}
 
-    % ====== ResNet-18 (bottom row) ======
+\begin{figure}[t!]
+  \centering
+  \begin{tikzpicture}[
+      layer/.style={circle, draw=black, thick, minimum size=0.7cm,
+                    inner sep=0pt, font=\scriptsize},
+      input/.style={layer, fill=gray!25},
+      conv/.style={layer, fill=blue!20},
+      pool/.style={layer, fill=cyan!25},
+      res/.style={layer, fill=violet!25},
+      outnode/.style={layer, fill=green!25},
+      lbl/.style={font=\scriptsize, align=center},
+      conn/.style={-{Stealth[length=4pt]}, thick},
+      x=0.95cm, y=1cm,
+    ]
+    \def\yRes{0}
     \node[input]   (b0) at (0,    \yRes) {In};
-    \node[conv]    (b1) at (1.65, \yRes) {Stem};
-    \node[res]     (b2) at (3.3,  \yRes) {S1};
-    \node[res]     (b3) at (4.95, \yRes) {S2};
-    \node[res]     (b4) at (6.6,  \yRes) {S3};
-    \node[res]     (b5) at (8.25, \yRes) {S4};
-    \node[pool]    (b6) at (9.9,  \yRes) {GAP};
-    \node[outnode] (b7) at (11.5, \yRes) {Out};
+    \node[conv]    (b1) at (1.15, \yRes) {Stem};
+    \node[res]     (b2) at (2.30, \yRes) {S1};
+    \node[res]     (b3) at (3.45, \yRes) {S2};
+    \node[res]     (b4) at (4.60, \yRes) {S3};
+    \node[res]     (b5) at (5.75, \yRes) {S4};
+    \node[pool]    (b6) at (6.90, \yRes) {GAP};
+    \node[outnode] (b7) at (8.10, \yRes) {Out};
     \foreach \i/\j in {b0/b1,b1/b2,b2/b3,b3/b4,b4/b5,b5/b6,b6/b7}
       \draw[conn] (\i) -- (\j);
 
-    \node[lbl, below=0.32cm of b0] {$96^2{\times}3$};
-    \node[lbl, below=0.32cm of b1] {Conv $3{\times}3$\\64, stride 1};
-    \node[lbl, below=0.32cm of b2] {$2{\times}$BB\\64};
-    \node[lbl, below=0.32cm of b3] {$2{\times}$BB\\128, s2};
-    \node[lbl, below=0.32cm of b4] {$2{\times}$BB\\256, s2};
-    \node[lbl, below=0.32cm of b5] {$2{\times}$BB\\512, s2};
-    \node[lbl, below=0.32cm of b6] {global\\avg pool};
-    \node[lbl, below=0.32cm of b7] {37,\\sigmoid};
+    \node[lbl, below=0.30cm of b0] {$96^2{\times}3$};
+    \node[lbl, below=0.30cm of b1] {Conv $3{\times}3$\\64, s1};
+    \node[lbl, below=0.30cm of b2] {$2{\times}$BB\\64};
+    \node[lbl, below=0.30cm of b3] {$2{\times}$BB\\128, s2};
+    \node[lbl, below=0.30cm of b4] {$2{\times}$BB\\256, s2};
+    \node[lbl, below=0.30cm of b5] {$2{\times}$BB\\512, s2};
+    \node[lbl, below=0.30cm of b6] {global\\avg pool};
+    \node[lbl, below=0.30cm of b7] {37,\\sigmoid};
 
-    % --- BasicBlock inset, centered below ResNet ---
+    % --- BasicBlock inset ---
     \node[draw=black, thick, dashed, rounded corners=3pt,
           font=\scriptsize, align=center, inner sep=6pt,
-          anchor=north] (bb) at (5.75, \yRes-1.5) {%
+          anchor=north] (bb) at (4.05, \yRes-1.7) {%
       \textbf{BasicBlock (BB)}\\[3pt]
       \begin{tikzpicture}[
-          baseline, x=0.9cm,
+          baseline, x=0.85cm,
           mini/.style={circle, draw=black, thick, minimum size=0.5cm,
                        inner sep=0pt, font=\tiny, fill=blue!20},
           sumn/.style={circle, draw=black, thick, minimum size=0.42cm,
@@ -629,9 +706,9 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
       \end{tikzpicture}
     };
   \end{tikzpicture}
-  \caption{Architecture flow for the two backbones, read left-to-right. Top, Custom CNN ($\sim$2.8M params): a $96\times96\times3$ input image passes through a convolutional feature extractor consisting of a stack of $3\times3$ convolutions followed by $2\times2$ max-pooling, with the dashed loop indicating the block is repeated four times at channel widths $32 \to 64 \to 128 \to 256$. The flattened feature vector is then fully connected to 256 units, halved to 128 units, and finally projected onto 37 sigmoid outputs. Edges between FC layers are drawn schematically. Bottom, ResNet-18 ($\sim$11.2M params): a $3\times3$/stride-1 stem (no initial max-pool, suitable for the small $96\times96$ input) feeds four residual stages (S1--S4) of two BasicBlocks each at channel widths 64/128/256/512, ending in global average pooling and a 37-way sigmoid head. The dashed inset shows the internal flow of one BasicBlock: two $3\times3$ convolutions (C) summed with the identity skip ($+$) followed by ReLU (R).}
-  \label{fig:architectures}
-\end{figure*}
+  \caption{ResNet-18 backbone ($\sim$11.2M params): the standard \texttt{torchvision} stem (a $3{\times}3$ stride-1 convolution after the $7{\times}7$ stride-2 stem and $3{\times}3$ stride-2 max-pool) feeds four residual stages (S1--S4) of two BasicBlocks each at channel widths 64/128/256/512, ending in global average pooling and a 37-way sigmoid head. Input is the same $96{\times}96{\times}3$ network input prepared by the pipeline shown in Figure~\ref{fig:architectures}. The dashed inset shows the internal flow of one BasicBlock: two $3{\times}3$ convolutions (C) summed with the identity skip ($+$) followed by ReLU (R).}
+  \label{fig:resnet_architecture}
+\end{figure}
 
 \subsection{ResNet-18}
 \label{sec:resnet}
@@ -973,6 +1050,17 @@ a factor-of-$5$ range. The Lotz et al. $z \approx 0$ value is $R_{\mathrm{merger
 
 \subsection{Why the Rare-Label Tier Underperforms}
 The per-label scatter plots (Figure~\ref{fig:label_scatter}) and the rarity-vs-baseline-RMSE diagnostic (Figure~\ref{fig:label_rarity_vs_rmse}) expose a structural limitation of the per-label RMSE metric on a hierarchical-gated label space. For the well-sampled top-level labels (Class1.x, Class6.x, Class2.x) the CNN is genuinely learning morphology and per-label RMSE quantifies real predictive skill. For the deep-tree rare-feature labels (Class1.3, Class8.x, Class11.3--5) the effective sample size collapses to $N_{\mathrm{eff}} \lesssim 1000$ because the gating concentrates almost all vote-fraction mass at zero, and a model that predicts $\hat f \approx 0$ everywhere attains low bulk RMSE without distinguishing any positive examples. The apparent ranking in Figure~\ref{fig:per_label_rmse} is therefore inverted: the highest-RMSE labels are the ones the CNN actually learns, while the lowest-RMSE labels are the ones it fails to learn but where predicting zero still scores well. We note that any aggregate validation RMSE therefore under-represents the CNN's failure on rare labels, and should be reported alongside the rarity-weighted per-label decomposition of Figure~\ref{fig:label_rarity_vs_rmse}. Future work should either (a) reweight the loss against $N_{\mathrm{eff}}$ to force the model to attend to rare-feature labels, or (b) train per-question heads with category-specific losses that decouple the rare branches from the dominant top-level signal.
+
+\subsection{The Label-Noise Floor and What ``Better'' Means}
+\label{sec:label-noise-floor}
+The validation RMSE the CNN attains is bounded from below by the inter-classifier disagreement in the training labels, not zero. Each GZ2 vote fraction $f_q$ is an estimate of a population mean from a finite vote count $N_{\mathrm{cls}}^q$ of classifiers who were asked question $q$, with a binomial standard error
+\begin{equation}
+  \sigma_q = \sqrt{\frac{f_q (1 - f_q)}{N_{\mathrm{cls}}^q}}.
+  \label{eq:label_noise_floor}
+\end{equation}
+For the top-level questions where every classifier votes ($N_{\mathrm{cls}} \sim 40$--$50$) and a typical vote fraction is $f \sim 0.5$, this gives $\sigma_q \sim 0.07$--$0.08$ per label per galaxy. Averaging in quadrature across the 37 labels yields a label-noise floor of $\sim 0.05$--$0.07$ on the bulk RMSE that any model trained on these labels could attain, even with infinite data and a perfect architecture, because the labels themselves carry that much sampling noise around the unobserved ``true'' vote-fraction surface. Our augmented Custom CNN attains $\mathrm{RMSE} = 0.0913$, within a factor of $\sim 1.5$--$2$ of this floor; the remaining headroom is therefore not large, and further architectural changes have diminishing returns against the irreducible label-noise term. The lab manual's framing of the task --- ``the model we build should perform almost as well as a human'' --- is consistent with this ceiling: a human has a per-galaxy classification noise of comparable magnitude to a randomly drawn GZ2 classifier, so human-level error is approximately the label-noise floor.
+
+The floor is not uniform across labels. Top-level well-sampled labels have $N_{\mathrm{cls}} \sim 40$--$50$ classifiers and a narrow noise budget, whereas deep-tree rare-feature labels are gated on rare upstream answers: a Q11 (arm count) leaf is only seen by classifiers who first answered ``Features'' ($\sim 40\%$ of votes), ``Not edge-on'' ($\sim 80\%$ of those), and ``Spiral yes'' ($\sim 50\%$ of those), leaving $N_{\mathrm{cls}} \sim 8$--$10$ classifiers per arm-count leaf and a per-label binomial $\sigma \sim 0.13$--$0.18$. The per-label RMSE pattern of Section~\ref{sec:eval} therefore reflects a convolution of two effects: the CNN failing to learn rare-feature morphology AND the label-noise floor being intrinsically higher on exactly those labels, so the failure is partially masked by the wider noise budget on which it is measured.
 
 \subsection{Tree-Reweighted Output vs.\ Unconstrained Baseline}
 The tree-reweighted architecture (Section~\ref{sec:treeweight}) enforces $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ at inference time. Its bulk validation RMSE ($0.2066$) is more than $2\times$ worse than the unconstrained augmented Custom CNN ($0.0913$). The unconstrained baseline minimises bulk RMSE by predicting small positive values $\hat f \sim 0.01$--$0.05$ on rare deep-tree labels whose true vote fraction is $\sim 0$, which scores well at the population level. The tree-reweighted architecture forecloses that strategy, forcing $\hat f_{\mathrm{child}} \to 0$ whenever $\sum_p \hat f_p \to 0$. Table~\ref{tab:treeweight_per_label} shows that the largest RMSE penalties fall on the deep-tree rare-feature labels (Star/Artefact, Dust lane, Lens/Arc, Merger), confirming this interpretation. The constrained architecture is the more physically principled choice for an analysis that requires chain-rule consistency; the unconstrained baseline is the better aggregate-RMSE minimiser and is what the lab manual scores against.

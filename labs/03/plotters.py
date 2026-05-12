@@ -32,9 +32,11 @@ from ugdatalab.plotting import (
     GUIDE_STYLE,
     LABEL_SIZE,
     LEGEND_SIZE,
+    landscapewidth_figure,
     textwidth_figure,
     subpanels,
 )
+from ugdatalab.models.galaxy_zoo.constants import LABEL_COLUMNS
 
 _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 
@@ -42,11 +44,11 @@ _FIGURES_DIR = Path(__file__).parent / "report" / "figures"
 # Columns in the random-image montage
 _RANDOM_IMAGES_NCOLS = 7
 # Columns in the label-distribution histogram grid
-_LABEL_DIST_NCOLS = 5
+_LABEL_DIST_NCOLS = 7
 # Per-row figure height scale (inches)
 _LABEL_DIST_FIGURE_SCALE = 2.2
 # Columns in the prototype-image grid
-_PROTOTYPE_IMAGES_NCOLS = 4
+_PROTOTYPE_IMAGES_NCOLS = 7
 # Max columns in the pairwise-label scatter grid
 _PAIRWISE_LABEL_MAX_COLS = 4
 
@@ -73,6 +75,19 @@ _NEFF_LOW_THRESHOLD = 200
 # --- Label-axis padding ---
 # Symmetric pad on the [0, 1] label-probability axis
 _LABEL_AXIS_PAD = 0.05
+
+# --- Grid layout: blank-panel insertions for label-grouped subplots ---
+# Insert a blank panel AFTER plotting the label at each index below.
+# 10 -> after Class5.2 (just-noticeable bulge), so Class5.3 (obvious bulge)
+#       starts in the cell after the blank.
+# 15 -> after Class7.1 (completely round), so Class7.2 (in-between) starts
+#       in the cell after the blank.
+_LABEL_GRID_SKIPS = (10, 15)
+
+
+def _panel_for_label(label_index, skips=_LABEL_GRID_SKIPS):
+    """Map label index to panel index, accounting for trailing-blank insertions."""
+    return label_index + sum(1 for s in skips if label_index > s)
 
 
 def savefig(fig, name):
@@ -106,7 +121,7 @@ def plot_random_images(images, galaxy_ids, n_samples, seed):
 
     fig, _ = textwidth_figure(2 * nrows)
     _.remove()
-    axes = subpanels(fig, nrows, ncols, hspace=0.42, sharex=False)
+    axes = subpanels(fig, nrows, ncols, hspace=0.42, wspace=-0.30, sharex=False)
 
     for i in range(nrows * ncols):
         row, col = divmod(i, ncols)
@@ -114,7 +129,7 @@ def plot_random_images(images, galaxy_ids, n_samples, seed):
         if i < n_samples:
             ax.imshow(images[idx[i]])
             ax.set_title(f"ID {galaxy_ids[idx[i]]}",
-                         fontsize=LEGEND_SIZE - 1, loc="left")
+                         fontsize=LEGEND_SIZE - 2, loc="left")
             ax.axis("off")
         else:
             ax.set_visible(False)
@@ -146,35 +161,44 @@ def plot_label_distributions(labels, label_names, label_descriptive):
     """
     n_labels = labels.shape[1]
     ncols = _LABEL_DIST_NCOLS
-    nrows = (n_labels + ncols - 1) // ncols
+    n_panels_needed = n_labels + len(_LABEL_GRID_SKIPS)
+    nrows = (n_panels_needed + ncols - 1) // ncols
 
     fig, _ = textwidth_figure(_LABEL_DIST_FIGURE_SCALE * nrows)
     _.remove()
     axes = subpanels(fig, nrows, ncols, hspace=0.56, wspace=0.28, sharex=True)
 
-    last_row_for_col = [
-        max(r for r in range(nrows) if r * ncols + c < n_labels)
-        for c in range(ncols)
-    ]
+    # Map each label index to its panel position (accounting for blank-cell skips)
+    label_to_panel = [_panel_for_label(i) for i in range(n_labels)]
+    panel_to_label = {p: i for i, p in enumerate(label_to_panel)}
 
-    for i in range(nrows * ncols):
-        row, col = divmod(i, ncols)
+    # Last row in each column that carries a visible histogram, for xtick gating
+    last_row_for_col = [-1] * ncols
+    for p in label_to_panel:
+        r, c = divmod(p, ncols)
+        if r > last_row_for_col[c]:
+            last_row_for_col[c] = r
+
+    for p in range(nrows * ncols):
+        row, col = divmod(p, ncols)
         ax = axes[row, col]
-        if i < n_labels:
+        if p in panel_to_label:
+            i = panel_to_label[p]
             class_id = int(label_names[i].split("Class")[1].split(".")[0])
             color = f"C{(class_id - 1) % 10}"
             ax.hist(labels[:, i], bins=_LABEL_DIST_HIST_BINS, density=True, color=color,
                     alpha=ALPHA_STANDARD, lw=LW_NONE)
             desc = label_descriptive.get(label_names[i], label_names[i])
-            ax.set_title(desc, fontsize=LEGEND_SIZE, loc="left")
+            ax.set_title(f"{label_names[i]}:\n{desc}",
+                         fontsize=LEGEND_SIZE - 2, loc="left")
             ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
-            ax.tick_params(labelsize=LEGEND_SIZE - 1)
+            ax.tick_params(labelsize=LEGEND_SIZE - 2)
             ax.tick_params(labelbottom=(row == last_row_for_col[col]))
         else:
             ax.set_visible(False)
 
-    fig.supxlabel("Label probability", fontsize=LABEL_SIZE)
-    fig.supylabel("Density", fontsize=LABEL_SIZE)
+    fig.supxlabel("Label probability", fontsize=LABEL_SIZE, y=0.08)
+    fig.supylabel("Density", fontsize=LABEL_SIZE, x=0.06)
 
     savefig(fig, "fig_label_distributions.pdf")
     return axes
@@ -198,21 +222,29 @@ def plot_prototype_images(images, galaxy_ids, labels, label_names,
     """
     n_labels = labels.shape[1]
     ncols = _PROTOTYPE_IMAGES_NCOLS
-    nrows = (n_labels + ncols - 1) // ncols
+    n_panels_needed = n_labels + len(_LABEL_GRID_SKIPS)
+    nrows = (n_panels_needed + ncols - 1) // ncols
 
-    fig, _ = textwidth_figure(2 * nrows)
+    # Portrait textwidth figure; aim for near-square panels with title
+    # padding by sizing the figure height as 16 * (nrows / ncols) * scale.
+    fig, _ = textwidth_figure(16 * (nrows / ncols) * 1.10)
     _.remove()
-    axes = subpanels(fig, nrows, ncols, hspace=0.56, sharex=False)
+    axes = subpanels(fig, nrows, ncols, hspace=0.60, wspace=-0.10, sharex=False)
 
-    for i in range(nrows * ncols):
-        row, col = divmod(i, ncols)
+    panel_to_label = {_panel_for_label(i): i for i in range(n_labels)}
+
+    for p in range(nrows * ncols):
+        row, col = divmod(p, ncols)
         ax = axes[row, col]
-        if i < n_labels:
+        if p in panel_to_label:
+            i = panel_to_label[p]
             best = np.argmax(labels[:, i])
             ax.imshow(images[best])
             desc = label_descriptive.get(label_names[i], label_names[i])
-            ax.set_title(f"{desc}\nID {galaxy_ids[best]}, {labels[best, i]:.2f}",
-                         fontsize=LEGEND_SIZE - 1, loc="left")
+            ax.set_title(f"{label_names[i]}: {labels[best, i]:.2f}\n"
+                         f"{desc}\n"
+                         f"ID {galaxy_ids[best]}",
+                         fontsize=LEGEND_SIZE - 3, loc="left")
             ax.axis("off")
         else:
             ax.set_visible(False)
@@ -343,7 +375,8 @@ def plot_split_distributions(train_labels, val_labels, label_names,
                     alpha=ALPHA_STANDARD,
                     label="Val" if i == 0 else None)
             desc = label_descriptive.get(label_names[i], label_names[i])
-            ax.set_title(desc, fontsize=LEGEND_SIZE - 1, loc="left")
+            ax.set_title(f"{label_names[i]}: {desc}",
+                         fontsize=LEGEND_SIZE - 2, loc="left")
             ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
             ax.tick_params(labelsize=LEGEND_SIZE - 1)
         else:
@@ -500,9 +533,9 @@ def plot_label_scatter(true_labels, pred_labels, label_descriptive_list):
             ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
             ax.set_ylim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
             ax.set_title(
-                f"{label_descriptive_list[i]}\n"
+                f"{LABEL_COLUMNS[i]}: {label_descriptive_list[i]}\n"
                 rf"bias$={bias:+.3f}$, $\sigma={scatter_val:.3f}$",
-                fontsize=LEGEND_SIZE - 1, loc="left",
+                fontsize=LEGEND_SIZE - 2, loc="left",
             )
             ax.tick_params(labelsize=LEGEND_SIZE - 1)
         else:
@@ -812,9 +845,11 @@ def plot_pairwise_label_scatter(labels, pairs, label_descriptive_list):
                    norm=mcolors.LogNorm(vmin=1, vmax=density.max()))
 
         rho = np.corrcoef(x, y)[0, 1]
-        ax.set_title(rf"$\rho = {rho:+.3f}$", fontsize=LEGEND_SIZE)
-        ax.set_xlabel(label_descriptive_list[i], fontsize=LEGEND_SIZE - 1)
-        ax.set_ylabel(label_descriptive_list[j], fontsize=LEGEND_SIZE - 1)
+        ax.set_title(rf"$\rho = {rho:+.3f}$", fontsize=LEGEND_SIZE - 1)
+        ax.set_xlabel(f"{LABEL_COLUMNS[i]}: {label_descriptive_list[i]}",
+                      fontsize=LEGEND_SIZE - 1)
+        ax.set_ylabel(f"{LABEL_COLUMNS[j]}: {label_descriptive_list[j]}",
+                      fontsize=LEGEND_SIZE - 1)
         ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
         ax.set_ylim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
         ax.tick_params(labelsize=LEGEND_SIZE - 1)
