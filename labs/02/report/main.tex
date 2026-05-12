@@ -423,7 +423,7 @@ To confirm the model is functioning correctly, Figure~\ref{fig:training_predicti
 
 The gradient spectrum $\partial f_\lambda / \partial \ell_i$ quantifies the sensitivity of the flux at each wavelength to changes in label $\ell_i$. These are computed analytically from the polynomial coefficients $\boldsymbol{\theta}_\lambda$. Figure~\ref{fig:gradient_spectra} shows the gradient spectra for all five labels.
 
-\begin{figure*}[b!]
+\begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_gradient_spectra.pdf}
   \caption{Gradient spectra $\partial f_\lambda / \partial \ell_i$ for each of the five labels. $T_{\rm eff}$ (top) shows a broadband response across the entire wavelength range, with the strongest features at CO molecular bands ($>$15580~\AA). $\log g$ shows pressure-broadened features. [Fe/H], [Mg/Fe], and [Si/Fe] show line-localized responses at known absorption features. Vertical markers on the [Mg/Fe] panel indicate known Mg~I lines (15741, 15749, 15765, 15879, 15886, 15954~\AA; \citealt{SmithApogee2013}); on the [Si/Fe] panel, known Si~I lines (15361, 15376, 15557, 15888, 15960, 16060, 16094, 16215, 16828~\AA).}
