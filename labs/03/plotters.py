@@ -709,13 +709,14 @@ def plot_label_scatter(true_labels, pred_labels, label_names,
         (``fig_label_scatter_<model_tag>.pdf``).
     """
     n_labels = true_labels.shape[1]
-    ncols = _LABEL_DIST_NCOLS
+    ncols = 7
     n_panels_needed = n_labels + len(_LABEL_GRID_SKIPS)
     nrows = (n_panels_needed + ncols - 1) // ncols
 
-    fig, _ = textwidth_figure(_LABEL_DIST_FIGURE_SCALE * nrows)
+    fig, _ = textwidth_figure(3.0 * nrows)
     _.remove()
-    axes = subpanels(fig, nrows, ncols, hspace=0.56, wspace=0.28, sharex=True)
+    axes = subpanels(fig, nrows, ncols, hspace=0.85, wspace=0.20,
+                     sharex=True, sharey=True)
 
     label_to_panel = [_panel_for_label(i) for i in range(n_labels)]
     panel_to_label = {p: i for i, p in enumerate(label_to_panel)}
@@ -747,8 +748,9 @@ def plot_label_scatter(true_labels, pred_labels, label_names,
 
             desc = label_descriptive.get(label_names[i], label_names[i])
             ax.set_title(
-                f"{label_names[i]}: {desc}\n"
-                rf"bias$={bias:+.3f}$, $\sigma={scatter_val:.3f}$",
+                f"{label_names[i]}:\n{desc}\n"
+                rf"bias$={bias:+.3f}$" "\n"
+                rf"$\sigma={scatter_val:.3f}$",
                 fontsize=LEGEND_SIZE - 2, loc="left",
             )
             ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
@@ -788,9 +790,9 @@ def plot_top5_images(images, true_labels, pred_labels, label_idx,
         Descriptive label name for title.
     galaxy_ids : ndarray, shape (N,)
     """
-    fig, _ = textwidth_figure(4)
+    fig, _ = textwidth_figure(5.0)
     _.remove()
-    axes = subpanels(fig, 2, 5, hspace=0.2, wspace=0.1, sharex=False)
+    axes = subpanels(fig, 2, 5, hspace=0.75, wspace=0.1, sharex=False)
 
     top5_true = np.argsort(true_labels)[-5:][::-1]
     top5_pred = np.argsort(pred_labels)[-5:][::-1]
@@ -798,19 +800,25 @@ def plot_top5_images(images, true_labels, pred_labels, label_idx,
     for j in range(5):
         idx_t = top5_true[j]
         axes[0, j].imshow(images[idx_t])
-        axes[0, j].set_title(f"{true_labels[idx_t]:.2f}",
-                             fontsize=LEGEND_SIZE - 1)
-        axes[0, j].axis("off")
+        axes[0, j].set_title(
+            f"actual {true_labels[idx_t]:.2f}\npred {pred_labels[idx_t]:.2f}",
+            fontsize=LEGEND_SIZE - 1,
+        )
+        axes[0, j].set_xticks([])
+        axes[0, j].set_yticks([])
 
         idx_p = top5_pred[j]
         axes[1, j].imshow(images[idx_p])
-        axes[1, j].set_title(f"{pred_labels[idx_p]:.2f}",
-                             fontsize=LEGEND_SIZE - 1)
-        axes[1, j].axis("off")
+        axes[1, j].set_title(
+            f"actual {true_labels[idx_p]:.2f}\npred {pred_labels[idx_p]:.2f}",
+            fontsize=LEGEND_SIZE - 1,
+        )
+        axes[1, j].set_xticks([])
+        axes[1, j].set_yticks([])
 
     axes[0, 0].set_ylabel("Actual", fontsize=LABEL_SIZE)
     axes[1, 0].set_ylabel("Predicted", fontsize=LABEL_SIZE)
-    fig.suptitle(label_name, fontsize=LABEL_SIZE)
+    fig.suptitle(label_name, fontsize=LABEL_SIZE, y=1.02)
 
     safe_name = label_name.lower().replace(" ", "_").replace(":", "").replace("/", "_")
     savefig(fig, f"fig_top5_{safe_name}.pdf")
@@ -1354,100 +1362,6 @@ def plot_label_rarity_vs_rmse(n_eff, baseline_rmse, label_descriptive_list,
     ax.legend(fontsize=LEGEND_SIZE, loc="best")
 
     savefig(fig, "fig_label_rarity_vs_rmse.pdf")
-    return ax
-
-
-# ---------------------------------------------------------------------------
-# 20. Merger fraction vs probability threshold (Task 26)
-# ---------------------------------------------------------------------------
-
-def plot_merger_threshold_sweep(merger_probs, thresholds, lotz_band):
-    """Fraction of galaxies above each merger-probability threshold, with Lotz band overlay.
-
-    Parameters
-    ----------
-    merger_probs : ndarray, shape (N,)
-        Predicted merger probability per galaxy in the test set.
-    thresholds : ndarray, shape (T,)
-        Threshold values to sweep over (e.g. ``np.linspace(0.05, 0.95, 19)``).
-    lotz_band : tuple of (float, float)
-        Lower and upper expected merger fraction from Lotz et al. 2011 Fig. 13,
-        upper-right panel at $z \approx 0$, converted to a dimensionless fraction
-        using a representative observability timescale.
-    """
-    fractions = np.array([float(np.mean(merger_probs > t)) for t in thresholds])
-
-    fig, ax = textwidth_figure(3.5)
-    lo, hi = lotz_band
-    ax.axhspan(lo, hi, color="C2", alpha=ALPHA_EXTRA_LIGHT, zorder=1,
-               label=rf"Lotz+11 $z \approx 0$: {lo*100:.1f}–{hi*100:.1f}\%")
-    ax.plot(thresholds, fractions, lw=LW_STANDARD, alpha=ALPHA_STANDARD,
-            color="C0", zorder=3, label="This work")
-    ax.axhline(float(np.mean(merger_probs)), **GUIDE_STYLE,
-               label=rf"Mean prob = {np.mean(merger_probs)*100:.2f}\%")
-    ax.set_xlabel(r"Merger-probability threshold $p_{\mathrm{cut}}$")
-    ax.set_ylabel(r"$f_{\mathrm{merger}}(p > p_{\mathrm{cut}})$")
-    ax.set_yscale("log")
-    _decimal_log_yaxis(ax)
-    ax.legend(fontsize=LEGEND_SIZE, loc="upper right")
-
-    savefig(fig, "fig_merger_threshold_sweep.pdf")
-    return ax
-
-
-# ---------------------------------------------------------------------------
-# 21. Derived merger rate vs Lotz et al. 2011 (Task 26)
-# ---------------------------------------------------------------------------
-
-def plot_merger_rate_vs_lotz(f_merger, f_merger_err, tau_vis_range,
-                             lotz_rate, lotz_rate_err):
-    """Derived major-merger rate with $\\tau_{\\mathrm{vis}}$ systematic vs Lotz value.
-
-    Converts our merger fraction to a rate using $R = f / \\tau_{\\mathrm{vis}}$
-    and propagates both the statistical uncertainty on $f$ and the systematic
-    uncertainty on $\\tau_{\\mathrm{vis}}$. Overlays the Lotz et al. 2011 Fig. 13
-    upper-right $z \\approx 0$ value with its quoted uncertainty.
-
-    Parameters
-    ----------
-    f_merger : float
-        Best-estimate merger fraction (dimensionless, e.g. 0.04).
-    f_merger_err : float
-        Statistical 1σ on f_merger from bootstrap.
-    tau_vis_range : tuple of (float, float, float)
-        $(\\tau_{\\mathrm{lo}}, \\tau_{\\mathrm{mid}}, \\tau_{\\mathrm{hi}})$ in Gyr.
-    lotz_rate : float
-        Lotz et al. 2011 best-fit major-merger rate at $z \\approx 0$ in Gyr$^{-1}$.
-    lotz_rate_err : float
-        Lotz et al. 2011 1σ on the rate.
-    """
-    tau_lo, tau_mid, tau_hi = tau_vis_range
-
-    # Best estimate and its uncertainty
-    r_mid = f_merger / tau_mid
-    # Combine stat and tau_vis systematic in quadrature on log
-    r_lo = f_merger / tau_hi
-    r_hi = f_merger / tau_lo
-
-    fig, ax = textwidth_figure(2.6)
-    x = [0, 1]
-    y = [r_mid, lotz_rate]
-    yerr_lo = [r_mid - r_lo, lotz_rate_err]
-    yerr_hi = [r_hi - r_mid, lotz_rate_err]
-    ax.errorbar(x, y, yerr=[yerr_lo, yerr_hi], fmt="o", color="C0",
-                lw=LW_STANDARD, capsize=4, zorder=3,
-                markersize=6)
-    ax.set_xticks(x)
-    ax.set_xticklabels([
-        rf"This work" "\n" rf"($\tau_{{\rm vis}}={tau_lo}$–${tau_hi}$ Gyr)",
-        rf"Lotz+11" "\n" rf"$z \approx 0$",
-    ], fontsize=LEGEND_SIZE)
-    ax.set_ylabel(r"$R_{\mathrm{merger}}$ (Gyr$^{-1}$)")
-    ax.set_yscale("log")
-    _decimal_log_yaxis(ax)
-    ax.set_xlim(-0.5, 1.5)
-
-    savefig(fig, "fig_merger_rate_vs_lotz.pdf")
     return ax
 
 
