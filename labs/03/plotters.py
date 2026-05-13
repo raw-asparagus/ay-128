@@ -522,8 +522,15 @@ def plot_loss_with_lr_pair(runs, filename):
     _.remove()
     axes = subpanels(
         fig, nrows=2, ncols=2, height_ratios=(3, 1),
-        hspace=0.05, wspace=0.32, sharex=False,
+        hspace=0.05, wspace=0.10, sharex=False,
     )
+
+    # Share y-axis within each row so loss panels and LR panels are
+    # directly comparable across columns.
+    axes[0, 1].sharey(axes[0, 0])
+    axes[1, 1].sharey(axes[1, 0])
+    axes[0, 1].tick_params(labelleft=False)
+    axes[1, 1].tick_params(labelleft=False)
 
     for col, run in enumerate(runs):
         ax_loss = axes[0, col]

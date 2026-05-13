@@ -275,7 +275,7 @@ Raw GZ2 cutouts are $424 \times 424 \times 3$ in $gri$ RGB, most of which is emp
 \begin{enumerate}
   \item Centre-crops by $15\%$ per side (retaining the central $\sim 296^2$ region around the galaxy).
   \item Bilinearly resizes to a $136 \times 136$ on-disk cache in \texttt{uint8} ($\sim 3.4$~GB total).
-  \item GPU-side \texttt{CenterCrop(96)} at train time yields the $96 \times 96 \times 3$ model input.
+  \item GPU-side \texttt{CenterCrop(96)} at training time yields the $96 \times 96 \times 3$ model input.
 \end{enumerate}
 
 A 2-step downscaling process is opted for to avoid black corners due to rotation and avoid additional memory requirements of full resolution images. However, this comes with the trade-off of potential compression artifacts and loss of detail. The full pipeline (raw $424^2$ $\rightarrow$ $136^2$ cache $\rightarrow$ rotated $96^2$ model input) is graphically depicted in the top row of Figure~\ref{fig:architectures}; Figure~\ref{fig:image_comparison} shows the same four-stage pipeline applied to four example galaxies, verifying that the rotation-safe cache buffer eliminates corner artefacts at every rotation angle.
@@ -308,14 +308,14 @@ At this resolution floor, prominent morphological feature scales of interest bar
   \label{fig:image_comparison}
 \end{figure*}
 
-\subsection{Train/Validation Split}
+\subsection{Training/Validation Split}
 
 We randomly split the dataset 80/20 into 49{,}262 training and 12{,}316 validation images. Figure~\ref{fig:split_distributions} confirms that the per-label distributions are statistically indistinguishable between the two sets.
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_split_distributions.pdf}
-  \caption{Per-label normalized histograms of the 80/20 train (blue) and validation (orange) split (seed 42). The two distributions overlap to within visible per-bin counting noise on every one of the 37 labels, confirming that the random split has not introduced any systematic label-prevalence drift between training and validation.}
+  \caption{Per-label normalized histograms of the 80/20 training (blue) and validation (orange) split (seed 42). The two distributions overlap to within visible per-bin counting noise on every one of the 37 labels, confirming that the random split has not introduced any systematic label-prevalence drift between training and validation.}
   \label{fig:split_distributions}
 \end{figure*}
 
@@ -695,7 +695,7 @@ A tapered-dropout is applied with $p = 0.25$ after FC1 and $p = 0.10$ after FC2.
   \label{fig:ablation}
 \end{figure}
 
-We select the depth-4 / tapered-dropout configuration via an ablation sweep at 50 epochs on the same train/validation split, varying depth $\in \{3, 4, 5\}$ at fixed tapered dropout and dropout $\in \{(0.10, 0.10), (0.25, 0.10),$ $(0.25, 0.25)\}$ at fixed depth $4$. At depth 3 the post-convolution feature map is $12^2 \times 128 = 18{,}432$ values, inflating the FC head and increasing overfitting risk; at depth 5 the feature map collapses to $3^2 \times 512 = 4{,}608$, erasing spatial structure already vaguely present in resolution-limited images. Figure~\ref{fig:ablation} shows that depths 3, 4, and 5 cluster within run-to-run noise, while the tapered-dropout pivot beats the uniform $(0.25, 0.25)$ variant and tracks the uniform $(0.10, 0.10)$ variant.
+We select the depth-4 / tapered-dropout configuration via an ablation sweep at 50 epochs on the same training/validation split, varying depth $\in \{3, 4, 5\}$ at fixed tapered dropout and dropout $\in \{(0.10, 0.10), (0.25, 0.10),$ $(0.25, 0.25)\}$ at fixed depth $4$. At depth 3 the post-convolution feature map is $12^2 \times 128 = 18{,}432$ values, inflating the FC head and increasing overfitting risk; at depth 5 the feature map collapses to $3^2 \times 512 = 4{,}608$, erasing spatial structure already vaguely present in resolution-limited images. Figure~\ref{fig:ablation} shows that depths 3, 4, and 5 cluster within run-to-run noise, while the tapered-dropout pivot beats the uniform $(0.25, 0.25)$ variant and tracks the uniform $(0.10, 0.10)$ variant.
 
 The Custom CNN has $\mathbf{2{,}786{,}117}$ trainable parameters, of which $\sim 2.36$~M live in the $9216 \to 256$ FC1 matrix. The training set contains $N_{\mathrm{train}} \times 96^2 \times 3 \approx 1.36 \times 10^9$ pixels, giving a parameter-to-pixel ratio of $\sim 2 \times 10^{-3}$. This is well below unity, but since neighbouring pixels are highly correlated and most pixels are background sky, the effective independent-sample count is likely much smaller.
 
@@ -719,62 +719,68 @@ Plain deep CNNs suffer from a degradation problem. As more layers are stacked, t
 \end{equation}
 and gradients propagate through the skip unattenuated since the additive identity in $J_{\mathrm{block}}$ guarantees $\|J_{\mathrm{block}}\| \ge 1$ in the small-perturbation limit. As such, such residual networks (ResNets) can be trained to arbitrary depth without much degradation. 
 
-We use \texttt{torchvision}'s ResNet-18 unmodified: the $7\times7$ stride-2 stem and $3\times3$ stride-2 max-pool performs a stride-1 reduction $96^2 \to 24^2$ before stage 1, and the three stride-2 reductions in stages 2--4 bring the spatial extent to $3 \times 3$ at the global-average-pool. The classification layer is replaced with a Linear($512 \to 37$)$\,+\,$sigmoid layer for multi-label output. The total parameter count is $\mathbf{11{,}195{,}493}$ ($\sim 4\times$ the Custom CNN). Training settings match the Custom CNN above (Adam optimizer; RMSE loss; $100$ epochs; batch $1024$) with no augmentation or LR scheduler in this baseline.
+We use \texttt{torchvision}'s ResNet-18 unmodified: the $7\times7$ stride-2 stem and $3\times3$ stride-2 max-pool performs a stride-1 reduction $96^2 \to 24^2$ before stage 1, and the three stride-2 reductions in stages 2--4 bring the spatial extent to $3 \times 3$ at the global-average-pool. The classification layer is replaced with a Linear($512 \to 37$)$\,+\,$sigmoid layer for multi-label output. The total parameter count is $\mathbf{11{,}195{,}493}$ ($\sim 4\times$ the Custom CNN). Training settings match the Custom CNN above.
 
-\subsubsection{Custom CNN vs.\ ResNet-18}
+\subsection{Custom CNN vs.\ ResNet-18}
 
-The Custom CNN and ResNet-18 are indistinguishable within $\sim 0.0005$ RMSE in this unaugmented baseline (Custom: $0.0953$, ResNet-18: $0.0958$). The residual extension therefore does not buy a measurable accuracy improvement at this depth ($18$ layers is well below where the degradation problem dominates), confirming that the gradient-flow argument is unnecessary at our scale. On the contrary, the low-depth and smaller parameter approach of the Custom CNN makes it more efficient in terms of computational resources and training time. 
+The Custom CNN and ResNet-18 are indistinguishable within $\sim 0.0005$ RMSE in this unaugmented baseline (Custom: $0.0953$, ResNet-18: $0.0958$). The residual approach for more depth therefore does not buy any accuracy improvement. On the contrary, the low-depth and smaller parameter approach of the Custom CNN makes it more efficient in terms of computational resources and training time. 
 
 \subsection{Optimization Interventions}
 \label{sec:opt}
 
-We add two interventions on top of the Custom CNN baseline: (1) an adaptive learning-rate scheduler; and (2) random-angle rotation augmentation. The scheduler addresses optimisation (fine-tuning the descent in the existing loss landscape); the augmentation addresses the feature memorisation bug. 
-
-\subsubsection{Learning-rate scheduling}
-
-We use \texttt{torch.optim.lr\_scheduler.ReduceLROnPlateau} with \texttt{factor = 0.5} and \texttt{patience = 3}. The scheduler halves the learning rate whenever the validation loss has not improved for 3 epochs, adapting to the actual convergence trajectory rather than a hand-tuned schedule.
-
-Figure~\ref{fig:loss_lr_custom} shows the loss and learning-rate trajectories. The LR drops in factor-of-two steps each time the validation loss plateaus, taking it from $10^{-3}$ to $\sim 10^{-4}$ over $\sim 3$--$4$ steps in the 50-epoch run. Each drop is mirrored by a small downward kink in the validation curve at the same epoch, confirming that the scheduler was breaking plateaus rather than minima. The scheduled Custom CNN reaches a validation RMSE of $0.0943$ at epoch 40, $\sim 0.001$ below the unscheduled baseline ($0.0953$).
-
-\subsubsection{Rotation augmentation}
-
-Augmentation is only safe when the transformation is a label-symmetry; otherwise the network trains on examples with incorrect labels. We enumerate candidate transformations:
-\begin{itemize}
-  \item \textbf{Rotation by $\theta \in [0, 360^\circ)$:} exact sky symmetry, label-preserving because the GZ2 corrected vote fractions do not encode chirality (the GZ1 spiral-winding-direction branch was dropped in GZ2; \citealt{Willett2013}). \textbf{Adopted.}
-  \item \textbf{Translation, scaling, brightness/contrast/colour jitter, additive noise:} rejected. Each either moves the galaxy out of the field of view or simulates the resolution-, surface-brightness-, and magnitude-driven classification bias that the W13 debiasing removes.
-  \item \textbf{Parity (reflection):} label-preserving but redundant under $[0, 360^\circ)$ rotation.
-\end{itemize}
-
-We apply rotation per-batch on the GPU via \texttt{affine\_grid} + \texttt{grid\_sample} (bilinear). The $136 \to 96$ cache geometry guarantees the rotated image fully covers the $96 \times 96$ centre region at every angle.
-
-We verify the augmentation in isolation with a 50-epoch quick test at fixed learning rate (Figure~\ref{fig:loss_lr_aug_only}). Together with the unaugmented baseline (Figure~\ref{fig:loss_custom_cnn}) and the scheduler-only run (Figure~\ref{fig:loss_lr_custom}), this completes a $2 \times 2$ ablation across the scheduler and augmentation axes. The augmentation-only run reaches a best validation RMSE of $0.0915$ at epoch 48, the largest single-intervention gain ($\Delta \mathrm{RMSE} \approx -0.0038$); the scheduler-only gain ($\Delta \mathrm{RMSE} \approx -0.0010$) is $\sim 4\times$ smaller. Combining both (Figure~\ref{fig:loss_lr_aug_custom}) delivers the best overall RMSE of $\mathbf{0.0913}$.
+We add two interventions on top of the Custom CNN baseline: (1) an adaptive learning-rate scheduler; and (2) random-angle rotation augmentation. The scheduler tunes the descent through the existing loss landscape by lowering the step size when the validation curve plateaus without changing the training distribution. Rotation augmentation instead expands the effective training distribution so that the network can no longer reach a low training loss by memorising the exact pixel arrangement of each galaxy. The Custom CNN baseline's monotonically-falling training curve against the plateaued validation curve (Figure~\ref{fig:loss_custom_cnn}) is the signature of this memorisation, which the augmentation is specifically designed to disincentivise.
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_loss_lr_scheduler_aug_pair.pdf}
-  \caption{Two-column intervention ablation, each at 50 epochs. \emph{Left:} Custom CNN with \texttt{ReduceLROnPlateau} (factor $0.5$, patience $3$); the LR halves whenever the validation loss plateaus, with each drop in the bottom panel mirrored by a downward kink in the validation curve at the same epoch (best val.\ RMSE: $0.0943$). \emph{Right:} Custom CNN with rotation augmentation only at constant LR $10^{-3}$; the augmentation alone reaches val.\ RMSE $\sim 0.0915$ and visibly closes the train/val gap compared to Figure~\ref{fig:loss_custom_cnn}. Together with the unaugmented baseline (Figure~\ref{fig:loss_custom_cnn}) and the combined run (Figure~\ref{fig:loss_lr_aug_custom}), the two panels form the off-diagonal arms of the $2 \times 2$ scheduler $\times$ augmentation ablation.}
+  \caption{Independent LR scheduler and rotation augmention optimizations, each trained to 50 epochs. \emph{Left:} Custom CNN with \texttt{ReduceLROnPlateau} (factor $0.5$, patience $3$); the LR halves whenever the validation loss plateaus, with each drop in the bottom panel mirrored by a downward kink in the validation curve at roughly the same epoch (best val.\ RMSE: $0.0943$). \emph{Right:} Custom CNN with rotation augmentation only at constant LR $10^{-3}$; the augmentation alone reaches val.\ RMSE $\sim 0.0915$ and visibly closes the training/validation gap compared to Figure~\ref{fig:loss_custom_cnn}..}
   \label{fig:loss_lr_custom}
   \label{fig:loss_lr_aug_only}
 \end{figure*}
 
+\subsubsection{Learning-rate scheduling}
+
+We use \texttt{torch.optim.lr\_scheduler.ReduceLROnPlateau} with \texttt{factor = 0.5} and \texttt{patience = 3}. The scheduler halves the learning rate whenever the validation loss has not improved for 3 epochs, promoting convergence if the learning rate becomes too high to learn more features.
+
+Figure~\ref{fig:loss_lr_custom} shows the loss and learning-rate trajectories. The LR drops in factor-of-two steps each time the validation loss plateaus, taking it from $10^{-3}$ to $\sim 10^{-4}$ over $\sim 3$--$4$ steps in the 50-epoch run. Each drop is mirrored by a small downward kink in the validation curve at roughly the same epoch, confirming that the scheduler was escaping plateaus rather than finding a new local minimum. The scheduled Custom CNN reaches a validation RMSE of $0.0943$ at epoch 40, $\sim 0.001$ below the unscheduled baseline ($0.0953$).
+
+\subsubsection{Rotation augmentation}
+
+The purpose of random-angle rotation augmentation is to disincentivise feature memorisation. By presenting a different rotated view of each galaxy at every epoch, the network is denied a static $(\mathrm{image}, \mathrm{label})$ pair to memorise pixel-for-pixel and is forced to learn rotation-invariant morphological features instead. This is achieved by regularising through increasing the training distribution, expanding by each galaxy under the rotation group $\mathrm{SO}(2)$ rather than the $49{,}262$ fixed images.
+
+We note that with sky symmetry and without chirality encoding in the labels, we are free to rotate the images by any angle $\theta \in [0, 360^\circ)$ without changing the labels. As for reflection parity, since we are already sampling the full $360^\circ$ rotation group, the reflection is redundant and is not implemented.
+
+We apply rotation per-batch on the GPU via \texttt{affine\_grid} + \texttt{grid\_sample} (bilinear). The $136 \to 96$ cache geometry guarantees the rotated image fully covers the $96 \times 96$ centre region at every angle, so the network never sees a boundary artefact that could itself become a memorisable feature.
+
+The augmentation-only run reaches a best validation RMSE of $0.0915$ at epoch 48, the largest single-intervention gain ($\Delta \mathrm{RMSE} \approx -0.0038$). The training curve no longer descends monotonically because every epoch presents a fresh random angle per image, preventing memorisation of specific (image, label) pairs. 
+
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation_+_lr_scheduler.pdf}
-  \caption{Custom CNN with rotation augmentation and the \texttt{ReduceLROnPlateau} scheduler (100 epochs). Best validation RMSE: $\mathbf{0.0913}$ at epoch 97, below the lab manual's ``good'' target of $0.09$ and the best result across all our trained models. The training curve is no longer monotonic (it wobbles in a band) because the optimiser sees a different rotation of each galaxy at every epoch; this is the signature that the model is learning rotation-invariant features rather than memorising the training set.}
+  \caption{Custom CNN with rotation augmentation and the \texttt{ReduceLROnPlateau} scheduler (100 epochs). Best validation RMSE: $\mathbf{0.0913}$ at epoch 97. The training curve is no longer monotonic because the optimiser sees a different rotation of each galaxy at every epoch. The model is thus more likely to be learning rotation-invariant features rather than memorising the training set.}
   \label{fig:loss_lr_aug_custom}
 \end{figure*}
 
-Figure~\ref{fig:loss_lr_aug_custom} shows the final combined run. The train/validation gap at each model's best epoch quantifies the effect: the unaugmented Custom CNN at epoch 34 has train RMSE $0.0888$ and validation RMSE $0.0953$ (gap $+0.0064$), while the augmented and scheduled model at epoch 97 has train RMSE $0.0929$ and validation RMSE $0.0913$ (gap $-0.0016$). The gap has closed by a factor of $\sim 4$ and reversed sign: the augmented training set is harder than the unrotated validation set, so the trained model performs better on validation. The training curve no longer descends monotonically because every epoch presents a fresh random angle per image, preventing memorisation of specific (image, label) pairs. We take the persistent per-epoch wobble as the operational definition of ``not memorising'': the network sees rotated views it has not seen before at every epoch, so the training loss never collapses onto the validation loss the way it does under deterministic input.
+Figure~\ref{fig:loss_lr_aug_custom} shows the final combined run, delivering the best overall RMSE of $\mathbf{0.0913}$. 
 
-\subsection{Tree-Reweighted Output (Extra Credit)}
+\subsection{Tree-Reweighting}
 \label{sec:treeweight}
 
-The 37 GZ2 labels are not independent: by survey construction, a child vote fraction $f_q$ is the product of its conditional probability given that the classifier reached question $q$ and its parent's vote fraction,
+At the data source level, the 37 GZ2 labels are not independent. By survey construction, a child vote fraction $f_q$ is the product of its conditional probability given that the classifier reached question $q$ and its parent's vote fraction,
 \begin{equation}
 f_q = p_{q \mid \mathrm{parent}}\,\prod_{a \in \mathrm{ancestors}(q)} p_{a \mid \mathrm{parent}(a)}.
 \label{eq:gz2-chain}
 \end{equation}
-An independent-output model is free to predict $\hat f_{1.1} = 0.10$ and $\hat f_{7.1} = 0.50$, which is physically impossible since Class7.1 only exists when Q7 was asked and Q7 is only asked on the Class1.1 branch. Following Task~22 option (a), we sigmoid-activate the 37 raw outputs and interpret them as conditional probabilities $\hat p_{q\mid\mathrm{parent}}$, then walk the GZ2 decision tree in topological order to produce tree-consistent vote-fraction predictions $\hat f_q$. For Class4.1 and Class4.2 (two possible parents Class3.1 or Class3.2) we generalise to $\hat f_q = \hat p_{q\mid\mathrm{parent}} \sum_p \hat f_p$, since within a single GZ2 question the parents are mutually exclusive. The output is then guaranteed tree-consistent: $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ for every child--parent set.
+On the contrary, an independent-output model would be free to predict $\hat f_{1.1} = 0.10$ and $\hat f_{7.1} = 0.50$, which is physically impossible since Class7.1 only exists when Q7 was asked and Q7 is only asked on the Class1.1 branch. As such, we sigmoid-activate the 37 raw outputs and interpret them as conditional probabilities $\hat p_{q\mid\mathrm{parent}}$, then walk the GZ2 decision tree in topological order to produce tree-consistent vote-fraction predictions $\hat f_q$ via
+\begin{equation}
+  \hat f_q =
+  \begin{cases}
+    \hat p_q & \text{if } P(q) = \emptyset, \\
+    \displaystyle \hat p_{q\mid\mathrm{parent}} \sum_{p \in P(q)} \hat f_p & \text{otherwise},
+  \end{cases}
+  \label{eq:tree-reweight}
+\end{equation}
+where $P(q)$ is the set of parents of $q$ in the GZ2 tree. For most labels $|P(q)| = 1$ and the sum reduces to the single term $\hat f_{\mathrm{parent}}$; for Class4.1 and Class4.2 (each reachable from Class3.1 \emph{or} Class3.2) the sum picks up both parents, which is correct because within a single GZ2 question the parents are mutually exclusive. The output is then guaranteed tree-consistent: $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ for every child--parent set.
 
 The architectural change is purely in the output transformation; the loss remains RMSE, so the bulk validation RMSE is directly comparable to the augmented Custom CNN.
 
