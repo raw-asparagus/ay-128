@@ -28,10 +28,12 @@ from ugdatalab.plotting import (
     ALPHA_FAINT,
     ALPHA_LIGHT,
     ALPHA_STANDARD,
+    ALPHA_FULL,
     NEUTRAL_COLOR,
     GUIDE_STYLE,
     LABEL_SIZE,
     LEGEND_SIZE,
+    columnwidth_figure,
     landscapewidth_figure,
     textwidth_figure,
     subpanels,
@@ -354,37 +356,65 @@ def plot_split_distributions(train_labels, val_labels, label_names,
     label_descriptive : dict
     """
     n_labels = train_labels.shape[1]
-    ncols = 6
-    nrows = (n_labels + ncols - 1) // ncols
+    ncols = _LABEL_DIST_NCOLS
+    n_panels_needed = n_labels + len(_LABEL_GRID_SKIPS)
+    nrows = (n_panels_needed + ncols - 1) // ncols
 
-    fig, _ = textwidth_figure(2.2 * nrows)
+    fig, _ = textwidth_figure(_LABEL_DIST_FIGURE_SCALE * nrows)
     _.remove()
-    axes = subpanels(fig, nrows, ncols, hspace=0.55, wspace=0.35, sharex=False)
+    axes = subpanels(fig, nrows, ncols, hspace=0.56, wspace=0.28, sharex=True)
+
+    # Map each label index to its panel position (accounting for blank-cell skips)
+    label_to_panel = [_panel_for_label(i) for i in range(n_labels)]
+    panel_to_label = {p: i for i, p in enumerate(label_to_panel)}
+
+    # Last row in each column that carries a visible histogram, for xtick gating
+    last_row_for_col = [-1] * ncols
+    for p in label_to_panel:
+        r, c = divmod(p, ncols)
+        if r > last_row_for_col[c]:
+            last_row_for_col[c] = r
 
     bins = np.linspace(0, 1, _SPLIT_DIST_NBINS)
-    for i in range(nrows * ncols):
-        row, col = divmod(i, ncols)
+    occupied_panels = set(panel_to_label.keys())
+    unused_panels = [p for p in range(nrows * ncols) if p not in occupied_panels]
+    # Bottom-right empty cell hosts the legend (no histogram overlay)
+    legend_panel = unused_panels[-1] if unused_panels else None
+
+    for p in range(nrows * ncols):
+        row, col = divmod(p, ncols)
         ax = axes[row, col]
-        if i < n_labels:
+        if p in panel_to_label:
+            i = panel_to_label[p]
             ax.hist(train_labels[:, i], bins=bins, density=True,
                     histtype="step", color="C0", lw=LW_STANDARD,
-                    alpha=ALPHA_STANDARD,
-                    label="Train" if i == 0 else None)
+                    ls="-", alpha=ALPHA_LIGHT)
             ax.hist(val_labels[:, i], bins=bins, density=True,
                     histtype="step", color="C1", lw=LW_STANDARD,
-                    alpha=ALPHA_STANDARD,
-                    label="Val" if i == 0 else None)
+                    ls="--", alpha=ALPHA_LIGHT)
             desc = label_descriptive.get(label_names[i], label_names[i])
-            ax.set_title(f"{label_names[i]}: {desc}",
+            ax.set_title(f"{label_names[i]}:\n{desc}",
                          fontsize=LEGEND_SIZE - 2, loc="left")
             ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
-            ax.tick_params(labelsize=LEGEND_SIZE - 1)
+            ax.tick_params(labelsize=LEGEND_SIZE - 2)
+            ax.tick_params(labelbottom=(row == last_row_for_col[col]))
+        elif p == legend_panel:
+            # Keep this axes alive but hide ticks/spines so the legend sits cleanly
+            ax.axis("off")
+            from matplotlib.lines import Line2D
+            handles = [
+                Line2D([], [], color="C0", lw=LW_STANDARD, ls="-",
+                       alpha=ALPHA_LIGHT, label="Train"),
+                Line2D([], [], color="C1", lw=LW_STANDARD, ls="--",
+                       alpha=ALPHA_LIGHT, label="Val"),
+            ]
+            ax.legend(handles=handles, loc="center",
+                      fontsize=LEGEND_SIZE - 1, frameon=False)
         else:
             ax.set_visible(False)
 
-    axes[0, 0].legend(fontsize=LEGEND_SIZE)
-    fig.supxlabel("Label probability", fontsize=LABEL_SIZE)
-    fig.supylabel("Density", fontsize=LABEL_SIZE)
+    fig.supxlabel("Label probability", fontsize=LABEL_SIZE, y=0.04)
+    fig.supylabel("Density", fontsize=LABEL_SIZE, x=0.06)
 
     savefig(fig, "fig_split_distributions.pdf")
     return axes
@@ -438,7 +468,12 @@ def plot_loss_with_lr(train_losses, val_losses, learning_rates, model_name):
     """
     epochs = np.arange(1, len(train_losses) + 1)
 
-    fig, _ = textwidth_figure(5)
+    # Auto-pick figure width: 50-epoch (or shorter) runs render at
+    # columnwidth; longer runs (typically 100 epochs) use textwidth.
+    if len(epochs) <= 50:
+        fig, _ = columnwidth_figure(7.5)
+    else:
+        fig, _ = textwidth_figure(5)
     _.remove()
     ax_loss, ax_lr = subpanels(fig, 2, height_ratios=(3, 1), sharex=True)
 
@@ -463,9 +498,136 @@ def plot_loss_with_lr(train_losses, val_losses, learning_rates, model_name):
     return ax_loss, ax_lr
 
 
+def plot_loss_with_lr_pair(runs, filename):
+    """Two-column loss + LR layout: paired short-run ablations side-by-side.
+
+    Renders two ``plot_loss_with_lr``-style panels in a single textwidth
+    figure. Each column gets a loss panel on top and an LR panel below,
+    sharing the same Epoch axis. Designed to merge short paired
+    experiments (e.g. scheduler-only vs.\ augmentation-only) into one
+    compact figure rather than two separate full-width ones.
+
+    Parameters
+    ----------
+    runs : sequence of dict
+        Two dicts each with keys ``train_losses``, ``val_losses``,
+        ``learning_rates`` (1D arrays of equal length), and ``title``.
+    filename : str
+        Output PDF filename (without the ``.pdf`` suffix, written to
+        ``report/figures/``).
+    """
+    assert len(runs) == 2, "plot_loss_with_lr_pair expects exactly two runs"
+
+    fig, _ = textwidth_figure(4.0)
+    _.remove()
+    axes = subpanels(
+        fig, nrows=2, ncols=2, height_ratios=(3, 1),
+        hspace=0.05, wspace=0.32, sharex=False,
+    )
+
+    for col, run in enumerate(runs):
+        ax_loss = axes[0, col]
+        ax_lr = axes[1, col]
+        epochs = np.arange(1, len(run["train_losses"]) + 1)
+
+        ax_loss.plot(epochs, run["train_losses"], lw=LW_STANDARD,
+                     alpha=ALPHA_STANDARD, color="C0", label="Training",
+                     zorder=3)
+        ax_loss.plot(epochs, run["val_losses"], lw=LW_STANDARD,
+                     alpha=ALPHA_STANDARD, color="C1", label="Validation",
+                     zorder=3)
+        ax_loss.set_yscale("log")
+        _decimal_log_yaxis(ax_loss)
+        ax_loss.set_title(run["title"], loc="left", fontsize=LABEL_SIZE)
+        ax_loss.tick_params(labelbottom=False)
+        if col == 0:
+            ax_loss.set_ylabel("RMSE")
+            ax_loss.legend(fontsize=LEGEND_SIZE - 1, loc="upper right")
+
+        ax_lr.plot(epochs, run["learning_rates"], lw=LW_STANDARD,
+                   alpha=ALPHA_STANDARD, color="C2", zorder=3)
+        ax_lr.set_yscale("log")
+        ax_lr.set_xlabel("Epoch")
+        if col == 0:
+            ax_lr.set_ylabel("LR")
+
+    savefig(fig, f"{filename}.pdf")
+    return axes
+
+
 # ---------------------------------------------------------------------------
 # 9. Model comparison (Task 23)
 # ---------------------------------------------------------------------------
+
+def plot_custom_vs_resnet_with_delta(custom_run, resnet_run, filename):
+    """Overlaid train+val loss curves for two models with a delta panel.
+
+    Renders a 2-panel figure:
+      * top panel (tall): training (dashed) and validation (solid) RMSE
+        for the two models, colour-coded by model.
+      * bottom panel (short): per-model overfitting gap, val - train,
+        plotted as solid lines in the model colours.
+
+    No plot title --- the model names appear in the legend.
+
+    Parameters
+    ----------
+    custom_run, resnet_run : dict
+        Each with keys ``name`` (str), ``train_losses`` (1D), and
+        ``val_losses`` (1D).
+    filename : str
+        Output PDF filename (without ``.pdf``); written to ``report/figures/``.
+    """
+    fig, _ = textwidth_figure(5.0)
+    _.remove()
+    ax_top, ax_delta = subpanels(
+        fig, nrows=2, height_ratios=(3, 1), hspace=0.05, sharex=True,
+    )
+
+    for run, color in [(custom_run, "C0"), (resnet_run, "C1")]:
+        train = np.asarray(run["train_losses"])
+        val = np.asarray(run["val_losses"])
+        epochs = np.arange(1, len(train) + 1)
+        ax_top.plot(epochs, train, color=color, ls="--", lw=LW_STANDARD,
+                    alpha=ALPHA_STANDARD,
+                    label=f"{run['name']} (training)", zorder=3)
+        ax_top.plot(epochs, val, color=color, ls="-", lw=LW_STANDARD,
+                    alpha=ALPHA_STANDARD,
+                    label=f"{run['name']} (validation)", zorder=3)
+
+    # Delta panel: validation RMSE difference between the two models
+    custom_val = np.asarray(custom_run["val_losses"])
+    resnet_val = np.asarray(resnet_run["val_losses"])
+    n_delta = min(len(custom_val), len(resnet_val))
+    delta_epochs = np.arange(1, n_delta + 1)
+    ax_delta.plot(delta_epochs, custom_val[:n_delta] - resnet_val[:n_delta],
+                  color="black", ls="-", lw=LW_STANDARD,
+                  alpha=ALPHA_STANDARD, zorder=3)
+
+    ax_top.set_ylabel("RMSE")
+    ax_top.set_yscale("log")
+    _decimal_log_yaxis(ax_top)
+    # Auto-scale the y-axis using all curves EXCEPT the ResNet training
+    # curve (which dives to ~0.018 at convergence and would dominate the
+    # axis). The ResNet training segment below the resulting floor is
+    # clipped from view but the other three curves remain in full.
+    relevant = np.concatenate([
+        np.asarray(custom_run["train_losses"]),
+        np.asarray(custom_run["val_losses"]),
+        np.asarray(resnet_run["val_losses"]),
+    ])
+    ax_top.set_ylim(relevant.min() * 0.95, relevant.max() * 1.05)
+    ax_top.tick_params(labelbottom=False)
+    ax_top.legend(fontsize=LEGEND_SIZE - 1, loc="upper right", ncol=2)
+
+    ax_delta.axhline(0.0, ls=":", color=NEUTRAL_COLOR, lw=LW_LIGHT,
+                     alpha=ALPHA_LIGHT, zorder=2)
+    ax_delta.set_xlabel("Epoch")
+    ax_delta.set_ylabel(r"$\Delta$ RMSE$_{\mathrm{val}}$")
+
+    savefig(fig, f"{filename}.pdf")
+    return ax_top, ax_delta
+
 
 def plot_model_comparison(names, val_losses_list):
     """Overlaid validation loss curves for multiple models.
@@ -481,7 +643,7 @@ def plot_model_comparison(names, val_losses_list):
 
     for i, (name, val_losses) in enumerate(zip(names, val_losses_list)):
         epochs = np.arange(1, len(val_losses) + 1)
-        ax.plot(epochs, val_losses, lw=LW_STANDARD, alpha=ALPHA_STANDARD,
+        ax.plot(epochs, val_losses, lw=LW_STANDARD, alpha=ALPHA_LIGHT,
                 color=f"C{i}", label=name, zorder=3)
 
     ax.set_xlabel("Epoch")
@@ -993,15 +1155,26 @@ def plot_ablation_curves(names, val_losses_list, title):
     title : str
         Figure title; also used to derive the filename.
     """
-    fig, ax = textwidth_figure(4)
+    # Ablation runs are short (typically 50 epochs); render at columnwidth
+    # so the ablation figure pairs visually with other 50-epoch curves.
+    max_epochs = max(len(np.asarray(vl)) for vl in val_losses_list)
+    if max_epochs <= 50:
+        fig, ax = columnwidth_figure(6.0)
+    else:
+        fig, ax = textwidth_figure(4)
     for name, val_losses in zip(names, val_losses_list):
         val_losses = np.asarray(val_losses)
         epochs = np.arange(1, len(val_losses) + 1)
-        ax.plot(epochs, val_losses, label=name, alpha=ALPHA_STANDARD,
-                lw=LW_STANDARD)
+        is_pivot = "custom cnn" in name.lower()
+        if is_pivot:
+            ax.plot(epochs, val_losses, label=name, color="black",
+                    alpha=ALPHA_FULL, lw=LW_STANDARD, ls="-", zorder=4)
+        else:
+            ax.plot(epochs, val_losses, label=name, alpha=ALPHA_LIGHT,
+                    lw=LW_LIGHT, ls="--", zorder=3)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Validation RMSE")
-    ax.set_title(title, loc="left", fontsize=LABEL_SIZE)
+    # No title: each curve is identified by its legend entry.
     ax.legend(fontsize=LEGEND_SIZE - 1, loc="best")
 
     safe_name = title.lower().replace(" ", "_").replace("(", "").replace(")", "")

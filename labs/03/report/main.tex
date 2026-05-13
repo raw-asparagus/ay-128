@@ -278,9 +278,7 @@ Raw GZ2 cutouts are $424 \times 424 \times 3$ in $gri$ RGB, most of which is emp
   \item GPU-side \texttt{CenterCrop(96)} at train time yields the $96 \times 96 \times 3$ model input.
 \end{enumerate}
 
-A 2-step downscaling process is opted for to avoid black corners due to rotation and avoid additional memory requirements of full resolution images. However, this comes with the trade-off of potential compression artifacts and loss of detail.
-
-We chose a slightly larger image resolution $96 \times 96$ input to preserve image quality rather than memory. Table~\ref{tab:scales} lists the nested pixel scales: the native SDSS scale of $0.396''$/pixel, the per-galaxy-scaled GZ2 cutout at $\sim 0.020''$/pixel ($\approx 27$~pc), and the $96 \times 96$ model input at $\sim 0.040''$/pixel ($\sim 60$~pc) spanning $\sim 5.7$~kpc on a side at $z \approx 0.07$. Because the GZ2 cutout pixel scale is set per galaxy as $0.024 \times r_{\mathrm{Petro,90}}$ arcsec/pixel, these numbers correspond to galaxies at the small end of the GZ2 selection ($r_{\mathrm{Petro,90}} \approx 3''$), and we therefore quote them as a worst-case extrema check: larger galaxies in the sample have coarser pixel scales (up to $\sim 0.10''$/pixel for $r_{\mathrm{Petro,90}} \sim 5$--$10''$), proportionally more pixels across the PSF, and hence are uniformly easier to resolve than the figures below imply.
+A 2-step downscaling process is opted for to avoid black corners due to rotation and avoid additional memory requirements of full resolution images. However, this comes with the trade-off of potential compression artifacts and loss of detail. The full pipeline (raw $424^2$ $\rightarrow$ $136^2$ cache $\rightarrow$ rotated $96^2$ model input) is graphically depicted in the top row of Figure~\ref{fig:architectures}; Figure~\ref{fig:image_comparison} shows the same four-stage pipeline applied to four example galaxies, verifying that the rotation-safe cache buffer eliminates corner artefacts at every rotation angle.
 
 \begin{table*}[t!]
   \centering
@@ -295,42 +293,42 @@ We chose a slightly larger image resolution $96 \times 96$ input to preserve ima
     SDSS PSF FWHM                       & $\sim 1.4''$       & $\sim 1.9$~kpc    \\
     \bottomrule
   \end{tabular}
-  \caption{Nested pixel scales of the pipeline at the median GZ2 redshift $z \approx 0.07$, evaluated for a small galaxy at the lower end of the GZ2 selection ($r_{\mathrm{Petro,90}} \approx 3''$) where the per-galaxy pixel scale is finest. The model input field of view spans $\sim 6$~kpc on a side and the SDSS point-spread-function FWHM is the fundamental resolution limit. Larger galaxies in the GZ2 sample have proportionally coarser pixel scales (up to a factor of $\sim 3$--$5$), so the values quoted here serve as an extrema check; the median galaxy is uniformly better resolved per arcsec than this table suggests.}
+  \caption{Nested pixel scales of the pipeline at the median GZ2 redshift $z \approx 0.07$, evaluated for a small galaxy at the lower end of the GZ2 selection ($r_{\mathrm{Petro,90}} \approx 3''$) where the per-galaxy pixel scale is finest. The model input field of view spans $\sim 6$~kpc on a side and the SDSS point-spread-function FWHM is the fundamental resolution limit. Larger galaxies in the GZ2 sample have proportionally coarser pixel scales (up to a factor of $\sim 3$--$5$), so the values quoted here serve as an extrema check of the resolution floor.}
   \label{tab:scales}
 \end{table*}
 
-The morphological feature scales of interest fit within the $96^2$ field of view: spiral arm widths ($\sim 0.5$--$2$~kpc; \citealt{Conselice2014}) span $\sim 10$--$30$ pixels, bar lengths ($\sim 2$--$8$~kpc) span $\sim 30$--$100$ pixels, bulge effective radii ($r_e \sim 0.5$--$2$~kpc) span $\sim 10$--$30$ pixels, and edge-on dust lanes ($h_z \sim 100$--$300$~pc) span $\sim 2$--$5$ pixels at the resolvability limit. The SDSS PSF ($\sim 1.4''$ FWHM, $\sim 1.9$~kpc at $z \approx 0.07$) sets the fundamental resolution limit, so $96^2$ is the coarsest scale that still resolves all five categories at the median redshift for the small-galaxy regime evaluated above. We adopt $96 \times 96$ rather than the lab manual's suggested $\sim 64$ because at $\sim 60$~pc/pixel we still resolve the dust-lane scale; going coarser would merge the dust-lane and bulge categories at the median redshift. Larger galaxies in the GZ2 sample have proportionally coarser pixel scales, so their feature-to-pixel mappings are correspondingly larger (a $\sim 2''$-FWHM dust lane in a galaxy at $r_{\mathrm{Petro,90}} \sim 8''$ spans only $\sim 1$--$2$ model pixels) --- but in those cases the PSF also covers a smaller fraction of the image, so the net effect is that larger galaxies are uniformly easier to classify than the small-end values used here would suggest, and the analysis above is conservative.
+We chose a slightly larger image resolution $96 \times 96$ input to preserve image quality rather than memory. Table~\ref{tab:scales} lists the worst-case pixel scales for a small galaxy at the lower end of the GZ2 selection ($r_{\mathrm{Petro,90}} \approx 3''$; \citealt{Willett2013}). Because each GZ2 cutout is pre-scaled per galaxy at $0.024 \times r_{\mathrm{Petro,90}}$ arcsec/pixel, every galaxy fills a similar fraction of its $424^2$ frame regardless of on-sky angular size.
 
-\paragraph{Cache size.} The $136 \times 136$ cache is sized by the rotation-augmentation constraint of Section~\ref{sec:opt}: an inscribed square of side $s$ inside an outer square of side $S$ at $45^\circ$ rotation requires $S \ge s\sqrt{2}$, so $s = 96$ implies $S \ge \lceil 96\sqrt{2}\,\rceil = 136$. Caching at $136^2$ and centre-cropping to $96^2$ after rotation guarantees that no black corner pixels ever enter the network at any rotation angle. We therefore set the pre-crop fraction to $0.15$ rather than the more obvious $0.25$: the rotation-safe-buffer derivation fixes the value, not visual framing.
+At this resolution floor, prominent morphological feature scales of interest barely fit within the $96^2$ field of view. Spiral arm widths ($\sim 0.5$--$2$~kpc; \citealt{Conselice2014}) span $\sim 10$--$30$ pixels, bar lengths ($\sim 2$--$8$~kpc; \citealt{Aguerri2009}) span $\sim 30$--$100$ pixels, bulge effective radii ($r_e \sim 0.5$--$2$~kpc; \citealt{Gadotti2009}) span $\sim 10$--$30$ pixels, and edge-on dust lanes ($h_z \sim 100$--$300$~pc; \citealt{Dalcanton2004}) span $\sim 2$--$5$ pixels at the resolvability limit at $\sim 1.4''$ FWHM. 
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_image_comparison.pdf}
-  \caption{Pipeline stages for four example galaxies (rows): raw $424^2$ SDSS GZ2 cutout, $136^2$ rotation-safe cache, $96^2$ centre-cropped model input, and one realisation of the same image after a random rotation by $\theta \in [0, 360^\circ)$. The rotated image always covers the centre $96^2$ region with no black corner artefacts because the cache size $136 \ge 96\,\sqrt{2}$ is the smallest integer guaranteeing rotation-safety; this geometric constraint is the upstream design decision that makes the rotation-augmentation strategy of Section~\ref{sec:opt} defensible (no boundary artefacts ever enter the network's training distribution).}
+  \caption{Pipeline stages for four example galaxies (rows): raw $424^2$ SDSS GZ2 cutout, $136^2$ rotation-safe cache, $96^2$ centre-cropped model input, and one realisation of the same image after a random rotation by $\theta \in [0, 360^\circ)$. The rotated image always covers the centre $96^2$ region with no black corner artefacts because the cache size $136 \ge 96\,\sqrt{2}$ is the smallest integer guaranteeing rotation-safety.}
   \label{fig:image_comparison}
 \end{figure*}
 
 \subsection{Train/Validation Split}
 
-We randomly split the dataset 80/20 (seed 42) into 49{,}262 training and 12{,}316 validation images. Figure~\ref{fig:split_distributions} confirms that the per-label distributions are statistically indistinguishable between the two sets; per-label two-sample Kolmogorov--Smirnov tests do not reject the null hypothesis of identical distributions at $\alpha = 0.05$ for any label.
+We randomly split the dataset 80/20 into 49{,}262 training and 12{,}316 validation images. Figure~\ref{fig:split_distributions} confirms that the per-label distributions are statistically indistinguishable between the two sets.
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_split_distributions.pdf}
-  \caption{Per-label normalized histograms of the 80/20 train (blue) and validation (orange) split (seed 42). The two distributions overlap to within visible per-bin counting noise on every one of the 37 labels, confirming that the random split has not introduced any systematic label-prevalence drift between training and validation; per-label two-sample Kolmogorov--Smirnov tests cannot reject the null hypothesis of identical distributions at the $\alpha = 0.05$ level for any label.}
+  \caption{Per-label normalized histograms of the 80/20 train (blue) and validation (orange) split (seed 42). The two distributions overlap to within visible per-bin counting noise on every one of the 37 labels, confirming that the random split has not introduced any systematic label-prevalence drift between training and validation.}
   \label{fig:split_distributions}
 \end{figure*}
 
 \subsection{Baseline Model}
 
-We minimise the root-mean-square error between predicted and true vote-fraction matrices,
+The underlying principle we adopt in training the models is to minimise the root-mean-square error (RMSE) between predicted and true vote-fraction matrices,
 \begin{equation}
   L_{\mathrm{RMSE}} = \sqrt{\frac{1}{N_{\mathrm{gal}}\,N_{\mathrm{lab}}} \sum_{i=1}^{N_{\mathrm{gal}}} \sum_{j=1}^{N_{\mathrm{lab}}} \bigl(\ell^{\mathrm{true}}_{ij} - \ell^{\mathrm{pred}}_{ij}\bigr)^2},
   \label{eq:rmse}
 \end{equation}
-where $\ell^{\mathrm{true}}_{ij}, \ell^{\mathrm{pred}}_{ij} \in [0, 1]$ are the true and predicted vote fractions for galaxy $i$ and label $j$, and $N_{\mathrm{lab}} = 37$. RMSE rather than BCE because the task is regression on continuous vote fractions, not classification, and the resulting scalar shares units with the labels themselves so a value of $0.10$ is directly interpretable as ``ten percentage points off on average.''
+where $\ell^{\mathrm{true}}_{ij}, \ell^{\mathrm{pred}}_{ij} \in [0, 1]$ are the true and predicted vote fractions for galaxy $i$ and label $j$, and $N_{\mathrm{lab}} = 37$. 
 
-The baseline model predicts the training-set mean label vector for every image, yielding training and validation RMSEs of $0.1638$ and $0.1639$ respectively. Any CNN must outperform this floor.
+We adopt a baseline model which predicts the training-set mean label vector for every image, i.e.\ $\ell^{\mathrm{pred}}_{ij} = \bar{\ell}^{\mathrm{train}}_j$ independent of the input image, where $\bar{\ell}^{\mathrm{train}}_j$ is the per-label average over the training set. This yields training and validation RMSEs of $0.1638$ and $0.1639$ respectively. This serves as the RMSE floor to beat for any trained models.
 
 %%% ---------------------------------------------------------------
 \section{Methods}
@@ -340,29 +338,37 @@ The baseline model predicts the training-set mean label vector for every image, 
 \subsection{Network Architectures}
 \label{sec:architectures}
 
-We train two backbone architectures: a hand-designed 4-block Custom CNN ($\sim 2.8$M parameters) and an 18-layer ResNet ($\sim 11.2$M parameters). Both consume $96 \times 96 \times 3$ inputs and emit a 37-dimensional sigmoid head, constraining each output to $[0, 1]$ to match the vote-fraction range. They differ in depth, parameter count, and the use of residual connections. Figure~\ref{fig:architectures} shows the Custom CNN together with its upstream image-preparation pipeline; Figure~\ref{fig:resnet_architecture} shows the ResNet-18 layer stack.
+We train two architectures: (1) an 18-layer ResNet ($\sim 11.2$M parameters); and (2) a custom 4-block Custom CNN ($\sim 2.8$M parameters). Both consume $96 \times 96 \times 3$ inputs and emit a 37-dimensional sigmoid head, constraining each output to $[0, 1]$ to match the vote-fraction range. They differ in depth, parameter count, and the use of residual connections. Figure~\ref{fig:architectures} shows the Custom CNN together with its upstream image-preparation pipeline. 
+% ; Figure~\ref{fig:resnet_architecture} shows the ResNet-18 layer stack.
 
-\paragraph{Layer primitives.} A 2D convolution with kernel $k$ of size $K \times K$ maps an input feature map $x$ of shape $(C_{\mathrm{in}}, H, W)$ to an output of shape $(C_{\mathrm{out}}, H, W)$ via
+\subsection{Convolutional Neural Networks}
+\label{sec:custom}
+
+\subsubsection{Convolutional Layers}
+
+A 2D convolution with kernel $k$ of size $K \times K$ maps an input feature map $x$ of shape $(C_{\mathrm{in}}, H, W)$ to an output of shape $(C_{\mathrm{out}}, H, W)$ via
 \begin{equation}
-  y_{c,i,j} = \sum_{c'=1}^{C_{\mathrm{in}}} \sum_{u=0}^{K-1} \sum_{v=0}^{K-1} k_{c,c',u,v}\,x_{c',\,i+u-\lfloor K/2 \rfloor,\,j+v-\lfloor K/2 \rfloor} + b_c,
+  y_{c,i,j} = \sum_{c'=1}^{C_{\mathrm{in}}} \sum_{u=0}^{K-1} \sum_{v=0}^{K-1} k_{c,c',u,v}\,x_{c',\,i+u-\lfloor K/2 \rfloor,\,j+v-\lfloor K/2 \rfloor},
   \label{eq:conv}
 \end{equation}
-with reflection padding by $\lfloor K/2 \rfloor$ preserving the spatial extent. The learned tensor $k$ has $C_{\mathrm{out}} C_{\mathrm{in}} K^2$ weights and $C_{\mathrm{out}}$ biases per layer; spatial weight sharing is what makes a CNN cheaper than the equivalent fully-connected layer by a factor of $HW$. Each conv is followed elementwise by a rectified linear activation
+with zero padding by $\lfloor K/2 \rfloor$ pixels per side preserving the spatial extent. Since for our case galaxy features are predominantly central to the image, zero padding on the edges will not likely introduce significant training artefacts. The learned tensor $k$ has $C_{\mathrm{out}} C_{\mathrm{in}} K^2$ weights per layer, computationally cheaper than a fully-connected layer by a factor of $HW$.
+
+Each convolution is immediately followed by batch normalisation (BN), which rescales each channel of a feature map to zero mean and unit variance over a mini-batch \citep{IoffeSzegedy2015},
+\begin{equation}
+  \hat{x}_c = \frac{x_c - \mu_{B,c}}{\sqrt{\sigma^2_{B,c} + \epsilon}}, \qquad y_c = \gamma_c \hat{x}_c + \beta_c,
+  \label{eq:batchnorm}
+\end{equation}
+with batch statistics $\mu_{B,c}, \sigma^2_{B,c}$ replaced by running estimates at inference. BN keeps the input distribution of each convolution layer similar across blocks, reducing drift with a larger learning rate, reducing warm-up and introduces some regularisation. The BN-normalised features then pass elementwise through a rectified linear activation
 \begin{equation}
   \mathrm{ReLU}(z) = \max(0, z),
   \label{eq:relu}
 \end{equation}
-and the final pre-output activation is the sigmoid
-\begin{equation}
-  \sigma(z) = \frac{1}{1 + e^{-z}},
-  \label{eq:sigmoid}
-\end{equation}
-which saturates to the unit interval and matches the corner-saturating geometry of the vote-fraction distributions (most galaxies cluster at $f \approx 0$ or $f \approx 1$, with sparse interior). Spatial downsampling is performed by max pooling over non-overlapping $2 \times 2$ windows,
+which zeroes out negative responses and introduces the nonlinearity needed for the network expressiveness. Finally, spatial downsampling is performed by max pooling over non-overlapping $2 \times 2$ windows,
 \begin{equation}
   y_{c,i,j} = \max_{(u,v) \in [0, 1]^2}\, x_{c,\,2i+u,\,2j+v},
   \label{eq:maxpool}
 \end{equation}
-which halves $H$ and $W$ at each application while preserving the brightest activation in each window so that locally bright morphological features (arm crests, bar ends, bulge cores) survive the downsampling.
+which halves $H$ and $W$ at each application while preserving the brightest activation in each window so that locally bright morphological features (e.g., arm crests, bar ends, bulge cores) can survive the downsampling. The full per-block ordering is therefore Convolution $\to$ BN $\to$ ReLU $\to$ MaxPool, repeated for as many blocks as the architecture specifies.
 
 \begin{figure*}[t!]
   \centering
@@ -382,16 +388,18 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
     \def\xRaw{0.0}
     \def\xCache{3.4}
     \def\xInput{6.6}
-    \def\yPrepLbl{-2.05}
+    \def\yPrepLbl{-2.10}
     % Bottom (network) row -- spans the full width
-    \def\yNet{-5.2}
+    \def\yNet{-6.2}
     \def\xBatch{0.0}
-    \def\xConv{2.7}
-    \def\xPool{4.6}
-    \def\xFCa{7.7}
-    \def\xFCb{9.5}
-    \def\xOut{11.4}
-    \def\yNetLbl{-7.30}
+    \def\xConv{2.8}
+    \def\xPool{4.8}
+    \def\xFCa{7.9}
+    \def\xFCb{9.7}
+    \def\xOut{11.5}
+    \def\yNetLbl{-8.35}
+    % Intermediate y-level for the bridging arrow's horizontal segment
+    \def\yArrow{-3.85}
 
     % ============================================================
     % TOP ROW: image preparation pipeline
@@ -436,20 +444,31 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
                   {rotate $\theta$\\$+$ centre-crop};
 
     % --- Dashed encapsulating box: image preparation ---
+    %     The "Image preparation" label sits ABOVE the dashed top edge:
+    %     anchor=south west pins the label's lower-left corner to the box's
+    %     NW corner, so the text extends up-and-right just outside the
+    %     border rather than sitting inside the box.
     \node[draw=black, thick, dashed, rounded corners=3pt,
           fit={(\xRaw-1.45,1.55) (\xInput+1.10,-2.95)},
           inner sep=0pt,
-          label={[font=\scriptsize\bfseries, anchor=west]north west:%
+          label={[font=\scriptsize\bfseries, anchor=south west,
+                  xshift=4pt, yshift=1pt]north west:%
             {Image preparation}}]
          (prep_box) {};
 
-    % --- Bridging arrow: network input down to network batch ---
-    \draw[conn, thick]
-      (p_input.south) ..
-      controls +(0,-1.5) and +(0,2.0) ..
-      ($(\xBatch+0.18, \yNet) + (0, 1.25)$)
-      node[pos=0.55, right=4pt, font=\scriptsize, align=left]
-        {batch of $B{=}1024$\\sampled per step};
+    % --- Bridging arrow: from the RIGHT edge of the network input, going
+    %     right, down past the prep box, left across the figure at \yArrow,
+    %     then down to TOUCH the top of the input batch stack. Four
+    %     segments (right -> down -> left -> down) wrap around the prep
+    %     box so the path crosses neither prep arrow label.
+    \draw[conn, thick, rounded corners=5pt]
+      (p_input.east) -- (\xInput+1.5, \yPrep)
+      -- (\xInput+1.5, \yArrow)
+      -- (\xBatch+0.18, \yArrow)
+      -- (\xBatch+0.18, \yNet+0.50);
+    \node[font=\scriptsize, align=center, fill=white, inner sep=2pt]
+      at ({(\xInput + 1.5 + \xBatch + 0.18) / 2}, \yArrow)
+        {batch of $B{=}1024$ sampled per step};
 
     % ============================================================
     % BOTTOM ROW: batched input -> conv blocks -> FC head
@@ -506,8 +525,8 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
     \draw[conn] (\xBatch+0.95, \yNet) -- (n_block_w);
     \coordinate (n_flat) at (\xFCa-0.7, \yNet);
     \draw[conn] (n_block_e) -- (n_flat)
-                node[pos=0.55, above=2pt, font=\scriptsize, align=center]
-                  {flatten\\$6{\times}6{\times}256$\\$= 9216$};
+                node[pos=0.55, above=3pt, font=\scriptsize, align=center]
+                  {flatten\\$6{\times}6{\times}256 = 9216$};
 
     % --- FC layer 1 (256 units, schematic) ---
     \begin{scope}[shift={(\xFCa, \yNet)}]
@@ -542,10 +561,10 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
     \node[lbl] at (\xOut, \yNetLbl) {37 sigmoid\\outputs};
 
     % --- Dropout labels above the inter-FC connection bundles ---
-    \node[font=\scriptsize, align=center]
-      at ({(\xFCa+\xFCb)/2}, \yNet+1.70) {dropout 0.25};
-    \node[font=\scriptsize, align=center]
-      at ({(\xFCb+\xOut)/2}, \yNet+1.70) {dropout 0.10};
+    \node[font=\scriptsize, align=center, fill=white, inner sep=1.5pt]
+      at ({(\xFCa+\xFCb)/2}, \yNet+1.55) {dropout 0.25};
+    \node[font=\scriptsize, align=center, fill=white, inner sep=1.5pt]
+      at ({(\xFCb+\xOut)/2}, \yNet+1.55) {dropout 0.10};
 
     % --- FC connection bundles ---
     \foreach \i in {0,...,5}
@@ -565,169 +584,157 @@ which halves $H$ and $W$ at each application while preserving the brightest acti
         \fi
       }
   \end{tikzpicture}
-  \caption{Custom CNN architecture, read top-to-bottom then left-to-right. \emph{Top row, image preparation:} the raw $424^2$ SDSS $gri$ cutout is bilinearly downsampled to a $136^2$ on-disk cache; the dashed red square inside the cache marks the rotated $96^2$ crop region for one realisation of the augmentation angle $\theta \in [0, 360^\circ)$. The crop is then resampled to the upright $96^2$ network input on the right --- the rotation lives in the cache stage so the final input array stored on the GPU is always an axis-aligned square. The cache side $136 \ge 96\sqrt{2}$ guarantees the rotated crop region fits inside the cache at every angle, so no black corners ever enter the network (Section~\ref{sec:prep}). \emph{Bottom row, Custom CNN ($\sim$2.8M params):} batches of $B = 1024$ upright $96^2{\times}3$ inputs pass through a feature extractor consisting of a $3{\times}3$ convolution followed by $2{\times}2$ max-pooling, with the dashed loop indicating the block is repeated four times at channel widths $32 \to 64 \to 128 \to 256$. The flattened feature vector is fully connected to 256 units, halved to 128 units, and finally projected onto 37 sigmoid outputs; dropout fractions 0.25 and 0.10 are applied to the two FC bundles, drawn schematically.}
+  \caption{Custom CNN architecture. \emph{Image preparation:} the raw $424^2$ SDSS $gri$ cutout is bilinearly downsampled to a $136^2$ on-disk cache; the dashed red square inside the cache marks a rotated $96^2$ crop region for one realisation of the augmentation angle $\theta \in [0, 360^\circ)$. The crop is then resampled to the upright $96^2$ network input on the right. The cache side $136 \ge 96\sqrt{2}$ guarantees the rotated crop region fits inside the cache at every angle, so no black corners ever enter the network (Section~\ref{sec:prep}). \emph{Custom CNN ($\sim$2.8M params):} batches of $1024{\times}96^2{\times}3$ inputs pass through a feature extractor consisting of a $3{\times}3$ convolution followed by $2{\times}2$ max-pooling. This is repeated four times at channel widths $32 \to 64 \to 128 \to 256$. The flattened feature vector is fully connected to 256 units, halved to 128 units, and finally projected onto 37 sigmoid outputs; dropout fractions 0.25 and 0.10 are applied to the two FC bundles.}
   \label{fig:architectures}
 \end{figure*}
 
-\begin{figure}[t!]
+% \begin{figure*}[t!]
+%   \centering
+%   \begin{tikzpicture}[
+%       layer/.style={circle, draw=black, thick, minimum size=0.7cm,
+%                     inner sep=0pt, font=\scriptsize},
+%       input/.style={layer, fill=gray!25},
+%       conv/.style={layer, fill=blue!20},
+%       pool/.style={layer, fill=cyan!25},
+%       res/.style={layer, fill=violet!25},
+%       outnode/.style={layer, fill=green!25},
+%       lbl/.style={font=\scriptsize, align=center},
+%       conn/.style={-{Stealth[length=4pt]}, thick},
+%       x=1.0cm, y=1cm,
+%     ]
+%     \def\yRes{0}
+%     \node[input]   (b0) at (0,    \yRes) {In};
+%     \node[conv]    (b1) at (1.25, \yRes) {Stem};
+%     \node[res]     (b2) at (2.50, \yRes) {S1};
+%     \node[res]     (b3) at (3.75, \yRes) {S2};
+%     \node[res]     (b4) at (5.00, \yRes) {S3};
+%     \node[res]     (b5) at (6.25, \yRes) {S4};
+%     \node[pool]    (b6) at (7.50, \yRes) {GAP};
+%     \node[outnode] (b7) at (8.75, \yRes) {Out};
+%     \foreach \i/\j in {b0/b1,b1/b2,b2/b3,b3/b4,b4/b5,b5/b6,b6/b7}
+%       \draw[conn] (\i) -- (\j);
+
+%     \node[lbl, below=0.34cm of b0] {$96^2{\times}3$};
+%     \node[lbl, below=0.34cm of b1] {Conv $7{\times}7$, s2\\$+$ MaxPool $3{\times}3$, s2};
+%     \node[lbl, below=0.34cm of b2] {$2{\times}$BB\\64};
+%     \node[lbl, below=0.34cm of b3] {$2{\times}$BB\\128, s2};
+%     \node[lbl, below=0.34cm of b4] {$2{\times}$BB\\256, s2};
+%     \node[lbl, below=0.34cm of b5] {$2{\times}$BB\\512, s2};
+%     \node[lbl, below=0.34cm of b6] {global\\avg pool};
+%     \node[lbl, below=0.34cm of b7] {37,\\sigmoid};
+
+%     % --- BasicBlock inset (full implementation: Conv -> BN -> ReLU ->
+%     %     Conv -> BN -> (+ skip from block input) -> ReLU) ---
+%     \node[draw=black, thick, dashed, rounded corners=3pt,
+%           font=\scriptsize, align=center, inner sep=7pt,
+%           anchor=north] (bb) at (4.375, \yRes-2.0) {%
+%       \textbf{BasicBlock (BB)}\\[3pt]
+%       \begin{tikzpicture}[
+%           baseline, x=0.65cm,
+%           conv/.style={circle, draw=black, thick, minimum size=0.42cm,
+%                        inner sep=0pt, font=\tiny, fill=blue!20},
+%           bn/.style={circle, draw=black, thick, minimum size=0.42cm,
+%                      inner sep=0pt, font=\tiny, fill=yellow!30},
+%           relu/.style={circle, draw=black, thick, minimum size=0.42cm,
+%                        inner sep=0pt, font=\tiny, fill=green!25},
+%           sumn/.style={circle, draw=black, thick, minimum size=0.36cm,
+%                        inner sep=0pt, font=\tiny, fill=white},
+%           mconn/.style={-{Stealth[length=3pt]}, thick},
+%         ]
+%         \coordinate (in) at (-0.7, 0);
+%         \node[conv] (c1) at (0,    0) {C};
+%         \node[bn]   (b1) at (0.85, 0) {BN};
+%         \node[relu] (r1) at (1.70, 0) {R};
+%         \node[conv] (c2) at (2.55, 0) {C};
+%         \node[bn]   (b2) at (3.40, 0) {BN};
+%         \node[sumn] (ms) at (4.25, 0) {$+$};
+%         \node[relu] (mr) at (5.10, 0) {R};
+%         \draw[mconn] (in) -- (c1);
+%         \draw[mconn] (c1) -- (b1);
+%         \draw[mconn] (b1) -- (r1);
+%         \draw[mconn] (r1) -- (c2);
+%         \draw[mconn] (c2) -- (b2);
+%         \draw[mconn] (b2) -- (ms);
+%         \draw[mconn] (ms) -- (mr);
+%         \draw[mconn] (in) to[bend left=45] (ms);
+%         \node[font=\tiny] at (2.55, 0.85) {skip from block input};
+%         \node[font=\tiny, anchor=east] at (in) {$x$};
+%       \end{tikzpicture}
+%     };
+%   \end{tikzpicture}
+%   \caption{ResNet-18 backbone ($\sim$11.2M params): the standard \texttt{torchvision} stem (a $7{\times}7$ stride-2 convolution followed by a $3{\times}3$ stride-2 max-pool) feeds four residual stages (S1--S4) of two BasicBlocks each at channel widths 64/128/256/512, ending in global average pooling and a 37-way sigmoid head. Input is the same $96{\times}96{\times}3$ network input prepared by the pipeline shown in Figure~\ref{fig:architectures}. The dashed inset shows the internal flow of one BasicBlock: Conv $\to$ BN $\to$ ReLU $\to$ Conv $\to$ BN, summed with the identity skip from the block input, then ReLU.}
+%   \label{fig:resnet_architecture}
+% \end{figure*}
+
+\subsubsection{Sequential Layers}
+
+After the features are extracted by the convolutional blocks, the flattened feature vector passes through a sequence of fully-connected (linear) layers. A linear layer maps an input vector $\mathbf{x} \in \mathbb{R}^{n_{\mathrm{in}}}$ to an output $\mathbf{y} \in \mathbb{R}^{n_{\mathrm{out}}}$ via
+\begin{equation}
+  \mathbf{y} = \mathbf{W}\mathbf{x} + \mathbf{b},
+  \label{eq:linear}
+\end{equation}
+with a learned weight matrix $\mathbf{W} \in \mathbb{R}^{n_{\mathrm{out}} \times n_{\mathrm{in}}}$ and bias $\mathbf{b} \in \mathbb{R}^{n_{\mathrm{out}}}$. Each hidden linear layer is followed elementwise by ReLU (Eq.~\ref{eq:relu}) and dropout, which randomly sets each unit to zero independently with probability $p$ at training time and rescales the survivors \citep{Srivastava2014}. Dropout acts as a stochastic regulariser by forcing the FC head to distribute its representation across many redundant units rather than over-relying on any single one. The final pre-output activation is the sigmoid
+\begin{equation}
+  \sigma(z) = \frac{1}{1 + e^{-z}},
+  \label{eq:sigmoid}
+\end{equation}
+which matches the vote-fraction distributions.
+
+\subsubsection{Custom CNN}
+
+The Custom CNN stacks four convolutional blocks of $\{\mathrm{Conv2d}(3\times3, \mathrm{pad}\,1) \to \mathrm{BatchNorm2d} \to \mathrm{ReLU} \to \mathrm{MaxPool2d}(2\times2)\}$ with channel widths $32 \to 64 \to 128 \to 256$. The spatial size halves at each block, so the $96^2$ input collapses to a $6^2 \times 256$ feature map. The classifier head is two fully connected layers ($9216 \to 256 \to 128$) with ReLU activations and tapered dropout ($0.25$ after FC1, $0.10$ after FC2), followed by a linear-plus-sigmoid layer to the 37 vote fractions.
+
+We use Adam \citep{KingmaBa2014} as the optimiser across all trained models, chosen over plain SGD for its adaptive per-parameter step size, which removes the need for manual learning-rate tuning across the small-scale convolution weights and the large-scale FC head. The Custom CNN trains at initial learning rate $\eta = 10^{-3}$ for $100$ epochs at batch size $1024$.
+
+A tapered-dropout is applied with $p = 0.25$ after FC1 and $p = 0.10$ after FC2. The heavier rate on FC1 concentrates regularisation in the $9216 \to 256$ matrix, which carries $\sim 85\%$ of the FC-head parameters.
+
+\begin{figure}[b!]
   \centering
-  \begin{tikzpicture}[
-      layer/.style={circle, draw=black, thick, minimum size=0.7cm,
-                    inner sep=0pt, font=\scriptsize},
-      input/.style={layer, fill=gray!25},
-      conv/.style={layer, fill=blue!20},
-      pool/.style={layer, fill=cyan!25},
-      res/.style={layer, fill=violet!25},
-      outnode/.style={layer, fill=green!25},
-      lbl/.style={font=\scriptsize, align=center},
-      conn/.style={-{Stealth[length=4pt]}, thick},
-      x=0.95cm, y=1cm,
-    ]
-    \def\yRes{0}
-    \node[input]   (b0) at (0,    \yRes) {In};
-    \node[conv]    (b1) at (1.15, \yRes) {Stem};
-    \node[res]     (b2) at (2.30, \yRes) {S1};
-    \node[res]     (b3) at (3.45, \yRes) {S2};
-    \node[res]     (b4) at (4.60, \yRes) {S3};
-    \node[res]     (b5) at (5.75, \yRes) {S4};
-    \node[pool]    (b6) at (6.90, \yRes) {GAP};
-    \node[outnode] (b7) at (8.10, \yRes) {Out};
-    \foreach \i/\j in {b0/b1,b1/b2,b2/b3,b3/b4,b4/b5,b5/b6,b6/b7}
-      \draw[conn] (\i) -- (\j);
-
-    \node[lbl, below=0.30cm of b0] {$96^2{\times}3$};
-    \node[lbl, below=0.30cm of b1] {Conv $3{\times}3$\\64, s1};
-    \node[lbl, below=0.30cm of b2] {$2{\times}$BB\\64};
-    \node[lbl, below=0.30cm of b3] {$2{\times}$BB\\128, s2};
-    \node[lbl, below=0.30cm of b4] {$2{\times}$BB\\256, s2};
-    \node[lbl, below=0.30cm of b5] {$2{\times}$BB\\512, s2};
-    \node[lbl, below=0.30cm of b6] {global\\avg pool};
-    \node[lbl, below=0.30cm of b7] {37,\\sigmoid};
-
-    % --- BasicBlock inset ---
-    \node[draw=black, thick, dashed, rounded corners=3pt,
-          font=\scriptsize, align=center, inner sep=6pt,
-          anchor=north] (bb) at (4.05, \yRes-1.7) {%
-      \textbf{BasicBlock (BB)}\\[3pt]
-      \begin{tikzpicture}[
-          baseline, x=0.85cm,
-          mini/.style={circle, draw=black, thick, minimum size=0.5cm,
-                       inner sep=0pt, font=\tiny, fill=blue!20},
-          sumn/.style={circle, draw=black, thick, minimum size=0.42cm,
-                       inner sep=0pt, font=\tiny, fill=white},
-          mconn/.style={-{Stealth[length=3pt]}, thick},
-        ]
-        \node[mini] (m1) at (0,0)   {C};
-        \node[mini] (m2) at (1.2,0) {C};
-        \node[sumn] (ms) at (2.4,0) {$+$};
-        \node[mini, fill=green!25] (mr) at (3.6,0) {R};
-        \draw[mconn] (m1) -- (m2);
-        \draw[mconn] (m2) -- (ms);
-        \draw[mconn] (ms) -- (mr);
-        \draw[mconn] (m1) to[bend left=55] (ms);
-        \node[font=\tiny] at (1.2, 0.6) {skip};
-      \end{tikzpicture}
-    };
-  \end{tikzpicture}
-  \caption{ResNet-18 backbone ($\sim$11.2M params): the standard \texttt{torchvision} stem (a $3{\times}3$ stride-1 convolution after the $7{\times}7$ stride-2 stem and $3{\times}3$ stride-2 max-pool) feeds four residual stages (S1--S4) of two BasicBlocks each at channel widths 64/128/256/512, ending in global average pooling and a 37-way sigmoid head. Input is the same $96{\times}96{\times}3$ network input prepared by the pipeline shown in Figure~\ref{fig:architectures}. The dashed inset shows the internal flow of one BasicBlock: two $3{\times}3$ convolutions (C) summed with the identity skip ($+$) followed by ReLU (R).}
-  \label{fig:resnet_architecture}
+  \includegraphics[width=\columnwidth]{figures/fig_ablation_custom_cnn_architecture_ablation_50_epochs.pdf}
+  \caption{Per-variant validation loss for the 5 architecture variants on the depth and dropout axes, each trained for 50 epochs from scratch. Depths 3, 4, 5 cluster within run-to-run noise; the tapered-dropout $(0.25, 0.10)$ pivot is empirically justified over both uniform-dropout endpoints, motivating the (depth-4, tapered-dropout) configuration used as the vanilla Custom CNN.}
+  \label{fig:ablation}
 \end{figure}
 
-\subsection{ResNet-18}
+We select the depth-4 / tapered-dropout configuration via an ablation sweep at 50 epochs on the same train/validation split, varying depth $\in \{3, 4, 5\}$ at fixed tapered dropout and dropout $\in \{(0.10, 0.10), (0.25, 0.10),$ $(0.25, 0.25)\}$ at fixed depth $4$. At depth 3 the post-convolution feature map is $12^2 \times 128 = 18{,}432$ values, inflating the FC head and increasing overfitting risk; at depth 5 the feature map collapses to $3^2 \times 512 = 4{,}608$, erasing spatial structure already vaguely present in resolution-limited images. Figure~\ref{fig:ablation} shows that depths 3, 4, and 5 cluster within run-to-run noise, while the tapered-dropout pivot beats the uniform $(0.25, 0.25)$ variant and tracks the uniform $(0.10, 0.10)$ variant.
+
+The Custom CNN has $\mathbf{2{,}786{,}117}$ trainable parameters, of which $\sim 2.36$~M live in the $9216 \to 256$ FC1 matrix. The training set contains $N_{\mathrm{train}} \times 96^2 \times 3 \approx 1.36 \times 10^9$ pixels, giving a parameter-to-pixel ratio of $\sim 2 \times 10^{-3}$. This is well below unity, but since neighbouring pixels are highly correlated and most pixels are background sky, the effective independent-sample count is likely much smaller.
+
+The Custom CNN loss curves of Figure~\ref{fig:loss_custom_cnn}, where training loss monotonically decreases while validation loss plateaus, confirm modest overfitting through feature memorisation of the training data, thus motivating the training data augmentations and regularisations in Section~\ref{sec:opt}.
+
+\begin{figure*}[t!]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_loss_custom_vs_resnet.pdf}
+  \caption{Training (dashed) and validation (solid) RMSE vs.\ epoch for the Custom CNN (blue) and ResNet-18 (orange), both at 100 epochs, Adam, no augmentation, no scheduler. Best validation RMSE: $0.0953$ (Custom CNN, epoch 34) and $0.0958$ (ResNet-18, epoch 95). The top panel's y-axis is truncated for brevity; both training cuves monotonically decreases, indicating overfitting from feature memorisation of the training set. The lower panel plots the per-epoch inter-model gap $\Delta\,\mathrm{RMSE}_{\mathrm{val}} = \mathrm{Custom\ CNN} - \mathrm{ResNet}$. The two models track within $\sim 0.005$ RMSE throughout training, confirming that the residual extension does not buy a measurable accuracy improvement at this depth. At earlier epochs $\lesssim 5$ the ResNet converges faster to the plateau.}
+  \label{fig:loss_custom_cnn}
+  \label{fig:loss_resnet_18}
+\end{figure*}
+
+\subsection{ResNet-18 (residual extension)}
 \label{sec:resnet}
 
-\paragraph{Residual networks.} Plain deep CNNs suffer from a degradation problem: as more layers are stacked, training accuracy saturates and then degrades, driven by the vanishing-gradient problem. The gradient of the loss with respect to an early-layer weight is a product of $N$ Jacobians whose operator norms are typically $< 1$, so $\| \nabla_{W_\ell} L \| \sim \prod_{k = \ell+1}^{N} \|J_k\|$ decays geometrically with depth. \citet{He2015} reformulate each block to learn the residual $F(x) = H(x) - x$ rather than the full mapping $H(x)$, adding an identity shortcut so that
+Plain deep CNNs suffer from a degradation problem. As more layers are stacked, training accuracy saturates and then degrades, driven by the vanishing-gradient problem. \citet{He2015} instead reformulates each block to learn the residual $F(x) = H(x) - x$ rather than the full mapping $H(x)$, adding an identity shortcut so that
 \begin{equation}
   H(x) = F(x) + x, \qquad J_{\mathrm{block}} = I + \frac{\partial F}{\partial x}.
   \label{eq:resblock}
 \end{equation}
-Gradients then propagate through the skip unattenuated since the additive identity in $J_{\mathrm{block}}$ guarantees $\|J_{\mathrm{block}}\| \ge 1$ in the small-perturbation limit; extra layers can always learn $F \equiv 0$ and recover a shallower network, so depth cannot hurt training error. \citet{He2015} use this property to train networks up to 1202 layers on CIFAR-10.
+and gradients propagate through the skip unattenuated since the additive identity in $J_{\mathrm{block}}$ guarantees $\|J_{\mathrm{block}}\| \ge 1$ in the small-perturbation limit. As such, such residual networks (ResNets) can be trained to arbitrary depth without much degradation. 
 
-\paragraph{ResNet-18 adaptation.} We use the standard \texttt{torchvision} ResNet-18 stem (a $7\times7$ stride-2 convolution followed by $3\times3$ stride-2 max-pool) without modification. The $96 \times 96$ input downsamples to $24 \times 24$ before stage 1, and the four stride-2 reductions inside the residual stages take the spatial dimensions to $3 \times 3$ at the global-average-pool layer. We replace the classification head with a single linear layer mapping the $512$-dimensional feature vector to $37$ sigmoid-activated outputs. The total parameter count is $\mathbf{11{,}195{,}493}$. We train with the Adam optimiser (fused, initial LR $\eta = 10^{-3}$, $\beta_1 = 0.9$, $\beta_2 = 0.999$, $\epsilon = 10^{-8}$) and the RMSE loss for $100$ epochs at batch size $1024$, with no augmentation or LR scheduler in this baseline; those interventions are added in Section~\ref{sec:opt}. Adam updates each parameter $\theta$ from gradient $g_t = \nabla_\theta L_t$ via bias-corrected first and second moment estimates,
-\begin{equation}
-  m_t = \beta_1 m_{t-1} + (1-\beta_1) g_t, \qquad v_t = \beta_2 v_{t-1} + (1-\beta_2) g_t^2, \qquad \theta_t = \theta_{t-1} - \eta\,\frac{\hat m_t}{\sqrt{\hat v_t} + \epsilon},
-  \label{eq:adam}
-\end{equation}
-with $\hat m_t = m_t / (1 - \beta_1^t)$ and $\hat v_t = v_t / (1 - \beta_2^t)$; the per-parameter step size $\eta/\sqrt{\hat v_t}$ adapts to gradient magnitude, which lets the same global LR drive both the small-scale conv weights and the large-scale FC head without manual rescaling \citep{KingmaBa2014}.
+We use \texttt{torchvision}'s ResNet-18 unmodified: the $7\times7$ stride-2 stem and $3\times3$ stride-2 max-pool performs a stride-1 reduction $96^2 \to 24^2$ before stage 1, and the three stride-2 reductions in stages 2--4 bring the spatial extent to $3 \times 3$ at the global-average-pool. The classification layer is replaced with a Linear($512 \to 37$)$\,+\,$sigmoid layer for multi-label output. The total parameter count is $\mathbf{11{,}195{,}493}$ ($\sim 4\times$ the Custom CNN). Training settings match the Custom CNN above (Adam optimizer; RMSE loss; $100$ epochs; batch $1024$) with no augmentation or LR scheduler in this baseline.
 
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_loss_resnet_18.pdf}
-  \caption{ResNet-18 training and validation RMSE vs.\ epoch (100 epochs, Adam, no augmentation, no scheduler). The best validation RMSE is $0.0958$, reached at epoch 95. The training/validation gap grows visibly after epoch $\sim 10$, the canonical signature of overfitting; the LR scheduler and rotation augmentation introduced in Section~\ref{sec:opt} close this gap. This figure is the Checkpoint 2 deliverable from the lab manual.}
-  \label{fig:loss_resnet_18}
-\end{figure}
+\subsubsection{Custom CNN vs.\ ResNet-18}
 
-\paragraph{Per-stage physical scales.} At the median GZ2 redshift, $\sim 60$~pc per model pixel, the four ResNet stages operate on distinct physical regimes:
-\begin{itemize}
-  \item Stem ($96 \to 24$, 64 ch): $\sim 240$~pc/pixel low-pass response.
-  \item Stage 1 ($24 \to 24$): texture and local contrast (smooth vs.\ clumpy light, disk--bulge transition).
-  \item Stage 2 ($24 \to 12$, 128 ch): arms, bars, and bulges at $\sim 480$~pc/pixel (Q4/Q5/Q10/Q11).
-  \item Stage 3 ($12 \to 6$, 256 ch): galaxy-scale gestalt at $\sim 1$~kpc/pixel (Q2 edge-on, Q6/Q8 asymmetry).
-  \item Stage 4 ($6 \to 3$, 512 ch): whole-galaxy fingerprint at $\sim 2$~kpc/pixel.
-\end{itemize}
-The skip connections preserve fine-scale features from earlier stages into the global feature vector, which is particularly important for rare-feature labels (lens/arc, dust lane).
-
-\subsection{Custom CNN}
-\label{sec:custom}
-
-\paragraph{Architecture.}
-The Custom CNN stacks four convolutional blocks of $\{\mathrm{Conv2d}(3\times3, \mathrm{pad}\,1) \to \mathrm{BatchNorm2d} \to \mathrm{ReLU} \to \mathrm{MaxPool2d}(2\times2)\}$ with channel widths $32 \to 64 \to 128 \to 256$. The spatial size halves at each block, so the $96^2$ input collapses to a $6^2 \times 256$ feature map. The classifier head is two fully connected layers ($9216 \to 256 \to 128$) with ReLU activations and tapered dropout ($0.25$ after FC1, $0.10$ after FC2), followed by a linear-plus-sigmoid layer to the 37 vote fractions. We train with Adam at initial LR $10^{-3}$ for $100$ epochs at batch size $1024$.
-
-\paragraph{Batch normalisation and dropout.} Batch normalisation rescales each channel of a feature map to zero mean and unit variance over a mini-batch before applying a learned affine,
-\begin{equation}
-  \hat{x}_c = \frac{x_c - \mu_{B,c}}{\sqrt{\sigma^2_{B,c} + \epsilon}}, \qquad y_c = \gamma_c \hat{x}_c + \beta_c,
-  \label{eq:batchnorm}
-\end{equation}
-with batch statistics $\mu_{B,c}, \sigma^2_{B,c}$ replaced by running estimates at inference \citep{IoffeSzegedy2015}. BN keeps the input distribution of each conv layer stationary across training, allowing the larger learning rate ($10^{-3}$) and shorter warm-up than a BN-free stack of the same depth would tolerate, and contributes a mild stochastic regularisation through the noise in the per-batch statistics. Dropout, applied to the FC head, sets each unit to zero independently with probability $p$ at training time and rescales the survivors,
-\begin{equation}
-  y_i = \frac{1}{1-p}\,x_i\,r_i, \qquad r_i \sim \mathrm{Bernoulli}(1-p),
-  \label{eq:dropout}
-\end{equation}
-collapsing to the identity at inference ($p = 0$) so no scaling correction is needed at test time \citep{Srivastava2014}. The heavier dropout on FC1 ($p = 0.25$) concentrates regularisation in the $9216 \to 256$ matrix, which carries $\sim 85\%$ of the FC-head parameters.
-
-\paragraph{Depth and dropout ablation.}
-We select the depth-4 / tapered-dropout configuration via an ablation sweep at 25 epochs on the same train/val split, varying depth $\in \{3, 4, 5\}$ at fixed tapered dropout and dropout $\in \{(0.10, 0.10), (0.25, 0.10), (0.25, 0.25)\}$ at fixed depth $4$. At depth 3 the post-conv feature map is $12^2 \times 128 = 18{,}432$ values, inflating the FC head and increasing overfitting risk; at depth 5 the feature map collapses to $3^2 \times 512 = 4{,}608$, erasing spatial structure. Depth 4 is the balance point. Figure~\ref{fig:ablation} shows that depths 3, 4, and 5 cluster within run-to-run noise, while the tapered-dropout pivot beats the uniform $(0.25, 0.25)$ variant and tracks the uniform $(0.10, 0.10)$ variant. We lock in the (depth-4, tapered) configuration for the 100-epoch run.
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_ablation_custom_cnn_architecture_ablation_25_epochs.pdf}
-  \caption{Architecture ablation: per-variant validation loss for the 5 architecture variants on the depth and dropout axes, each trained for 25 epochs from scratch. Depths 3, 4, 5 cluster within run-to-run noise; the tapered-dropout $(0.25, 0.10)$ pivot is empirically justified over both uniform-dropout endpoints, motivating the (depth-4, tapered-dropout) configuration carried into the 100-epoch run.}
-  \label{fig:ablation}
-\end{figure}
-
-\paragraph{Design choices.}
-The channel progression $32 \to 64 \to 128 \to 256$ tracks the same physical-scale hierarchy as the ResNet stages of Section~\ref{sec:resnet} (block 1 at $\sim 0.2$~kpc/pixel picks up local isophote gradients; block 4 at $\sim 1.8$~kpc/pixel produces a galaxy-scale fingerprint). We use max pooling rather than average pooling so that locally bright features (arm crests, bar ends, bulge cores) survive the downsampling. The $3\times3$ kernels are standard at this spatial size. The sigmoid output matches the $[0, 1]$ vote-fraction range; the loss is RMSE rather than BCE because the task is regression on continuous vote fractions, not classification.
-
-\paragraph{Parameter count.}
-The Custom CNN has $\mathbf{2{,}786{,}117}$ trainable parameters, of which $\sim 2.36$~M live in the $9216 \to 256$ FC1 matrix. The training set contains $N_{\mathrm{train}} \times 96^2 \times 3 \approx 1.36 \times 10^9$ pixels, giving a parameter-to-pixel ratio of $\sim 2 \times 10^{-3}$ for the Custom CNN and $\sim 8 \times 10^{-3}$ for ResNet-18. Both are well below unity, but neighbouring pixels are highly correlated and most pixels are background sky, so the effective independent-sample count is much smaller. The train/val gaps in Figures~\ref{fig:loss_resnet_18} and \ref{fig:loss_custom_cnn} confirm modest overfitting, motivating the regularisation interventions of Section~\ref{sec:opt}.
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_loss_custom_cnn.pdf}
-  \caption{Custom CNN training and validation RMSE vs.\ epoch (100 epochs, Adam, no augmentation, no scheduler). The best validation RMSE is $0.0953$, reached at epoch 34. The model is roughly $4\times$ smaller than ResNet-18 in parameter count but achieves a marginally lower bulk RMSE in this unaugmented baseline. The same train/val gap as in the ResNet baseline is visible.}
-  \label{fig:loss_custom_cnn}
-\end{figure}
-
-\paragraph{Model selection.}
-The Custom CNN and ResNet-18 are indistinguishable within $\sim 0.0005$ RMSE in this unaugmented baseline (Custom: $0.0953$, ResNet-18: $0.0958$). The lab manual instructs us to ``use the best performing model between your own implementation and ResNets'' for the rest of the lab; we satisfy this by tie-breaking on parameter efficiency: the Custom CNN has $\sim 4\times$ fewer parameters, $\sim 2\times$ faster inference, and a plain Conv--BN--ReLU--Pool stack that isolates the marginal effects of the scheduler and augmentation. \textbf{All downstream experiments use the Custom CNN as the backbone.}
+The Custom CNN and ResNet-18 are indistinguishable within $\sim 0.0005$ RMSE in this unaugmented baseline (Custom: $0.0953$, ResNet-18: $0.0958$). The residual extension therefore does not buy a measurable accuracy improvement at this depth ($18$ layers is well below where the degradation problem dominates), confirming that the gradient-flow argument is unnecessary at our scale. On the contrary, the low-depth and smaller parameter approach of the Custom CNN makes it more efficient in terms of computational resources and training time. 
 
 \subsection{Optimization Interventions}
 \label{sec:opt}
 
-We add two interventions on top of the Custom CNN baseline: an adaptive learning-rate scheduler and random-angle rotation augmentation. The scheduler addresses optimisation (fine-tuning the descent in the existing loss landscape); the augmentation addresses generalisation (expanding the effective training distribution). The two are nearly orthogonal and are expected to stack.
+We add two interventions on top of the Custom CNN baseline: (1) an adaptive learning-rate scheduler; and (2) random-angle rotation augmentation. The scheduler addresses optimisation (fine-tuning the descent in the existing loss landscape); the augmentation addresses the feature memorisation bug. 
 
 \subsubsection{Learning-rate scheduling}
 
 We use \texttt{torch.optim.lr\_scheduler.ReduceLROnPlateau} with \texttt{factor = 0.5} and \texttt{patience = 3}. The scheduler halves the learning rate whenever the validation loss has not improved for 3 epochs, adapting to the actual convergence trajectory rather than a hand-tuned schedule.
 
 Figure~\ref{fig:loss_lr_custom} shows the loss and learning-rate trajectories. The LR drops in factor-of-two steps each time the validation loss plateaus, taking it from $10^{-3}$ to $\sim 10^{-4}$ over $\sim 3$--$4$ steps in the 50-epoch run. Each drop is mirrored by a small downward kink in the validation curve at the same epoch, confirming that the scheduler was breaking plateaus rather than minima. The scheduled Custom CNN reaches a validation RMSE of $0.0943$ at epoch 40, $\sim 0.001$ below the unscheduled baseline ($0.0953$).
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_lr_scheduler.pdf}
-  \caption{Custom CNN with \texttt{ReduceLROnPlateau} scheduler (factor $0.5$, patience $3$, 50 epochs). Top: training and validation RMSE. Bottom: learning rate. Each LR drop in the bottom panel is mirrored by a downward kink in the validation curve at the same epoch, confirming the scheduler is doing useful work. Best validation RMSE: $0.0943$.}
-  \label{fig:loss_lr_custom}
-\end{figure}
 
 \subsubsection{Rotation augmentation}
 
@@ -742,21 +749,22 @@ We apply rotation per-batch on the GPU via \texttt{affine\_grid} + \texttt{grid\
 
 We verify the augmentation in isolation with a 50-epoch quick test at fixed learning rate (Figure~\ref{fig:loss_lr_aug_only}). Together with the unaugmented baseline (Figure~\ref{fig:loss_custom_cnn}) and the scheduler-only run (Figure~\ref{fig:loss_lr_custom}), this completes a $2 \times 2$ ablation across the scheduler and augmentation axes. The augmentation-only run reaches a best validation RMSE of $0.0915$ at epoch 48, the largest single-intervention gain ($\Delta \mathrm{RMSE} \approx -0.0038$); the scheduler-only gain ($\Delta \mathrm{RMSE} \approx -0.0010$) is $\sim 4\times$ smaller. Combining both (Figure~\ref{fig:loss_lr_aug_custom}) delivers the best overall RMSE of $\mathbf{0.0913}$.
 
-\begin{figure}[t!]
+\begin{figure*}[t!]
   \centering
-  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation.pdf}
-  \caption{Custom CNN with rotation augmentation only (no LR scheduler, 50-epoch quick test, constant LR $10^{-3}$). The augmentation alone reaches val.\ RMSE $\sim 0.0915$, already at the lab manual's ``good'' target, and closes the train/val gap visibly compared to Figure~\ref{fig:loss_custom_cnn}. This is the augmentation-axis arm of the $2 \times 2$ ablation; combining with the scheduler (Figure~\ref{fig:loss_lr_aug_custom}) adds a further $\Delta \mathrm{RMSE} \approx -0.0002$.}
+  \includegraphics[width=\textwidth]{figures/fig_loss_lr_scheduler_aug_pair.pdf}
+  \caption{Two-column intervention ablation, each at 50 epochs. \emph{Left:} Custom CNN with \texttt{ReduceLROnPlateau} (factor $0.5$, patience $3$); the LR halves whenever the validation loss plateaus, with each drop in the bottom panel mirrored by a downward kink in the validation curve at the same epoch (best val.\ RMSE: $0.0943$). \emph{Right:} Custom CNN with rotation augmentation only at constant LR $10^{-3}$; the augmentation alone reaches val.\ RMSE $\sim 0.0915$ and visibly closes the train/val gap compared to Figure~\ref{fig:loss_custom_cnn}. Together with the unaugmented baseline (Figure~\ref{fig:loss_custom_cnn}) and the combined run (Figure~\ref{fig:loss_lr_aug_custom}), the two panels form the off-diagonal arms of the $2 \times 2$ scheduler $\times$ augmentation ablation.}
+  \label{fig:loss_lr_custom}
   \label{fig:loss_lr_aug_only}
-\end{figure}
+\end{figure*}
 
-\begin{figure}[t!]
+\begin{figure*}[t!]
   \centering
-  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation_+_lr_scheduler.pdf}
+  \includegraphics[width=\textwidth]{figures/fig_loss_lr_custom_cnn_+_augmentation_+_lr_scheduler.pdf}
   \caption{Custom CNN with rotation augmentation and the \texttt{ReduceLROnPlateau} scheduler (100 epochs). Best validation RMSE: $\mathbf{0.0913}$ at epoch 97, below the lab manual's ``good'' target of $0.09$ and the best result across all our trained models. The training curve is no longer monotonic (it wobbles in a band) because the optimiser sees a different rotation of each galaxy at every epoch; this is the signature that the model is learning rotation-invariant features rather than memorising the training set.}
   \label{fig:loss_lr_aug_custom}
-\end{figure}
+\end{figure*}
 
-Figure~\ref{fig:loss_lr_aug_custom} shows the final combined run. The train/val gap at each model's best epoch quantifies the effect: the unaugmented Custom CNN at epoch 34 has train RMSE $0.0888$ and val RMSE $0.0953$ (gap $+0.0064$), while the augmented and scheduled model at epoch 97 has train RMSE $0.0929$ and val RMSE $0.0913$ (gap $-0.0016$). The gap has closed by a factor of $\sim 4$ and reversed sign: the augmented training set is harder than the unrotated validation set, so the trained model performs better on validation. The training curve no longer descends monotonically because every epoch presents a fresh random angle per image, preventing memorisation of specific (image, label) pairs. We take the persistent per-epoch wobble as the operational definition of ``not memorising'': the network sees rotated views it has not seen before at every epoch, so the training loss never collapses onto the validation loss the way it does under deterministic input.
+Figure~\ref{fig:loss_lr_aug_custom} shows the final combined run. The train/validation gap at each model's best epoch quantifies the effect: the unaugmented Custom CNN at epoch 34 has train RMSE $0.0888$ and validation RMSE $0.0953$ (gap $+0.0064$), while the augmented and scheduled model at epoch 97 has train RMSE $0.0929$ and validation RMSE $0.0913$ (gap $-0.0016$). The gap has closed by a factor of $\sim 4$ and reversed sign: the augmented training set is harder than the unrotated validation set, so the trained model performs better on validation. The training curve no longer descends monotonically because every epoch presents a fresh random angle per image, preventing memorisation of specific (image, label) pairs. We take the persistent per-epoch wobble as the operational definition of ``not memorising'': the network sees rotated views it has not seen before at every epoch, so the training loss never collapses onto the validation loss the way it does under deterministic input.
 
 \subsection{Tree-Reweighted Output (Extra Credit)}
 \label{sec:treeweight}
@@ -772,12 +780,12 @@ The architectural change is purely in the output transformation; the loss remain
 
 The tree-reweighted model attains a validation RMSE of $0.2066$ versus $0.0913$ for the augmented Custom CNN (Figure~\ref{fig:loss_tree_reweight}).
 
-\begin{figure}[t!]
+\begin{figure*}[t!]
   \centering
-  \includegraphics[width=\columnwidth]{figures/fig_loss_lr_custom_cnn_+_tree_weighted_rmse.pdf}
+  \includegraphics[width=\textwidth]{figures/fig_loss_lr_custom_cnn_+_tree_weighted_rmse.pdf}
   \caption{Training and validation RMSE vs.\ epoch for the tree-reweighted Custom CNN (augmentation + LR scheduling + sigmoid-plus-tree-walk output, 100 epochs). Best val.\ RMSE: $0.2066$ at epoch 63. The bulk RMSE is $\sim 2\times$ higher than the unconstrained augmented Custom CNN because the architectural constraint forces deep-tree predictions to zero when the parent is low; the per-label decomposition in Table~\ref{tab:treeweight_per_label} reveals where the constraint bites.}
   \label{fig:loss_tree_reweight}
-\end{figure}
+\end{figure*}
 
 The constraint $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ prevents the network from placing probability mass on a deep-tree label when its parent is low. Table~\ref{tab:treeweight_per_label} shows that the labels most penalised are the rare deep-tree odd-feature labels (lens/arc, dust lane, merger). The independent-output model achieved low RMSE on these labels by predicting small positive values; the constraint now forces the prediction to zero exactly when the parent is also low. The deep-tree-label improvements promised by the constraint are real within the smooth and disk sub-trees, but they are washed out in bulk RMSE by the strict enforcement on rare labels. The tree-reweighted model is the more physically principled architecture, but the unconstrained model is the better bulk-RMSE minimiser; we carry the augmented unconstrained model forward as the working best model.
 
@@ -830,12 +838,12 @@ Figure~\ref{fig:model_comparison} compares the validation RMSE trajectories of a
   \label{tab:model_rmse}
 \end{table}
 
-\begin{figure}[t!]
+\begin{figure*}[t!]
   \centering
-  \includegraphics[width=\columnwidth]{figures/fig_model_comparison.pdf}
+  \includegraphics[width=\textwidth]{figures/fig_model_comparison.pdf}
   \caption{Validation RMSE vs.\ epoch for the four main models. The Custom CNN with rotation augmentation and LR scheduling (purple, lowest) reaches the best validation RMSE; the tree-reweighted model (red, highest) is a strictly more constrained architecture whose bulk RMSE is not directly comparable.}
   \label{fig:model_comparison}
-\end{figure}
+\end{figure*}
 
 The progression baseline $\to$ plain backbone $\to$ LR scheduler $\to$ augmentation lowers the validation RMSE monotonically. The largest single gain comes from rotation augmentation ($\Delta \mathrm{RMSE} = -0.0028$ over the plain Custom CNN); the scheduler gain is $\Delta \mathrm{RMSE} = -0.0010$. The combined-intervention performance approximately equals the sum of individual gains, consistent with the two interventions addressing orthogonal failure modes. Figure~\ref{fig:model_progression} shows the same information as a step-wise bar chart: the bulk of the reachable improvement over the baseline comes from the architectural step to a CNN backbone, with the optimisation interventions providing smaller cumulative refinements toward the ``good'' target.
 
