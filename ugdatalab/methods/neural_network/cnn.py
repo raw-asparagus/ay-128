@@ -112,8 +112,16 @@ def _auto_device() -> str:
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
-def _run_epoch(model, batches, optimizer, device, training: bool) -> float:
-    """Run one epoch of training or evaluation and return the epoch RMSE."""
+def _run_epoch(model, batches, optimizer, device, training: bool,
+               loss_fn=rmse_loss) -> float:
+    """Run one epoch of training or evaluation and return the epoch RMSE.
+
+    The reported epoch RMSE is always the standard (unweighted) RMSE, for
+    cross-experiment comparability. The ``loss_fn`` parameter controls
+    which loss is *backpropagated through* during training --- e.g.
+    tree-weighted RMSE for hierarchical-output regularisation while still
+    tracking bulk RMSE as the reported metric.
+    """
     model.train() if training else model.eval()
     total_se = torch.zeros((), device=device)
     total_n = 0
@@ -128,7 +136,7 @@ def _run_epoch(model, batches, optimizer, device, training: bool) -> float:
 
             with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=is_cuda):
                 predictions = model(images)
-                loss = rmse_loss(predictions, labels)
+                loss = loss_fn(predictions, labels)
 
             if training:
                 optimizer.zero_grad()
@@ -158,6 +166,7 @@ def train_cnn(
     seed: int,
     optimizer_factory=lambda params, lr: torch.optim.SGD(params, lr=lr),
     scheduler_factory=None,
+    loss_fn=rmse_loss,
 ) -> CNNResult:
     """Train a CNN model on a classification dataset.
 
@@ -239,9 +248,11 @@ def train_cnn(
 
         train_losses[epoch] = _run_epoch(
             compiled_model, train_batches, optimizer, device, training=True,
+            loss_fn=loss_fn,
         )
         val_losses[epoch] = _run_epoch(
             compiled_model, val_batches, None, device, training=False,
+            loss_fn=loss_fn,
         )
 
         if scheduler is not None:

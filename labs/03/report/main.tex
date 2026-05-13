@@ -74,7 +74,7 @@ Galaxy morphology is the most direct observational tracer of a galaxy's dynamics
 
 The largest hand-labelled morphological catalogue available is Galaxy Zoo 2 \citep[GZ2;][]{Willett2013}, comprising $\sim 3\times10^5$ SDSS galaxies labelled by citizen-scientist consensus on a 37-leaf decision tree. However, as this labelling pipeline struggle to scale to the LSST, Euclid, and Roman data releases with its reliance on voluntary participation, convolutional neural networks (CNNs) provide a programmatic alternative where given paired images and labels, a CNN learns to predict morphological vote fractions directly from pixels \citep{Krizhevsky2020}.
 
-In this work, we (1) assemble a $61{,}578$-galaxy GZ2 training set with $96\times96$ pixel SDSS $gri$ cutouts and 37 vote-fraction labels per galaxy; (2) train two CNN architectures, an 18-layer ResNet \citep[$\sim 11.2$ M parameters;][]{He2015} and a custom 4-block CNN ($\sim 2.8$ M parameters); (3) compare two optimisations (learning-rate scheduling and $360^\circ$ rotation augmentation) and one architectural regularisation (tree-reweighted output) against a mean-prediction baseline; (4) apply the best model to a held-out test sample of $79{,}975$ SDSS galaxies; and (5) recover a major-merger rate $R_{\mathrm{major}}$ from the predicted Class8.6 merger fraction using the \citet{Lotz2011} visibility-timescale calibration.
+In this work, we (1) assemble a $61{,}578$-galaxy GZ2 training set with $96\times96$ pixel SDSS $gri$ cutouts and 37 vote-fraction labels per galaxy; (2) train two CNN architectures, an 18-layer ResNet \citep[$\sim 11.2$ M parameters;][]{He2015} and a custom 4-block CNN ($\sim 2.8$ M parameters); (3) compare two optimisations (learning-rate scheduling and $360^\circ$ rotation augmentation) and one loss-level regularisation (tree-weighted RMSE following \citealt{Dieleman2015}) against a mean-prediction baseline; (4) apply the best model to a held-out test sample of $79{,}975$ SDSS galaxies; and (5) recover a major-merger rate $R_{\mathrm{major}}$ from the predicted Class8.6 merger fraction using the \citet{Lotz2011} visibility-timescale calibration.
 
 %%% ---------------------------------------------------------------
 \section{Background}
@@ -719,7 +719,7 @@ Plain deep CNNs suffer from a degradation problem. As more layers are stacked, t
 \end{equation}
 and gradients propagate through the skip unattenuated since the additive identity in $J_{\mathrm{block}}$ guarantees $\|J_{\mathrm{block}}\| \ge 1$ in the small-perturbation limit. As such, such residual networks (ResNets) can be trained to arbitrary depth without much degradation. 
 
-We use \texttt{torchvision}'s ResNet-18 unmodified: the $7\times7$ stride-2 stem and $3\times3$ stride-2 max-pool performs a stride-1 reduction $96^2 \to 24^2$ before stage 1, and the three stride-2 reductions in stages 2--4 bring the spatial extent to $3 \times 3$ at the global-average-pool. The classification layer is replaced with a Linear($512 \to 37$)$\,+\,$sigmoid layer for multi-label output. The total parameter count is $\mathbf{11{,}195{,}493}$ ($\sim 4\times$ the Custom CNN). Training settings match the Custom CNN above.
+We use \texttt{torchvision}'s ResNet-18 unmodified. Both the $7\times7$ stride-2 stem and $3\times3$ stride-2 max-pool performs a stride-1 reduction $96^2 \to 24^2$ before stage 1, and the three stride-2 reductions in stages 2--4 bring the spatial extent to $3 \times 3$ at the global-average-pool. The classification layer is replaced with a Linear($512 \to 37$)$\,+\,$sigmoid layer for multi-label output. The total parameter count is $\mathbf{11{,}195{,}493}$ ($\sim 4\times$ the Custom CNN). Training settings match the Custom CNN above.
 
 \subsection{Custom CNN vs.\ ResNet-18}
 
@@ -763,58 +763,43 @@ The augmentation-only run reaches a best validation RMSE of $0.0915$ at epoch 48
 
 Figure~\ref{fig:loss_lr_aug_custom} shows the final combined run, delivering the best overall RMSE of $\mathbf{0.0913}$. 
 
-\subsection{Tree-Reweighting}
+\subsection{Tree-Weighted RMSE Loss}
 \label{sec:treeweight}
 
-At the data source level, the 37 GZ2 labels are not independent. By survey construction, a child vote fraction $f_q$ is the product of its conditional probability given that the classifier reached question $q$ and its parent's vote fraction,
+At the data-source level the 37 GZ2 labels are not independent. By survey construction, a child vote fraction $f_q$ is the product of its conditional probability given that the classifier reached question $q$ and its parent's vote fraction,
 \begin{equation}
 f_q = p_{q \mid \mathrm{parent}}\,\prod_{a \in \mathrm{ancestors}(q)} p_{a \mid \mathrm{parent}(a)}.
 \label{eq:gz2-chain}
 \end{equation}
-On the contrary, an independent-output model would be free to predict $\hat f_{1.1} = 0.10$ and $\hat f_{7.1} = 0.50$, which is physically impossible since Class7.1 only exists when Q7 was asked and Q7 is only asked on the Class1.1 branch. As such, we sigmoid-activate the 37 raw outputs and interpret them as conditional probabilities $\hat p_{q\mid\mathrm{parent}}$, then walk the GZ2 decision tree in topological order to produce tree-consistent vote-fraction predictions $\hat f_q$ via
+An independent-output regressor with 37 sigmoid heads is free to predict $\hat f_{1.1} = 0.10$ and $\hat f_{7.1} = 0.50$, which is physically impossible since Class7.1 is only asked on the Class1.1 branch. To encode this tree-nesting structure into training, we adopt the Galaxy Zoo Challenge-winning approach of \citet{Dieleman2015} where using the same model and approach as in Section~\ref{sec:custom}, we reweight the training loss so that each $(\mathrm{galaxy}, \mathrm{label})$ cell contributes to the gradient in proportion to the probability that the GZ2 protocol would have asked that question of that galaxy. As such, tree-consistency emerges from the tree-weighted RMSE minimizing gradient pressure rather than from clipping the output space, which would thus preserve the network's ability to predict any value in $[0, 1]$ for any label.
+
+We replace the bulk RMSE loss (Eq.~\ref{eq:rmse}) with the tree-weighted RMSE
 \begin{equation}
-  \hat f_q =
-  \begin{cases}
-    \hat p_q & \text{if } P(q) = \emptyset, \\
-    \displaystyle \hat p_{q\mid\mathrm{parent}} \sum_{p \in P(q)} \hat f_p & \text{otherwise},
-  \end{cases}
-  \label{eq:tree-reweight}
+  L_{\mathrm{tw\text{-}RMSE}} = \sqrt{\frac{\sum_{i, j} w_{ij}\,(\ell^{\mathrm{pred}}_{ij} - \ell^{\mathrm{true}}_{ij})^2}{\sum_{i, j} w_{ij}}},
+  \label{eq:tree-weighted-loss}
 \end{equation}
-where $P(q)$ is the set of parents of $q$ in the GZ2 tree. For most labels $|P(q)| = 1$ and the sum reduces to the single term $\hat f_{\mathrm{parent}}$; for Class4.1 and Class4.2 (each reachable from Class3.1 \emph{or} Class3.2) the sum picks up both parents, which is correct because within a single GZ2 question the parents are mutually exclusive. The output is then guaranteed tree-consistent: $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ for every child--parent set.
+\begin{equation}
+  w_{ij} =
+  \begin{cases}
+    1 & \text{if } P(q_j) = \emptyset, \\
+    \displaystyle \sum_{p \in P(q_j)} \ell^{\mathrm{true}}_{i, p} & \text{otherwise},
+  \end{cases}
+  \label{eq:tree-weights}
+\end{equation}
+where $P(q_j)$ is the parent set of $q_j$ in the GZ2 tree. The weight $w_{ij}$ is the probability that question $q_j$ was asked of classifier(s) of galaxy $i$ in the GZ2 hierarchical framework, and because GZ2's parent normalisation enforces $\sum_{c \in \mathrm{siblings}(j)} f_c = f_{\mathrm{parent}}$, the catalog parent vote fraction $\ell^{\mathrm{true}}_{i, p}$ is already the cumulative joint probability of reaching $p$, so no cross-terms are required. For $|P(q_j)| = 1$ (most labels) the sum reduces to $w_{ij} = \ell^{\mathrm{true}}_{i, \mathrm{parent}}$; for Class4.1 and Class4.2 (each reachable from Class3.1 \emph{or} Class3.2, which are mutually exclusive answers to Q3) the two parent vote fractions sum to the common grandparent Class2.2 value by construction. The weights come from the \emph{true} catalog labels, not the network's predictions, so each batch's weight tensor reflects exactly which questions were asked of which galaxies. 
 
-The architectural change is purely in the output transformation; the loss remains RMSE, so the bulk validation RMSE is directly comparable to the augmented Custom CNN.
+The two models optimise different objectives. Therefore, for RMSE reporting in cross-model comparisons, we use the standard unweighted form because it is dimensionally meaningful as it reads directly as the percentage-point mean prediction error in vote-fraction units. However, since the tree-weighted model is optimised for a different loss, its best validation RMSE would not be directly comparable to the unweighted baseline and could seemingly perform worse.
 
-The tree-reweighted model attains a validation RMSE of $0.2066$ versus $0.0913$ for the augmented Custom CNN (Figure~\ref{fig:loss_tree_reweight}).
+As observed in figure~\ref{fig:loss_unweighted_vs_tree_weighted}, the $\sim 7\%$ bulk-RMSE penalty is a consequence of the loss change. Structurally, the unweighted bulk RMSE rewards predicting a small-but-non-zero value on the many rare deep-tree cells (Q11 arm count, Q5 bulge prominence, Q10 arm tightness, Q8 odd features) where the ground-truth distribution is concentrated near zero, because such predictions score well on average over those cells. Instead, the tree-weighted loss multiplies the gradient on those cells by a near-zero parent vote fraction, effectively erasing the signal that would have biased it to 0. The tree-weighted model therefore predicts away from 0 on those cells and is thus penalised on the unweighted RMSE.
 
 \begin{figure*}[t!]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_loss_lr_custom_cnn_+_tree_weighted_rmse.pdf}
-  \caption{Training and validation RMSE vs.\ epoch for the tree-reweighted Custom CNN (augmentation + LR scheduling + sigmoid-plus-tree-walk output, 100 epochs). Best val.\ RMSE: $0.2066$ at epoch 63. The bulk RMSE is $\sim 2\times$ higher than the unconstrained augmented Custom CNN because the architectural constraint forces deep-tree predictions to zero when the parent is low; the per-label decomposition in Table~\ref{tab:treeweight_per_label} reveals where the constraint bites.}
-  \label{fig:loss_tree_reweight}
+  \includegraphics[width=\textwidth]{figures/fig_loss_unweighted_vs_tree_weighted.pdf}
+  \caption{Validation RMSE on the unweighted (bulk) metric vs.\ epoch, for the unweighted-loss Custom CNN (blue) and the tree-weighted-loss Custom CNN (orange); both share architecture, augmentation, optimiser, and scheduler. Bottom: per-epoch difference $\mathrm{RMSE}_{\mathrm{tree}} - \mathrm{RMSE}_{\mathrm{unweighted}}$. The tree-weighted model is consistently slightly above the unweighted baseline because its training objective deliberately downweights rare deep-tree cells, on which the unweighted model can predict small-but-non-zero values that score well in bulk RMSE.}
+  \label{fig:loss_unweighted_vs_tree_weighted}
 \end{figure*}
 
-The constraint $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ prevents the network from placing probability mass on a deep-tree label when its parent is low. Table~\ref{tab:treeweight_per_label} shows that the labels most penalised are the rare deep-tree odd-feature labels (lens/arc, dust lane, merger). The independent-output model achieved low RMSE on these labels by predicting small positive values; the constraint now forces the prediction to zero exactly when the parent is also low. The deep-tree-label improvements promised by the constraint are real within the smooth and disk sub-trees, but they are washed out in bulk RMSE by the strict enforcement on rare labels. The tree-reweighted model is the more physically principled architecture, but the unconstrained model is the better bulk-RMSE minimiser; we carry the augmented unconstrained model forward as the working best model.
-
-\begin{table}[H]
-  \centering
-  \small
-  \begin{tabular}{lrr}
-    \toprule
-    Label & Indep.\ RMSE & Tree-RW $\Delta$RMSE \\
-    \midrule
-    Spiral: Loose       & $0.0799$ & $+0.0309$ \\
-    Spiral: 2 arms      & $0.1377$ & $+0.0161$ \\
-    Obvious bulge       & $0.1274$ & $+0.0216$ \\
-    Star/Artefact       & $0.0344$ & $+0.4420$ \\
-    Odd: Dust lane      & $0.0252$ & $+0.2221$ \\
-    Odd: Lens/Arc       & $0.0271$ & $+0.2111$ \\
-    Odd: Merger         & $0.0484$ & $+0.1745$ \\
-    Edge-on: Yes        & $0.0864$ & $+0.1741$ \\
-    \bottomrule
-  \end{tabular}
-  \caption{Per-label validation RMSE change (tree-reweighted minus independent) for selected labels. Deep-tree rare-feature labels (Star/Artefact, Lens/Arc, Dust lane, Merger) suffer the largest increase because the architectural constraint forces them to exactly zero when their parent is also low; the independent-output baseline was achieving low RMSE on these labels by predicting near-zero values rather than enforced-zero, which happens to score better in bulk RMSE.}
-  \label{tab:treeweight_per_label}
-\end{table}
+On the well-sampled top-level labels (Q1, Q6, Q2) and disk-branch mid-tree labels (Q3 bar, Q4 spiral, Q7 roundness) the tree-weighted variant matches or modestly improves on the unweighted baseline; Figure~\ref{fig:per_label_rmse_multimodel} shows this this trade-off explicitly, where it scores a mean per-label validation RMSE of $0.0883$ for the tree-weighted model versus $0.0904$ for the unweighted baseline.
 
 %%% ---------------------------------------------------------------
 \section{Results}
@@ -823,9 +808,9 @@ The constraint $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ prevents the networ
 
 \subsection{Validation RMSE and Model Comparison}
 
-Figure~\ref{fig:model_comparison} compares the validation RMSE trajectories of all trained models; Table~\ref{tab:model_rmse} summarises the best validation RMSE for each. The Custom CNN with rotation augmentation and \texttt{ReduceLROnPlateau} scheduling achieves the best performance: $\mathrm{RMSE} = 0.0913$, a $44\%$ reduction below the mean-prediction baseline ($0.1639$) and below the lab manual's ``good'' target of $0.09$. The tree-reweighted Custom CNN sits well above the others in bulk RMSE because the architectural constraint shrinks the prediction manifold; we carry the augmented unconstrained Custom CNN forward as the best model.
+Figure~\ref{fig:model_comparison} compares the validation RMSE trajectories of all trained models; Table~\ref{tab:model_rmse} summarises the best validation RMSE for each. The Custom CNN with rotation augmentation and \texttt{ReduceLROnPlateau} scheduling achieves the best performance: $\mathrm{RMSE} = 0.0913$, a $44\%$ reduction below the mean-prediction baseline ($0.1639$) and below the lab manual's ``good'' target of $0.09$. The tree-weighted Custom CNN (Section~\ref{sec:treeweight}) reaches an unweighted bulk validation RMSE of $0.0977$ --- intentionally evaluated on a metric different from its training objective so that all rows of Table~\ref{tab:model_rmse} share a common yardstick. The $\sim 7\%$ gap to the unweighted baseline is the cost of optimising the physically motivated tree-weighted RMSE on the bulk metric; on the labels that dominate the tree-weighted loss (well-sampled top-level and disk-branch labels) the two models are essentially tied. We adopt the augmented unconstrained Custom CNN as the working best model on bulk RMSE for downstream merger-rate inference, and discuss the tree-weighted model's complementary per-label behaviour in Section~\ref{sec:discussion}.
 
-\begin{table}[H]
+\begin{table*}[t!]
   \centering
   \begin{tabular}{lrr}
     \toprule
@@ -837,18 +822,25 @@ Figure~\ref{fig:model_comparison} compares the validation RMSE trajectories of a
     Custom CNN + LR scheduler                          & $0.0943$ & $40$ \\
     Custom CNN + augmentation                          & $0.0915$ & $48$ \\
     \textbf{Custom CNN + augmentation + LR scheduler}  & $\mathbf{0.0913}$ & $\mathbf{97}$ \\
-    Custom CNN + tree-reweighted output                & $0.2066$ & $63$ \\
+    Custom CNN + tree-weighted RMSE loss               & $0.0977$ & $49$ \\
     \bottomrule
   \end{tabular}
-  \caption{Best validation RMSE achieved by each model. The tree-reweighted model's high bulk RMSE is an artefact of the architectural constraint, not a generalisation failure, see Section~\ref{sec:treeweight} and Table~\ref{tab:treeweight_per_label}.}
+  \caption{Best validation (unweighted) RMSE achieved by each model. The tree-weighted variant uses the same Custom CNN backbone and augmentation pipeline as the best augmented model, swapping only the training loss for the tree-weighted form (Eq.~\ref{eq:tree-weighted-loss}) following \citet{Dieleman2015}. Its $0.0977$ bulk RMSE is the value of the unweighted metric on a model trained to a \emph{different} objective; the $\sim 7\%$ gap relative to the unweighted-loss baseline ($0.0913$) is the cost of optimising the physically motivated tree-weighted RMSE rather than the bulk metric, not evidence that the tree-weighted model is worse on its own training objective.}
   \label{tab:model_rmse}
-\end{table}
+\end{table*}
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_model_comparison.pdf}
-  \caption{Validation RMSE vs.\ epoch for the four main models. The Custom CNN with rotation augmentation and LR scheduling (purple, lowest) reaches the best validation RMSE; the tree-reweighted model (red, highest) is a strictly more constrained architecture whose bulk RMSE is not directly comparable.}
+  \caption{Validation RMSE vs.\ epoch for the main models, all evaluated on the unweighted bulk metric. The Custom CNN with rotation augmentation and LR scheduling reaches the best bulk RMSE; the tree-weighted variant (Section~\ref{sec:treeweight}, Figure~\ref{fig:loss_unweighted_vs_tree_weighted}) is trained against a \emph{different} objective and is intentionally evaluated on the same bulk metric to make the cost of the physically motivated objective explicit.}
   \label{fig:model_comparison}
+\end{figure*}
+
+\begin{figure*}[p]
+  \centering
+  \includegraphics[width=0.95\textwidth]{figures/fig_per_label_rmse_multimodel.pdf}
+  \caption{Per-label validation RMSE in vote-fraction units for three reference models: the mean-prediction baseline (gray), the augmented Custom CNN trained with unweighted RMSE (blue), and the same Custom CNN trained with the tree-weighted RMSE of Eq.~\ref{eq:tree-weighted-loss} (orange). All three are evaluated on the same unweighted per-label metric so the bars are directly comparable. Tick labels are colour-coded by GZ2 parent question (Class$1$..Class$11$). Both CNNs sit far below the baseline on essentially every label; the per-label gap between the two CNNs reveals the loss trade-off summarised in Table~\ref{tab:model_rmse}: the tree-weighted variant improves on the well-sampled top-level and disk-branch labels (Class$1$.$x$, Class$2$.$x$, Class$3$.$x$, Class$7$.$1$) where it has dense gradient signal, but loses to the unweighted-loss model on the rare deep-tree labels (Class$10$.$x$ arm tightness, Class$11$.$x$ arm count, Class$5$.$x$ bulge prominence) where the unweighted-loss model retains the gradient signal to learn the small-but-non-zero ``predict near zero'' strategy that scores well on bulk RMSE. The mean of the per-label RMSE values reverses the bulk-RMSE ranking ($0.0883$ tree-weighted versus $0.0904$ unweighted, versus $0.1406$ baseline), because giving each label equal weight rather than each cell equal weight foregrounds the tree-weighted model's gains on the labels its objective was designed to prioritise.}
+  \label{fig:per_label_rmse_multimodel}
 \end{figure*}
 
 The progression baseline $\to$ plain backbone $\to$ LR scheduler $\to$ augmentation lowers the validation RMSE monotonically. The largest single gain comes from rotation augmentation ($\Delta \mathrm{RMSE} = -0.0028$ over the plain Custom CNN); the scheduler gain is $\Delta \mathrm{RMSE} = -0.0010$. The combined-intervention performance approximately equals the sum of individual gains, consistent with the two interventions addressing orthogonal failure modes. Figure~\ref{fig:model_progression} shows the same information as a step-wise bar chart: the bulk of the reachable improvement over the baseline comes from the architectural step to a CNN backbone, with the optimisation interventions providing smaller cumulative refinements toward the ``good'' target.
@@ -862,7 +854,7 @@ The progression baseline $\to$ plain backbone $\to$ LR scheduler $\to$ augmentat
 
 \subsection{Per-Label Performance}
 
-Figure~\ref{fig:label_scatter} shows true-vs-predicted scatter plots for all 37 labels on the validation set using the best Custom CNN. The labels fall into three performance tiers:
+Figure~\ref{fig:label_scatter_unweighted} shows true-vs-predicted scatter plots for all 37 labels on the validation set using the best Custom CNN. The labels fall into three performance tiers:
 \begin{itemize}
   \item \textbf{Well-sampled top-level labels} (Class1.1 Smooth, Class1.2 Features/Disk, Class2.1 Edge-on, Class4.1 Spiral, Class6.x Odd): scatter plots track the $1{:}1$ line cleanly across $[0, 1]$ with small bias and $\sigma \sim 0.07$--$0.12$. The CNN is genuinely learning morphology.
   \item \textbf{Moderate-sample mid-tree labels} (Class5.x bulge prominence, Class10.x arm tightness, Class11.2 two-arm spiral, Class7.x roundness): clear positive correlation with regression toward the mean. Bias remains small, scatter is larger ($\sigma \sim 0.10$--$0.15$).
@@ -878,11 +870,18 @@ Figure~\ref{fig:per_label_rmse} summarises per-label RMSE quantitatively. The ha
   \label{fig:per_label_rmse}
 \end{figure*}
 
-\begin{figure*}[t!]
+\begin{figure*}[p]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_label_scatter.pdf}
-  \caption{True vs.\ predicted vote fractions for all 37 GZ2 labels on the validation set, computed with the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler). The dashed diagonal is the $1{:}1$ line; per-panel bias and 1$\sigma$ scatter are annotated. Top-level well-sampled labels (Class1.1 Smooth, Class1.2 Features/Disk, Class2.x Edge-on, Class6.x Odd) track the diagonal cleanly with small bias; mid-tree labels (Class5.x bulge, Class10.x arm tightness, Class11.2 two-arm) show clear positive correlation with regression-toward-the-mean compression; deep-tree rare-feature labels (Class1.3, Class8.x odd-features, Class11.3--5 high-arm-count) collapse to a band near $\hat f = 0$, the long-tail failure mode of rare-label regression.}
-  \label{fig:label_scatter}
+  \includegraphics[width=\textwidth]{figures/fig_label_scatter_unweighted.pdf}
+  \caption{True vs.\ predicted vote fractions for all 37 GZ2 labels on the validation set, computed with the unweighted-loss Custom CNN (rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler). Panels are laid out by GZ2 decision-tree class (rows) and scatter points are coloured by the parent question colour-coding used throughout this report. The diagonal is the $1{:}1$ guide; per-panel bias and 1$\sigma$ residual scatter are annotated. Top-level well-sampled labels (Class$1$.$1$ Smooth, Class$1$.$2$ Features/Disk, Class$2$.$x$ Edge-on, Class$6$.$x$ Odd) track the diagonal cleanly with small bias; mid-tree labels (Class$5$.$x$ bulge, Class$10$.$x$ arm tightness, Class$11$.$2$ two-arm) show clear positive correlation with regression-toward-the-mean compression; deep-tree rare-feature labels (Class$1$.$3$, Class$8$.$x$ odd-features, Class$11$.$3$--$5$ high-arm-count) collapse to a band near $\hat f = 0$, the long-tail failure mode of rare-label regression.}
+  \label{fig:label_scatter_unweighted}
+\end{figure*}
+
+\begin{figure*}[p]
+  \centering
+  \includegraphics[width=\textwidth]{figures/fig_label_scatter_tree_weighted.pdf}
+  \caption{Same layout as Figure~\ref{fig:label_scatter_unweighted}, for the tree-weighted-loss Custom CNN of Section~\ref{sec:treeweight}. The well-sampled top-level and disk-branch labels (Class$1$.$x$, Class$2$.$x$, Class$3$.$x$, Class$7$.$1$) track the diagonal at least as cleanly as the unweighted-loss model; the deep-tree rare-feature labels (Class$8$.$x$, Class$11$.$x$) show more vertical spread above $\hat f = 0$ rather than collapsing onto the zero band, because the tree-weighted loss has effectively no gradient signal there and the network is free to predict away from zero. This is exactly the qualitative shift expected from the loss change --- and the source of the bulk-RMSE gap in Table~\ref{tab:model_rmse}.}
+  \label{fig:label_scatter_tree_weighted}
 \end{figure*}
 
 \subsection{Extreme Examples per Label}
@@ -986,7 +985,7 @@ a factor-of-$5$ range. The Lotz et al. $z \approx 0$ value is $R_{\mathrm{merger
 %%% ---------------------------------------------------------------
 
 \subsection{Why the Rare-Label Tier Underperforms}
-The per-label scatter plots (Figure~\ref{fig:label_scatter}) expose a structural limitation of the per-label RMSE metric on a hierarchical-gated label space. For the well-sampled top-level labels (Class1.x, Class6.x, Class2.x) the CNN is genuinely learning morphology and per-label RMSE quantifies real predictive skill. For the deep-tree rare-feature labels (Class1.3, Class8.x, Class11.3--5) the effective sample size collapses to $\lesssim 1000$ effective contributors because the gating concentrates almost all vote-fraction mass at zero, and a model that predicts $\hat f \approx 0$ everywhere attains low bulk RMSE without distinguishing any positive examples. The apparent ranking in Figure~\ref{fig:per_label_rmse} is therefore inverted: the highest-RMSE labels are the ones the CNN actually learns, while the lowest-RMSE labels are the ones it fails to learn but where predicting zero still scores well. We note that any aggregate validation RMSE therefore under-represents the CNN's failure on rare labels, and should be reported alongside a rarity-weighted per-label decomposition. Future work should either (a) reweight the loss against label rarity to force the model to attend to rare-feature labels, or (b) train per-question heads with category-specific losses that decouple the rare branches from the dominant top-level signal.
+The per-label scatter plots (Figure~\ref{fig:label_scatter_unweighted}) expose a structural limitation of the per-label RMSE metric on a hierarchical-gated label space. For the well-sampled top-level labels (Class1.x, Class6.x, Class2.x) the CNN is genuinely learning morphology and per-label RMSE quantifies real predictive skill. For the deep-tree rare-feature labels (Class1.3, Class8.x, Class11.3--5) the effective sample size collapses to $\lesssim 1000$ effective contributors because the gating concentrates almost all vote-fraction mass at zero, and a model that predicts $\hat f \approx 0$ everywhere attains low bulk RMSE without distinguishing any positive examples. The apparent ranking in Figure~\ref{fig:per_label_rmse} is therefore inverted: the highest-RMSE labels are the ones the CNN actually learns, while the lowest-RMSE labels are the ones it fails to learn but where predicting zero still scores well. We note that any aggregate validation RMSE therefore under-represents the CNN's failure on rare labels, and should be reported alongside a rarity-weighted per-label decomposition. Future work should either (a) reweight the loss against label rarity to force the model to attend to rare-feature labels, or (b) train per-question heads with category-specific losses that decouple the rare branches from the dominant top-level signal.
 
 \subsection{The Label-Noise Floor and What ``Better'' Means}
 \label{sec:label-noise-floor}
@@ -999,8 +998,10 @@ For the top-level questions where every classifier votes ($N_{\mathrm{cls}} \sim
 
 The floor is not uniform across labels. Top-level well-sampled labels have $N_{\mathrm{cls}} \sim 40$--$50$ classifiers and a narrow noise budget, whereas deep-tree rare-feature labels are gated on rare upstream answers: a Q11 (arm count) leaf is only seen by classifiers who first answered ``Features'' ($\sim 40\%$ of votes), ``Not edge-on'' ($\sim 80\%$ of those), and ``Spiral yes'' ($\sim 50\%$ of those), leaving $N_{\mathrm{cls}} \sim 8$--$10$ classifiers per arm-count leaf and a per-label binomial $\sigma \sim 0.13$--$0.18$. The per-label RMSE pattern of Section~\ref{sec:eval} therefore reflects a convolution of two effects: the CNN failing to learn rare-feature morphology AND the label-noise floor being intrinsically higher on exactly those labels, so the failure is partially masked by the wider noise budget on which it is measured.
 
-\subsection{Tree-Reweighted Output vs.\ Unconstrained Baseline}
-The tree-reweighted architecture (Section~\ref{sec:treeweight}) enforces $\hat f_{\mathrm{child}} \le \sum_p \hat f_p$ at inference time. Its bulk validation RMSE ($0.2066$) is more than $2\times$ worse than the unconstrained augmented Custom CNN ($0.0913$). The unconstrained baseline minimises bulk RMSE by predicting small positive values $\hat f \sim 0.01$--$0.05$ on rare deep-tree labels whose true vote fraction is $\sim 0$, which scores well at the population level. The tree-reweighted architecture forecloses that strategy, forcing $\hat f_{\mathrm{child}} \to 0$ whenever $\sum_p \hat f_p \to 0$. Table~\ref{tab:treeweight_per_label} shows that the largest RMSE penalties fall on the deep-tree rare-feature labels (Star/Artefact, Dust lane, Lens/Arc, Merger), confirming this interpretation. The constrained architecture is the more physically principled choice for an analysis that requires chain-rule consistency; the unconstrained baseline is the better aggregate-RMSE minimiser and is what the lab manual scores against.
+\subsection{Tree-Weighted RMSE vs.\ Unweighted Baseline}
+The tree-weighted loss (Section~\ref{sec:treeweight}) encodes the GZ2 chain rule through gradient pressure rather than by clipping the output space, following the Galaxy Zoo Challenge methodology of \citet{Dieleman2015}. The Custom CNN backbone is unchanged --- the same augmented Custom CNN of Section~\ref{sec:opt} is used; only the training loss is replaced with the tree-weighted form of Eq.~\ref{eq:tree-weighted-loss}. Because the weights are derived from the true catalog labels rather than from the network's predictions, the gradient on a $(\mathrm{galaxy}, \mathrm{label})$ cell scales with the probability that the GZ2 protocol would have asked that question of that galaxy; rare deep-tree cells (e.g.\ Q11 arm count for a galaxy with low Class1.2 Features) contribute negligibly to the gradient, freeing the network to predict any value there without distorting the learned representation on the labels that \emph{were} asked.
+
+The two objectives are not interchangeable, and an honest comparison requires evaluating both models on a common metric. We choose the unweighted bulk RMSE for cross-experiment comparability with the rest of this report (Table~\ref{tab:model_rmse}), and report the bulk-metric cost of the more physically motivated training objective: $0.0977$ for the tree-weighted variant against $0.0913$ for the unweighted-loss baseline, a $\sim 7\%$ gap concentrated on the rare deep-tree labels where the unweighted model exploits the near-zero ground-truth distribution and the tree-weighted model deliberately does not. Each model is best at the metric it was trained on; the tree-weighted variant is therefore not the bulk-RMSE leader but is the appropriate choice when downstream science consumes the full vote-fraction vector and requires the chain-rule structure to be respected. We carry the augmented unconstrained Custom CNN forward as the working best model for the bulk-RMSE-driven merger-rate inference in Section~\ref{sec:merger-rate} and retain the tree-weighted variant as a methodologically preferable alternative for analyses where per-label hierarchical consistency outweighs a $7\%$ bulk-metric gap.
 
 \subsection{Merger Rate Compared to Lotz et al.\ and Rodriguez-Gomez et al.}
 \label{sec:merger-rate}
@@ -1021,7 +1022,7 @@ Several extensions would tighten the agreement and broaden the applicability of 
   \item Marginalise over $\tau_{\mathrm{vis}}$ with a log-uniform prior to propagate the dominant systematic into a Bayesian credible interval.
   \item Split the test sample by redshift and refit the $(1 + z)^{2.5 \pm 0.5}$ evolution to test the redshift-evolution tension between \citet{Lotz2011} and \citet{RodriguezGomez2015}.
   \item Calibrate the CNN merger label against the Gini--$M_{20}$ classification on a common SDSS sub-sample, placing the two definitions on the same footing.
-  \item Replace the unconstrained head with the tree-reweighted variant of Section~\ref{sec:treeweight} to enforce inference-time consistency with the GZ2 chain rule, trading bulk RMSE for interpretability.
+  \item Adopt the tree-weighted RMSE loss of Section~\ref{sec:treeweight} as the default training objective and retain its predictions for downstream analysis: tree-consistency is encoded through gradient pressure without the bulk-RMSE penalty of a hard architectural constraint, and the per-label decomposition is more interpretable for science applications that propagate the full vote-fraction vector.
 \end{itemize}
 
 %%% ---------------------------------------------------------------

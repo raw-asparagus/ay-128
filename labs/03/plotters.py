@@ -566,24 +566,36 @@ def plot_loss_with_lr_pair(runs, filename):
 # 9. Model comparison (Task 23)
 # ---------------------------------------------------------------------------
 
-def plot_custom_vs_resnet_with_delta(custom_run, resnet_run, filename):
+def plot_two_model_loss_with_delta(
+    run_a, run_b, filename,
+    delta_label=r"$\Delta$ RMSE$_{\mathrm{val}}$",
+    exclude_from_ylim=None,
+):
     """Overlaid train+val loss curves for two models with a delta panel.
 
     Renders a 2-panel figure:
       * top panel (tall): training (dashed) and validation (solid) RMSE
         for the two models, colour-coded by model.
-      * bottom panel (short): per-model overfitting gap, val - train,
-        plotted as solid lines in the model colours.
+      * bottom panel (short): inter-model validation-RMSE gap,
+        $\\mathrm{RMSE}_a - \\mathrm{RMSE}_b$, as a single solid black line.
 
     No plot title --- the model names appear in the legend.
 
     Parameters
     ----------
-    custom_run, resnet_run : dict
+    run_a, run_b : dict
         Each with keys ``name`` (str), ``train_losses`` (1D), and
-        ``val_losses`` (1D).
+        ``val_losses`` (1D). ``run_a`` plotted in C0 (blue), ``run_b`` in
+        C1 (orange). Delta is val_a - val_b.
     filename : str
         Output PDF filename (without ``.pdf``); written to ``report/figures/``.
+    delta_label : str, optional
+        Label for the delta panel's y-axis. Default ``r"$\\Delta$ RMSE$_{\\mathrm{val}}$"``.
+    exclude_from_ylim : str, optional
+        ``"a"`` or ``"b"`` to exclude one model's training curve from the
+        top panel's y-axis autoscale (useful when one model trains down
+        to a much lower RMSE that would dominate the axis). ``None``
+        (default) uses all four curves to set the y-limits.
     """
     fig, _ = textwidth_figure(5.0)
     _.remove()
@@ -591,7 +603,7 @@ def plot_custom_vs_resnet_with_delta(custom_run, resnet_run, filename):
         fig, nrows=2, height_ratios=(3, 1), hspace=0.05, sharex=True,
     )
 
-    for run, color in [(custom_run, "C0"), (resnet_run, "C1")]:
+    for run, color in [(run_a, "C0"), (run_b, "C1")]:
         train = np.asarray(run["train_losses"])
         val = np.asarray(run["val_losses"])
         epochs = np.arange(1, len(train) + 1)
@@ -603,26 +615,31 @@ def plot_custom_vs_resnet_with_delta(custom_run, resnet_run, filename):
                     label=f"{run['name']} (validation)", zorder=3)
 
     # Delta panel: validation RMSE difference between the two models
-    custom_val = np.asarray(custom_run["val_losses"])
-    resnet_val = np.asarray(resnet_run["val_losses"])
-    n_delta = min(len(custom_val), len(resnet_val))
+    val_a = np.asarray(run_a["val_losses"])
+    val_b = np.asarray(run_b["val_losses"])
+    n_delta = min(len(val_a), len(val_b))
     delta_epochs = np.arange(1, n_delta + 1)
-    ax_delta.plot(delta_epochs, custom_val[:n_delta] - resnet_val[:n_delta],
+    ax_delta.plot(delta_epochs, val_a[:n_delta] - val_b[:n_delta],
                   color="black", ls="-", lw=LW_STANDARD,
                   alpha=ALPHA_STANDARD, zorder=3)
 
     ax_top.set_ylabel("RMSE")
     ax_top.set_yscale("log")
     _decimal_log_yaxis(ax_top)
-    # Auto-scale the y-axis using all curves EXCEPT the ResNet training
-    # curve (which dives to ~0.018 at convergence and would dominate the
-    # axis). The ResNet training segment below the resulting floor is
-    # clipped from view but the other three curves remain in full.
-    relevant = np.concatenate([
-        np.asarray(custom_run["train_losses"]),
-        np.asarray(custom_run["val_losses"]),
-        np.asarray(resnet_run["val_losses"]),
-    ])
+    # Auto-scale the y-axis using all curves, optionally excluding one
+    # training curve (e.g. the ResNet training curve dives to ~0.018 and
+    # would dominate the axis if kept).
+    curves = [
+        np.asarray(run_a["train_losses"]),
+        np.asarray(run_a["val_losses"]),
+        np.asarray(run_b["train_losses"]),
+        np.asarray(run_b["val_losses"]),
+    ]
+    if exclude_from_ylim == "a":
+        curves = curves[1:]
+    elif exclude_from_ylim == "b":
+        curves = curves[:2] + curves[3:]
+    relevant = np.concatenate(curves)
     ax_top.set_ylim(relevant.min() * 0.95, relevant.max() * 1.05)
     ax_top.tick_params(labelbottom=False)
     ax_top.legend(fontsize=LEGEND_SIZE - 1, loc="upper right", ncol=2)
@@ -667,53 +684,84 @@ def plot_model_comparison(names, val_losses_list):
 # 10. True vs predicted scatter (Task 24)
 # ---------------------------------------------------------------------------
 
-def plot_label_scatter(true_labels, pred_labels, label_descriptive_list):
-    """Grid of scatter plots comparing true vs predicted for each label.
+def plot_label_scatter(true_labels, pred_labels, label_names,
+                       label_descriptive, model_tag):
+    """Grouped true-vs-predicted scatter grid for all 37 GZ2 labels.
+
+    One row per GZ2 decision-tree class, columns within that class, matching
+    the layout of :func:`plot_label_distributions` and :func:`plot_prototype_images`.
+    Each panel shows the validation-set scatter for one label with a 1:1
+    guide and the per-label bias and scatter (residual mean and standard
+    deviation) annotated. Tick labels at the bottom of each column carry the
+    branch class-id colour, exposing the GZ2 tree branch visually.
 
     Parameters
     ----------
     true_labels : ndarray, shape (N, 37)
     pred_labels : ndarray, shape (N, 37)
-    label_descriptive_list : list of str
-        Descriptive names in column order.
+    label_names : list of str
+        Column names like ``"Class1.1"``; used for tree-grid placement
+        and class-id-colored titles.
+    label_descriptive : dict
+        Mapping column name -> descriptive name.
+    model_tag : str
+        Short tag used to disambiguate the output filename
+        (``fig_label_scatter_<model_tag>.pdf``).
     """
     n_labels = true_labels.shape[1]
-    ncols = 6
-    nrows = (n_labels + ncols - 1) // ncols
+    ncols = _LABEL_DIST_NCOLS
+    n_panels_needed = n_labels + len(_LABEL_GRID_SKIPS)
+    nrows = (n_panels_needed + ncols - 1) // ncols
 
-    fig, _ = textwidth_figure(2.5 * nrows)
+    fig, _ = textwidth_figure(_LABEL_DIST_FIGURE_SCALE * nrows)
     _.remove()
-    axes = subpanels(fig, nrows, ncols, hspace=0.65, wspace=0.35, sharex=False)
+    axes = subpanels(fig, nrows, ncols, hspace=0.56, wspace=0.28, sharex=True)
 
-    for i in range(nrows * ncols):
-        row, col = divmod(i, ncols)
+    label_to_panel = [_panel_for_label(i) for i in range(n_labels)]
+    panel_to_label = {p: i for i, p in enumerate(label_to_panel)}
+
+    last_row_for_col = [-1] * ncols
+    for p in label_to_panel:
+        r, c = divmod(p, ncols)
+        if r > last_row_for_col[c]:
+            last_row_for_col[c] = r
+
+    for p in range(nrows * ncols):
+        row, col = divmod(p, ncols)
         ax = axes[row, col]
-        if i < n_labels:
-            t = true_labels[:, i]
-            p = pred_labels[:, i]
-            resid = p - t
-            bias = np.mean(resid)
-            scatter_val = np.std(resid)
+        if p in panel_to_label:
+            i = panel_to_label[p]
+            class_id = int(label_names[i].split("Class")[1].split(".")[0])
+            color = f"C{(class_id - 1) % 10}"
 
-            ax.scatter(t, p, s=1.0, color="C0", alpha=ALPHA_EXTRA_LIGHT,
-                       zorder=3, rasterized=True)
+            t = true_labels[:, i]
+            pp = pred_labels[:, i]
+            resid = pp - t
+            bias = float(np.mean(resid))
+            scatter_val = float(np.std(resid))
+
+            ax.scatter(t, pp, s=1.0, color=color, alpha=ALPHA_EXTRA_LIGHT,
+                       lw=LW_NONE, zorder=3, rasterized=True)
             ax.plot([0, 1], [0, 1], color=NEUTRAL_COLOR, lw=LW_MEDIUM,
                     alpha=ALPHA_STANDARD, zorder=1)
-            ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
-            ax.set_ylim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
+
+            desc = label_descriptive.get(label_names[i], label_names[i])
             ax.set_title(
-                f"{LABEL_COLUMNS[i]}: {label_descriptive_list[i]}\n"
+                f"{label_names[i]}: {desc}\n"
                 rf"bias$={bias:+.3f}$, $\sigma={scatter_val:.3f}$",
                 fontsize=LEGEND_SIZE - 2, loc="left",
             )
-            ax.tick_params(labelsize=LEGEND_SIZE - 1)
+            ax.set_xlim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
+            ax.set_ylim(-_LABEL_AXIS_PAD, 1.0 + _LABEL_AXIS_PAD)
+            ax.tick_params(labelsize=LEGEND_SIZE - 2)
+            ax.tick_params(labelbottom=(row == last_row_for_col[col]))
         else:
             ax.set_visible(False)
 
-    fig.supxlabel("True", fontsize=LABEL_SIZE)
-    fig.supylabel("Predicted", fontsize=LABEL_SIZE)
+    fig.supxlabel("True vote fraction", fontsize=LABEL_SIZE, y=0.04)
+    fig.supylabel("Predicted vote fraction", fontsize=LABEL_SIZE, x=0.06)
 
-    savefig(fig, "fig_label_scatter.pdf")
+    savefig(fig, f"fig_label_scatter_{model_tag}.pdf")
     return axes
 
 
@@ -1186,6 +1234,79 @@ def plot_ablation_curves(names, val_losses_list, title):
 
     safe_name = title.lower().replace(" ", "_").replace("(", "").replace(")", "")
     savefig(fig, f"fig_ablation_{safe_name}.pdf")
+    return ax
+
+
+def plot_per_label_rmse_multimodel(label_names, label_descriptive_list,
+                                   model_rmse, filename,
+                                   model_colors=None):
+    """Grouped horizontal bar chart of per-label RMSE across multiple models.
+
+    Each row is a GZ2 label and carries one bar per model. Tick labels are
+    coloured by the GZ2 parent question (Class1..Class11) so visual
+    grouping by branch is preserved alongside the model-to-model
+    comparison.
+
+    Parameters
+    ----------
+    label_names : sequence of str
+        Column names like ``"Class1.1"``; the parent-question integer is
+        parsed from the prefix and used for tick-label colouring.
+    label_descriptive_list : sequence of str
+        Descriptive names in the same order as ``label_names``.
+    model_rmse : dict[str, ndarray]
+        Mapping model name -> per-label RMSE array (length 37). Bars are
+        drawn in iteration order; the dict order also fixes the legend
+        order.
+    filename : str
+        Output PDF filename without the ``.pdf`` suffix; written to
+        ``report/figures/``.
+    model_colors : sequence of color-like, optional
+        Per-model bar colours. Default uses neutral hues that do not
+        clash with the categorical class colours (C0..C9) used on the
+        tick labels.
+    """
+    model_names = list(model_rmse.keys())
+    n_models = len(model_names)
+    n_labels = len(label_names)
+
+    if model_colors is None:
+        # Neutral palette that does not overlap with the categorical
+        # class colours (C0..C9) used on the tick labels.
+        default = ["dimgray", "steelblue", "darkorange",
+                   "mediumseagreen", "indianred", "purple"]
+        model_colors = default[:n_models]
+
+    fig, _ = textwidth_figure(0.30 * n_labels + 1.0)
+    _.remove()
+    ax = subpanels(fig, 1, 1)
+
+    y_pos = np.arange(n_labels)
+    bar_height = 0.8 / n_models
+
+    for i, mname in enumerate(model_names):
+        offset = (i - (n_models - 1) / 2) * bar_height
+        ax.barh(y_pos + offset, np.asarray(model_rmse[mname]),
+                height=bar_height, label=mname,
+                color=model_colors[i], alpha=ALPHA_STANDARD,
+                edgecolor="none", zorder=3)
+
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(
+        [f"{ln}: {ld}" for ln, ld in zip(label_names, label_descriptive_list)],
+        fontsize=LEGEND_SIZE - 1,
+    )
+    ax.invert_yaxis()
+    ax.set_xlabel("Validation RMSE (unweighted, vote-fraction units)")
+    ax.set_ylim(n_labels - 0.5, -0.5)
+    ax.legend(fontsize=LEGEND_SIZE, loc="lower right")
+
+    # Colour tick labels by parent GZ2 question (Class1..Class11).
+    for tick, name in zip(ax.get_yticklabels(), label_names):
+        class_id = int(name.split("Class")[1].split(".")[0])
+        tick.set_color(f"C{(class_id - 1) % 10}")
+
+    savefig(fig, f"{filename}.pdf")
     return ax
 
 
