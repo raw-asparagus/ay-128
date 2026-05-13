@@ -197,7 +197,7 @@ def plot_label_distributions(labels, label_names, label_descriptive):
         else:
             ax.set_visible(False)
 
-    fig.supxlabel("Label probability", fontsize=LABEL_SIZE, y=0.08)
+    fig.supxlabel("Label probability", fontsize=LABEL_SIZE, y=0.04)
     fig.supylabel("Density", fontsize=LABEL_SIZE, x=0.06)
 
     savefig(fig, "fig_label_distributions.pdf")

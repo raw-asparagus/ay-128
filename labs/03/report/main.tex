@@ -240,7 +240,7 @@ Figure~\ref{fig:label_distributions} shows normalized histograms of all 37 label
 \subsubsection{Label Correlations}
 \label{sec:diagnostic-trends}
 
-We compute the $37 \times 37$ Pearson correlation matrix (Figure~\ref{fig:correlation_matrix}) using
+We compute the $37 \times 37$ Pearson correlation matrix (Figure~\ref{fig:hierarchical_correlation}, reordered by tree branch to make the block structure visible) using
 \begin{equation}
 \rho_{ij} = \frac{\langle ij \rangle - \langle i \rangle \langle j \rangle}{\sqrt{\langle i^2 \rangle - \langle i \rangle^2}\,\sqrt{\langle j^2 \rangle - \langle j \rangle^2}}.
 \label{eq:rho}
@@ -263,103 +263,26 @@ The Cigar-shaped label (Class7.3) is anomalous. While nominally a smooth sub-lab
 
 \begin{figure*}[t!]
   \centering
-  \includegraphics[width=\textwidth]{figures/fig_correlation_matrix.pdf}
-  \caption{Pearson correlation matrix (Eq.~\ref{eq:rho}) of all 37 GZ2 labels on the training set. Mutually exclusive sibling answers within a single question form clear negative blocks (Class1.1 vs Class1.2: $\rho = -0.992$, near-perfectly matching the binary expectation of $-1$), while parent--child gating relationships form positive off-diagonal stripes (e.g. Features/Disk $\to$ Edge-on No, $\rho = +0.748$). The Cigar-shaped anomaly (Class7.3, weak/null correlation with Smooth, strong positive correlation with Edge-on Yes) is the most informative non-trivial structure visible here.}
-  \label{fig:correlation_matrix}
-\end{figure*}
-
-\subsection{Diagnostic Analyses}
-
-We perform four diagnostic analyses of the label space. Figure~\ref{fig:label_tree} visualizes the GZ2 hierarchical decision tree and the gating structure between questions. Figure~\ref{fig:hierarchical_correlation} reorders the correlation matrix by tree branch, exposing block structure that the unordered matrix obscures. Figure~\ref{fig:label_tsne} shows a t-SNE embedding of the 37-dimensional label space: the manifold separates cleanly along the smooth/disk axis but rare classes form sparse, isolated clusters. Figure~\ref{fig:effective_sample_size} plots the effective sample size
-\begin{equation}
-  N_{\mathrm{eff}} = \frac{\bigl(\sum_i f_i\bigr)^2}{\sum_i f_i^2},
-  \label{eq:n_eff}
-\end{equation}
-per label, with $f_i$ the corrected vote fraction for galaxy $i$. $N_{\mathrm{eff}}$ counts effective contributors: a label that is $f = 1$ on $N$ galaxies and $0$ elsewhere has $N_{\mathrm{eff}} = N$, while a label concentrated on a single galaxy has $N_{\mathrm{eff}} = 1$. Deeper-tree labels reach $N_{\mathrm{eff}} \lesssim 1000$, far below the nominal 61{,}578.
-
-\begin{figure*}[t!]
-  \centering
   \includegraphics[width=\textwidth]{figures/fig_hierarchical_correlation.pdf}
-  \caption{$37 \times 37$ label correlation matrix reordered by tree branch (smooth / edge-on / face-on bar-spiral / odd-feature). Block-diagonal structure now aligns with the hierarchy, making within-question negative correlations and parent--child positive correlations visually separable. Compared to the un-ordered version in Figure~\ref{fig:correlation_matrix}, the off-diagonal cross-branch correlations are revealed to be dominated by the colour/morphology bimodality discussed in Section~\ref{sec:diagnostics-extra}.}
+  \caption{$37 \times 37$ label correlation matrix reordered by tree branch (smooth / edge-on / face-on bar-spiral / odd-feature). Block-diagonal structure aligns with the hierarchy, making sibling question negative correlations and parent--child positive correlations visually separable; off-diagonal cross-branch correlations are dominated by being in different subtrees, otherwise they are weakly or uncorrelated.}
   \label{fig:hierarchical_correlation}
 \end{figure*}
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_label_tsne.pdf}
-  \caption{t-SNE embedding of the 37-dimensional label space, colored by dominant top-level class.}
-  \label{fig:label_tsne}
-\end{figure}
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_effective_sample_size.pdf}
-  \caption{Effective sample size per label. Hierarchical gating drives deeper-tree labels to $N_{\rm eff}$ far below the nominal 61{,}578.}
-  \label{fig:effective_sample_size}
-\end{figure}
-
-Figure~\ref{fig:label_rarity_vs_rmse} shows that $N_{\mathrm{eff}}$ and the mean-prediction baseline RMSE are strongly correlated across labels. Rare labels (lens/arc, dust lane, high-arm-count spirals) achieve low baseline RMSE because predicting zero is already accurate when the label is near-zero everywhere, not because the model has learnt them. Per-label RMSE numbers in Section~\ref{sec:eval} are therefore only informative for the well-sampled labels in the upper-right of the figure.
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_label_rarity_vs_rmse.pdf}
-  \caption{$N_{\mathrm{eff}}$ vs.\ per-label mean-prediction baseline RMSE. Labels with $N_{\mathrm{eff}} < 200$ (red) sit at the bottom-left of the plot and have artificially-low baseline RMSE because their vote-fraction distributions are concentrated near zero. The labels in the upper-right are the ones where a CNN beating baseline RMSE is genuinely informative.}
-  \label{fig:label_rarity_vs_rmse}
-\end{figure}
-
-\label{sec:diagnostics-extra}
-
-\paragraph{Effective dimensionality of the label space.} Figure~\ref{fig:pca_eigenspectrum} shows the eigenspectrum of the $37 \times 37$ label correlation matrix and the cumulative variance fraction. The Kaiser criterion ($\lambda > 1$) gives an effective dimensionality of $\sim 8$, far fewer than the nominal 37, and $\sim 90\%$ of the variance is captured by the first $\sim 10$ principal components. The CNN is therefore not solving 37 independent regression problems; the effective task complexity reduces to a handful of latent morphological factors. We take this as an upper bound on the representational capacity the FC head needs, and size the FC-head parameter count accordingly in Section~\ref{sec:custom}.
-
-\begin{figure}[t!]
-  \centering
-  \includegraphics[width=\columnwidth]{figures/fig_pca_eigenspectrum.pdf}
-  \caption{Eigenspectrum (left) and cumulative variance fraction (right) of the $37 \times 37$ label correlation matrix. The Kaiser criterion ($\lambda > 1$, dashed) gives an effective dimensionality of $\sim 8$, and $\sim 90\%$ of the variance is captured by $\sim 10$ principal components, the hierarchical decision tree makes the GZ2 label space highly redundant.}
-  \label{fig:pca_eigenspectrum}
-\end{figure}
-
-\paragraph{Geometry of the vote-fraction distributions.} Figure~\ref{fig:pairwise_label_scatter} shows pairwise scatter plots for the eight most strongly correlated label pairs (four positive, four negative). Positively-correlated pairs lie along a diagonal with most galaxies stacked at the $(0, 0)$ and $(1, 1)$ corners; negatively-correlated pairs form L-shapes confined to the high-$i$/low-$j$ and low-$i$/high-$j$ arms. Vote fractions saturate at $0$ or $1$ when classifier consensus is strong, and the interior of $[0, 1]^2$ is sparsely populated. This corner-saturating density motivates the sigmoid output head used by both architectures in Section~\ref{sec:architectures}, which naturally saturates at $0$ and $1$ to match the label density.
-
-Figure~\ref{fig:montage_features_disk_vs_edge-on} shows image montages from the four quadrants of the (Features/Disk, Edge-on-No) plane. The high-high and low-low corners contain archetypal disks and ellipticals respectively, while the off-diagonal quadrants are populated by inclined disks and ambiguous low-surface-brightness galaxies. The L-shape structure therefore reflects visually distinct astrophysical classes rather than decision-tree gating alone.
-
-\begin{figure*}[t!]
-  \centering
-  \includegraphics[width=\textwidth]{figures/fig_pairwise_label_scatter.pdf}
-  \caption{Pairwise scatter plots for the eight strongest label correlations (top row: four most positive; bottom row: four most negative). Positively-correlated pairs lie along a diagonal with strong saturation at $(0, 0)$ and $(1, 1)$, while negatively-correlated pairs form L-shaped distributions confined to the two complementary arms with almost no points in the high--high corner. The interior of the unit square is sparsely populated in every panel, demonstrating that vote fractions saturate at $0$ or $1$ when classifier consensus is strong; the corner-saturating density structure is what motivates the sigmoid output head used by both architectures in Section~\ref{sec:architectures}.}
-  \label{fig:pairwise_label_scatter}
-\end{figure*}
-
-\begin{figure*}[t!]
-  \centering
-  \includegraphics[width=0.85\textwidth]{figures/fig_montage_features_disk_vs_edge-on:_no.pdf}
-  \caption{Image montages from the four quadrants of the (Features/Disk, Edge-on-No) vote-fraction plane. The high-Features/high-not-edge-on quadrant (top-right) is dominated by archetypal face-on disks; the low-low quadrant (bottom-left) is dominated by smooth ellipticals; the off-diagonal quadrants capture inclined disks and edge cases. The correlations of Section~\ref{sec:diagnostic-trends} reflect visually distinct morphological populations, not just decision-tree bookkeeping.}
-  \label{fig:montage_features_disk_vs_edge-on}
-\end{figure*}
-
-Figure~\ref{fig:montage_spiral_winding} drills into the positively-correlated Spiral~Yes / Medium-winding pair. Galaxies with high vote fractions on both labels are intermediate-winding ($S_b$-type) spirals; the off-diagonal quadrants pick up smooth ellipticals or tightly-wound grand-design spirals whose votes shift weight to the tight-winding sibling. The four quadrants of every positively-correlated pair separate into morphologically meaningful sub-populations, confirming that the strong off-diagonal correlations of Figure~\ref{fig:correlation_matrix} reflect real morphological structure rather than residual gating artefacts.
-
-\begin{figure*}[t!]
-  \centering
-  \includegraphics[width=0.85\textwidth]{figures/fig_montage_spiral:_yes_vs_medium_winding.pdf}
-  \caption{Image montages from the four quadrants of the (Spiral: Yes, Spiral: Medium-winding) vote-fraction plane. The high-high quadrant (top-right) is dominated by clear medium-winding ($S_b$-type) spirals; the low-low quadrant by smooth ellipticals; the high-spiral/low-medium-winding quadrant by tight-winding ($S_a$-type) grand-design spirals; the low-spiral/high-medium-winding quadrant by ambiguous featureless galaxies with sparse spiral votes. The positive correlation $\rho(\text{Spiral~Yes}, \text{Medium~winding}) = +0.858$ reflects this morphological sub-population, not just the Q4-to-Q10 parent-child gating relationship.}
-  \label{fig:montage_spiral_winding}
-\end{figure*}
-
-\paragraph{Colour and brightness shortcut for top-level labels.} Smooth ellipticals are redder, more centrally concentrated, and higher-contrast than disk galaxies at the pixel level (Section~\ref{sec:sdss-imaging}). The CNN can therefore answer the Q1 Smooth-vs-Features distinction from global pixel statistics (centre-weighted brightness, red-to-blue ratio, intensity dispersion) without recognising any morphological feature. The bulk-RMSE wins in Section~\ref{sec:eval} draw on this shortcut; the harder labels (bar, arm count, dust lane, merger) cannot, and their high per-label RMSE reflects the absence of the colour shortcut.
 
 \subsection{Image Preprocessing}
 \label{sec:prep}
 
-Raw GZ2 cutouts are $424 \times 424 \times 3$ in $gri$ RGB, most of which is empty sky. At full resolution the $61{,}578$-galaxy training set requires $\approx 133$~GB as \texttt{float32}, well above the 12~GB VRAM of our local NVIDIA RTX 5070~Ti laptop GPU. The pipeline therefore:
-\begin{itemize}
+Raw GZ2 cutouts are $424 \times 424 \times 3$ in $gri$ RGB, most of which is empty sky. Per image this is $\sim 0.54$~MB in \texttt{uint8} and $\sim 2.16$~MB in \texttt{float32}, totalling $\sim 33$~GB for the $61{,}578$-galaxy training set in \texttt{uint8} and $\sim 133$~GB in \texttt{float32}. Both are well above the 12~GB VRAM of a local GPU and the 24~GB system RAM available. The pipeline therefore:
+\begin{enumerate}
   \item Centre-crops by $15\%$ per side (retaining the central $\sim 296^2$ region around the galaxy).
   \item Bilinearly resizes to a $136 \times 136$ on-disk cache in \texttt{uint8} ($\sim 3.4$~GB total).
   \item GPU-side \texttt{CenterCrop(96)} at train time yields the $96 \times 96 \times 3$ model input.
-\end{itemize}
+\end{enumerate}
 
-The $96 \times 96$ input is chosen for image quality rather than memory. Table~\ref{tab:scales} lists the nested pixel scales: the native SDSS scale of $0.396''$/pixel, the per-galaxy-scaled GZ2 cutout at $\sim 0.020''$/pixel ($\approx 27$~pc), and the $96 \times 96$ model input at $\sim 0.040''$/pixel ($\sim 60$~pc) spanning $\sim 5.7$~kpc on a side at $z \approx 0.07$.
+A 2-step downscaling process is opted for to avoid black corners due to rotation and avoid additional memory requirements of full resolution images. However, this comes with the trade-off of potential compression artifacts and loss of detail.
 
-\begin{table}[H]
+We chose a slightly larger image resolution $96 \times 96$ input to preserve image quality rather than memory. Table~\ref{tab:scales} lists the nested pixel scales: the native SDSS scale of $0.396''$/pixel, the per-galaxy-scaled GZ2 cutout at $\sim 0.020''$/pixel ($\approx 27$~pc), and the $96 \times 96$ model input at $\sim 0.040''$/pixel ($\sim 60$~pc) spanning $\sim 5.7$~kpc on a side at $z \approx 0.07$. Because the GZ2 cutout pixel scale is set per galaxy as $0.024 \times r_{\mathrm{Petro,90}}$ arcsec/pixel, these numbers correspond to galaxies at the small end of the GZ2 selection ($r_{\mathrm{Petro,90}} \approx 3''$), and we therefore quote them as a worst-case extrema check: larger galaxies in the sample have coarser pixel scales (up to $\sim 0.10''$/pixel for $r_{\mathrm{Petro,90}} \sim 5$--$10''$), proportionally more pixels across the PSF, and hence are uniformly easier to resolve than the figures below imply.
+
+\begin{table*}[t!]
   \centering
   \small
   \begin{tabular}{lrr}
@@ -372,11 +295,11 @@ The $96 \times 96$ input is chosen for image quality rather than memory. Table~\
     SDSS PSF FWHM                       & $\sim 1.4''$       & $\sim 1.9$~kpc    \\
     \bottomrule
   \end{tabular}
-  \caption{Nested pixel scales of the pipeline at the median GZ2 redshift $z \approx 0.07$. The model input field of view spans $\sim 6$~kpc on a side. The SDSS point-spread-function FWHM is the fundamental resolution limit and is several model pixels wide, we are PSF-limited, not pixel-limited, for sub-kpc features.}
+  \caption{Nested pixel scales of the pipeline at the median GZ2 redshift $z \approx 0.07$, evaluated for a small galaxy at the lower end of the GZ2 selection ($r_{\mathrm{Petro,90}} \approx 3''$) where the per-galaxy pixel scale is finest. The model input field of view spans $\sim 6$~kpc on a side and the SDSS point-spread-function FWHM is the fundamental resolution limit. Larger galaxies in the GZ2 sample have proportionally coarser pixel scales (up to a factor of $\sim 3$--$5$), so the values quoted here serve as an extrema check; the median galaxy is uniformly better resolved per arcsec than this table suggests.}
   \label{tab:scales}
-\end{table}
+\end{table*}
 
-The morphological feature scales of interest fit within the $96^2$ field of view: spiral arm widths ($\sim 0.5$--$2$~kpc; \citealt{Conselice2014}) span $\sim 10$--$30$ pixels, bar lengths ($\sim 2$--$8$~kpc) span $\sim 30$--$100$ pixels, bulge effective radii ($r_e \sim 0.5$--$2$~kpc) span $\sim 10$--$30$ pixels, and edge-on dust lanes ($h_z \sim 100$--$300$~pc) span $\sim 2$--$5$ pixels at the resolvability limit. The SDSS PSF ($\sim 1.4''$ FWHM, $\sim 1.9$~kpc at $z \approx 0.07$) sets the fundamental resolution limit, so $96^2$ is the coarsest scale that still resolves all five categories at the median redshift. We adopt $96 \times 96$ rather than the lab manual's suggested $\sim 64$ because at $\sim 60$~pc/pixel we still resolve the dust-lane scale; going coarser would merge the dust-lane and bulge categories at the median redshift.
+The morphological feature scales of interest fit within the $96^2$ field of view: spiral arm widths ($\sim 0.5$--$2$~kpc; \citealt{Conselice2014}) span $\sim 10$--$30$ pixels, bar lengths ($\sim 2$--$8$~kpc) span $\sim 30$--$100$ pixels, bulge effective radii ($r_e \sim 0.5$--$2$~kpc) span $\sim 10$--$30$ pixels, and edge-on dust lanes ($h_z \sim 100$--$300$~pc) span $\sim 2$--$5$ pixels at the resolvability limit. The SDSS PSF ($\sim 1.4''$ FWHM, $\sim 1.9$~kpc at $z \approx 0.07$) sets the fundamental resolution limit, so $96^2$ is the coarsest scale that still resolves all five categories at the median redshift for the small-galaxy regime evaluated above. We adopt $96 \times 96$ rather than the lab manual's suggested $\sim 64$ because at $\sim 60$~pc/pixel we still resolve the dust-lane scale; going coarser would merge the dust-lane and bulge categories at the median redshift. Larger galaxies in the GZ2 sample have proportionally coarser pixel scales, so their feature-to-pixel mappings are correspondingly larger (a $\sim 2''$-FWHM dust lane in a galaxy at $r_{\mathrm{Petro,90}} \sim 8''$ spans only $\sim 1$--$2$ model pixels) --- but in those cases the PSF also covers a smaller fraction of the image, so the net effect is that larger galaxies are uniformly easier to classify than the small-end values used here would suggest, and the analysis above is conservative.
 
 \paragraph{Cache size.} The $136 \times 136$ cache is sized by the rotation-augmentation constraint of Section~\ref{sec:opt}: an inscribed square of side $s$ inside an outer square of side $S$ at $45^\circ$ rotation requires $S \ge s\sqrt{2}$, so $s = 96$ implies $S \ge \lceil 96\sqrt{2}\,\rceil = 136$. Caching at $136^2$ and centre-cropping to $96^2$ after rotation guarantees that no black corner pixels ever enter the network at any rotation angle. We therefore set the pre-crop fraction to $0.15$ rather than the more obvious $0.25$: the rotation-safe-buffer derivation fixes the value, not visual framing.
 
@@ -434,7 +357,7 @@ and the final pre-output activation is the sigmoid
   \sigma(z) = \frac{1}{1 + e^{-z}},
   \label{eq:sigmoid}
 \end{equation}
-which saturates to the unit interval and matches the corner-saturating geometry of the vote-fraction distributions (Section~\ref{sec:diagnostics-extra}). Spatial downsampling is performed by max pooling over non-overlapping $2 \times 2$ windows,
+which saturates to the unit interval and matches the corner-saturating geometry of the vote-fraction distributions (most galaxies cluster at $f \approx 0$ or $f \approx 1$, with sparse interior). Spatial downsampling is performed by max pooling over non-overlapping $2 \times 2$ windows,
 \begin{equation}
   y_{c,i,j} = \max_{(u,v) \in [0, 1]^2}\, x_{c,\,2i+u,\,2j+v},
   \label{eq:maxpool}
@@ -925,7 +848,7 @@ The progression baseline $\to$ plain backbone $\to$ LR scheduler $\to$ augmentat
 
 \subsection{Per-Label Performance}
 
-Figure~\ref{fig:label_scatter} shows true-vs-predicted scatter plots for all 37 labels on the validation set using the best Custom CNN. The labels fall into three performance tiers, which map onto the rarity-vs-baseline-RMSE diagnostic of Figure~\ref{fig:label_rarity_vs_rmse}:
+Figure~\ref{fig:label_scatter} shows true-vs-predicted scatter plots for all 37 labels on the validation set using the best Custom CNN. The labels fall into three performance tiers:
 \begin{itemize}
   \item \textbf{Well-sampled top-level labels} (Class1.1 Smooth, Class1.2 Features/Disk, Class2.1 Edge-on, Class4.1 Spiral, Class6.x Odd): scatter plots track the $1{:}1$ line cleanly across $[0, 1]$ with small bias and $\sigma \sim 0.07$--$0.12$. The CNN is genuinely learning morphology.
   \item \textbf{Moderate-sample mid-tree labels} (Class5.x bulge prominence, Class10.x arm tightness, Class11.2 two-arm spiral, Class7.x roundness): clear positive correlation with regression toward the mean. Bias remains small, scatter is larger ($\sigma \sim 0.10$--$0.15$).
@@ -937,14 +860,14 @@ Figure~\ref{fig:per_label_rmse} summarises per-label RMSE quantitatively. The ha
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=0.95\textwidth]{figures/fig_per_label_rmse.pdf}
-  \caption{Per-label validation RMSE for the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler), sorted from hardest (left) to easiest (right). The hardest labels are the broad-distribution top-level votes (Class1.1 Smooth, Class1.2 Features/Disk, Class6.2 Odd: No, Class4.x Spiral) precisely because their bimodal vote-fraction distribution makes any miscalibration immediately visible; the apparently-easiest labels (Class1.3 Star/Artefact, Class8.x odd-features, Class11.3--5 high-arm-count) are easy only because they are near-zero almost everywhere in the training set, so a model that predicts $\hat f \approx 0$ already scores low RMSE without learning anything (the long-tail failure mode flagged by Figure~\ref{fig:label_rarity_vs_rmse}).}
+  \caption{Per-label validation RMSE for the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler), sorted from hardest (left) to easiest (right). The hardest labels are the broad-distribution top-level votes (Class1.1 Smooth, Class1.2 Features/Disk, Class6.2 Odd: No, Class4.x Spiral) precisely because their bimodal vote-fraction distribution makes any miscalibration immediately visible; the apparently-easiest labels (Class1.3 Star/Artefact, Class8.x odd-features, Class11.3--5 high-arm-count) are easy only because they are near-zero almost everywhere in the training set, so a model that predicts $\hat f \approx 0$ already scores low RMSE without learning anything.}
   \label{fig:per_label_rmse}
 \end{figure*}
 
 \begin{figure*}[t!]
   \centering
   \includegraphics[width=\textwidth]{figures/fig_label_scatter.pdf}
-  \caption{True vs.\ predicted vote fractions for all 37 GZ2 labels on the validation set, computed with the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler). The dashed diagonal is the $1{:}1$ line; per-panel bias and 1$\sigma$ scatter are annotated. Top-level well-sampled labels (Class1.1 Smooth, Class1.2 Features/Disk, Class2.x Edge-on, Class6.x Odd) track the diagonal cleanly with small bias; mid-tree labels (Class5.x bulge, Class10.x arm tightness, Class11.2 two-arm) show clear positive correlation with regression-toward-the-mean compression; deep-tree rare-feature labels (Class1.3, Class8.x odd-features, Class11.3--5 high-arm-count) collapse to a band near $\hat f = 0$, the long-tail failure flagged in advance by Figure~\ref{fig:label_rarity_vs_rmse}.}
+  \caption{True vs.\ predicted vote fractions for all 37 GZ2 labels on the validation set, computed with the best model (Custom CNN $+$ rotation augmentation $+$ \texttt{ReduceLROnPlateau} scheduler). The dashed diagonal is the $1{:}1$ line; per-panel bias and 1$\sigma$ scatter are annotated. Top-level well-sampled labels (Class1.1 Smooth, Class1.2 Features/Disk, Class2.x Edge-on, Class6.x Odd) track the diagonal cleanly with small bias; mid-tree labels (Class5.x bulge, Class10.x arm tightness, Class11.2 two-arm) show clear positive correlation with regression-toward-the-mean compression; deep-tree rare-feature labels (Class1.3, Class8.x odd-features, Class11.3--5 high-arm-count) collapse to a band near $\hat f = 0$, the long-tail failure mode of rare-label regression.}
   \label{fig:label_scatter}
 \end{figure*}
 
@@ -1049,7 +972,7 @@ a factor-of-$5$ range. The Lotz et al. $z \approx 0$ value is $R_{\mathrm{merger
 %%% ---------------------------------------------------------------
 
 \subsection{Why the Rare-Label Tier Underperforms}
-The per-label scatter plots (Figure~\ref{fig:label_scatter}) and the rarity-vs-baseline-RMSE diagnostic (Figure~\ref{fig:label_rarity_vs_rmse}) expose a structural limitation of the per-label RMSE metric on a hierarchical-gated label space. For the well-sampled top-level labels (Class1.x, Class6.x, Class2.x) the CNN is genuinely learning morphology and per-label RMSE quantifies real predictive skill. For the deep-tree rare-feature labels (Class1.3, Class8.x, Class11.3--5) the effective sample size collapses to $N_{\mathrm{eff}} \lesssim 1000$ because the gating concentrates almost all vote-fraction mass at zero, and a model that predicts $\hat f \approx 0$ everywhere attains low bulk RMSE without distinguishing any positive examples. The apparent ranking in Figure~\ref{fig:per_label_rmse} is therefore inverted: the highest-RMSE labels are the ones the CNN actually learns, while the lowest-RMSE labels are the ones it fails to learn but where predicting zero still scores well. We note that any aggregate validation RMSE therefore under-represents the CNN's failure on rare labels, and should be reported alongside the rarity-weighted per-label decomposition of Figure~\ref{fig:label_rarity_vs_rmse}. Future work should either (a) reweight the loss against $N_{\mathrm{eff}}$ to force the model to attend to rare-feature labels, or (b) train per-question heads with category-specific losses that decouple the rare branches from the dominant top-level signal.
+The per-label scatter plots (Figure~\ref{fig:label_scatter}) expose a structural limitation of the per-label RMSE metric on a hierarchical-gated label space. For the well-sampled top-level labels (Class1.x, Class6.x, Class2.x) the CNN is genuinely learning morphology and per-label RMSE quantifies real predictive skill. For the deep-tree rare-feature labels (Class1.3, Class8.x, Class11.3--5) the effective sample size collapses to $\lesssim 1000$ effective contributors because the gating concentrates almost all vote-fraction mass at zero, and a model that predicts $\hat f \approx 0$ everywhere attains low bulk RMSE without distinguishing any positive examples. The apparent ranking in Figure~\ref{fig:per_label_rmse} is therefore inverted: the highest-RMSE labels are the ones the CNN actually learns, while the lowest-RMSE labels are the ones it fails to learn but where predicting zero still scores well. We note that any aggregate validation RMSE therefore under-represents the CNN's failure on rare labels, and should be reported alongside a rarity-weighted per-label decomposition. Future work should either (a) reweight the loss against label rarity to force the model to attend to rare-feature labels, or (b) train per-question heads with category-specific losses that decouple the rare branches from the dominant top-level signal.
 
 \subsection{The Label-Noise Floor and What ``Better'' Means}
 \label{sec:label-noise-floor}
